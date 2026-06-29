@@ -14,7 +14,8 @@ export const importApi = async(script: string): Promise<LX.UserApi.ImportUserApi
     }
   } catch (err: any) {
     console.error('[importApi] error:', err)
-    const message = String(err?.message ?? err)
+    let message = err?.message
+    if (message == null) message = err instanceof Error ? err.toString() : String(err)
     throw new Error(message || '自定义源导入失败')
   }
 }

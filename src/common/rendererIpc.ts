@@ -22,7 +22,8 @@ export async function rendererInvoke <T, V>(name: string, params?: T): Promise<V
   } catch (err: any) {
     console.error(`[rendererInvoke] ${name} error:`, err)
     if (err instanceof Error) throw err
-    const message = err?.message ?? (typeof err === 'string' ? err : String(err))
+    let message = err?.message
+    if (message == null) message = typeof err === 'string' ? err : String(err)
     throw new Error(message || '未知错误')
   }
 }

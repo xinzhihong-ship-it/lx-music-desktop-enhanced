@@ -35,7 +35,8 @@ export function mainHandle<T, V>(name: string, listener: LX.IpcMainInvokeEventLi
     } catch (err: any) {
       console.error(`[mainHandle] ${name} error:`, err)
       if (err instanceof Error) throw err
-      const message = err?.message ?? (typeof err === 'string' ? err : String(err))
+      let message = err?.message
+      if (message == null) message = typeof err === 'string' ? err : String(err)
       throw new Error(message || '未知错误')
     }
   })
