@@ -2,17 +2,21 @@ import { userApis as defaultUserApis } from './config'
 import { STORE_NAMES } from '@common/constants'
 import getStore from '@main/utils/store'
 import zlib from 'node:zlib'
+import { log } from '@common/utils'
 
 let userApis: LX.UserApi.UserApiInfo[] | null
 let scripts = new Map<string, string>()
 
 const saveData = () => {
-  getStore(STORE_NAMES.USER_API).set('userApis', userApis!.map(api => {
+  const data = userApis!.map(api => {
     return {
       ...api,
       script: scripts.get(api.id),
     }
-  }))
+  })
+  log.info('[saveData] saving', data.length, 'apis')
+  getStore(STORE_NAMES.USER_API).set('userApis', data)
+  log.info('[saveData] done')
 }
 
 export const getUserApis = (): LX.UserApi.UserApiInfo[] => {
@@ -38,7 +42,7 @@ export const getUserApis = (): LX.UserApi.UserApiInfo[] => {
     }
   } else {
     infoFull = defaultUserApis
-    electronStore_userApi.set('userApis', userApis)
+    electronStore_userApi.set('userApis', infoFull)
   }
   userApis = infoFull.map(api => {
     if (api.allowShowUpdateAlert == null) api.allowShowUpdateAlert = false
@@ -79,10 +83,21 @@ const matchInfo = (scriptInfo: string) => {
   return infos as Record<keyof typeof INFO_NAMES, string>
 }
 const parseScriptInfo = (script: string) => {
-  const result = /^\/\*[\S|\s]+?\*\//.exec(script)
-  if (!result) throw new Error('无效的自定义源文件')
+  log.info('[parseScriptInfo] input length:', script?.length, 'type:', typeof script, 'first 100 chars:', JSON.stringify(script?.slice(0, 100)))
+  if (typeof script !== 'string' || !script.trim()) {
+    log.error('[parseScriptInfo] invalid script input')
+    throw new Error('无效的自定义源文件')
+  }
+  // 兼容带 BOM 或开头空白的脚本
+  const trimmedScript = script.replace(/^\uFEFF\s*/, '')
+  const result = /^\/\*[\s\S]*?\*\//.exec(trimmedScript)
+  if (!result) {
+    log.error('[parseScriptInfo] failed to match script header')
+    throw new Error('无效的自定义源文件')
+  }
 
   let scriptInfo = matchInfo(result[0])
+  log.info('[parseScriptInfo] parsed info:', scriptInfo)
 
   scriptInfo.name ||= `user_api_${new Date().toLocaleString()}`
   return scriptInfo
@@ -108,6 +123,7 @@ const inflateScript = async(script: string) => new Promise<string>((resolve, rej
   } else resolve(script)
 })
 export const importApi = async(scriptRaw: string): Promise<LX.UserApi.UserApiInfo> => {
+  log.info('[importApi] called with length:', scriptRaw?.length, 'type:', typeof scriptRaw)
   let scriptInfo = parseScriptInfo(scriptRaw)
   const script = await deflateScript(scriptRaw)
   userApis ??= []
@@ -124,7 +140,9 @@ export const importApi = async(scriptRaw: string): Promise<LX.UserApi.UserApiInf
   }
   userApis.push(apiInfo)
   scripts.set(apiInfo.id, script)
+  log.info('[importApi] saving api:', apiInfo.name, 'id:', apiInfo.id)
   saveData()
+  log.info('[importApi] saved, current api count:', userApis.length)
   return apiInfo
 }
 

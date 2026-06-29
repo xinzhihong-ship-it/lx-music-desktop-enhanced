@@ -10,7 +10,7 @@ export default () => {
   createAudio()
 
   usePlayerEvent()
-  useMediaDevice() // 初始化音频驱动输出设置
+  useMediaDevice()
   usePlayer()
   const initPlayStatus = usePlayStatus()
 
@@ -18,4 +18,3 @@ export default () => {
     void initPlayStatus()
   }
 }
-

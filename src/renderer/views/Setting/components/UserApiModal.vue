@@ -68,7 +68,8 @@ export default {
       return importUserApi(script).then(({ apiList }) => {
         userApi.list = apiList
       }).catch((err) => {
-        void dialog(this.$t('user_api_import__failed', { message: err.message }))
+        const message = String(err?.message ?? err)
+        void dialog(this.$t('user_api_import__failed', { message }))
       })
     },
     handleImport() {

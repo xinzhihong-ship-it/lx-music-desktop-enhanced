@@ -1,3 +1,6 @@
+import { appSetting } from '@renderer/store/setting'
+import * as mpvPlayer from './mpv'
+
 interface HTMLAudioElementChrome extends HTMLAudioElement {
   setSinkId: (id: string) => Promise<void>
 }
@@ -392,26 +395,56 @@ export const setPitchShifter = (val: number) => {
 
 export const hasInitedAdvancedAudioFeatures = (): boolean => audioContext != null
 
+const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
+
 export const setResource = (src: string) => {
+  if (isMpvEngine()) {
+    void mpvPlayer.setResource(src).catch(err => {
+      console.error('mpv load url failed:', err?.message ?? err)
+      window.alert(`mpv 播放失败：${err?.message ?? err}\n\n请确认：\n1. mpv 已安装（brew install mpv）\n2. 或切换到内置引擎（设置 → 播放引擎 → 内置引擎）`)
+      window.app_event.stop()
+    })
+    return
+  }
   if (audio) audio.src = src
 }
 
 export const setPlay = () => {
+  if (isMpvEngine()) {
+    void mpvPlayer.setPlay().catch(err => {
+      console.error('mpv play failed:', err?.message ?? err)
+      window.alert(`mpv 播放失败：${err?.message ?? err}\n\n请确认：\n1. mpv 已安装（brew install mpv）\n2. 或切换到内置引擎（设置 → 播放引擎 → 内置引擎）`)
+      window.app_event.stop()
+    })
+    return
+  }
   void audio?.play()
 }
 
 export const setPause = () => {
+  if (isMpvEngine()) {
+    void mpvPlayer.setPause().catch(err => {
+      console.error('mpv pause failed', err)
+    })
+    return
+  }
   audio?.pause()
 }
 
 export const setStop = () => {
+  if (isMpvEngine()) {
+    void mpvPlayer.setStop().catch(err => {
+      console.error('mpv stop failed', err)
+    })
+    return
+  }
   if (audio) {
     audio.src = ''
     audio.removeAttribute('src')
   }
 }
 
-export const isEmpty = (): boolean => !audio?.src
+export const isEmpty = (): boolean => isMpvEngine() ? mpvPlayer.isEmpty() : !audio?.src
 
 export const setLoopPlay = (isLoop: boolean) => {
   if (audio) audio.loop = isLoop
@@ -437,15 +470,24 @@ export const getMute = (): boolean => {
 }
 
 export const setMute = (isMute: boolean) => {
+  if (isMpvEngine()) {
+    mpvPlayer.setMute(isMute)
+    return
+  }
   if (audio) audio.muted = isMute
 }
 
 export const getCurrentTime = () => {
+  if (isMpvEngine()) return mpvPlayer.getCurrentTime()
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   return audio?.currentTime || 0
 }
 
 export const setCurrentTime = (time: number) => {
+  if (isMpvEngine()) {
+    mpvPlayer.setCurrentTime(time)
+    return
+  }
   if (audio) audio.currentTime = time
 }
 
@@ -455,10 +497,15 @@ export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
 }
 
 export const setVolume = (volume: number) => {
+  if (isMpvEngine()) {
+    mpvPlayer.setVolume(volume)
+    return
+  }
   if (audio) audio.volume = volume
 }
 
 export const getDuration = () => {
+  if (isMpvEngine()) return mpvPlayer.getDuration()
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   return audio?.duration || 0
 }
@@ -469,96 +516,32 @@ export const getDuration = () => {
 
 type Noop = () => void
 
-export const onPlaying = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('playing', callback)
+// 同时注册 audio 和 mpv 两套监听器，引擎切换时各自响应
+// mpv 事件只在当前引擎为 mpv 时才转发，避免 stray 事件干扰 electron 播放
+const registerEvent = (event: string, mpvSub: (cb: Noop) => () => void, callback: Noop): (() => void) => {
+  const unsubs: Array<() => void> = []
+  if (audio) {
+    audio.addEventListener(event, callback)
+    unsubs.push(() => audio?.removeEventListener(event, callback))
+  }
+  unsubs.push(mpvSub(() => {
+    if (isMpvEngine()) callback()
+  }))
   return () => {
-    audio?.removeEventListener('playing', callback)
+    unsubs.forEach(fn => { fn() })
   }
 }
 
-export const onPause = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio?.addEventListener('pause', callback)
-  return () => {
-    audio?.removeEventListener('pause', callback)
-  }
-}
-
-export const onEnded = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('ended', callback)
-  return () => {
-    audio?.removeEventListener('ended', callback)
-  }
-}
-
-export const onError = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('error', callback)
-  return () => {
-    audio?.removeEventListener('error', callback)
-  }
-}
-
-export const onLoadeddata = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('loadeddata', callback)
-  return () => {
-    audio?.removeEventListener('loadeddata', callback)
-  }
-}
-
-export const onLoadstart = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('loadstart', callback)
-  return () => {
-    audio?.removeEventListener('loadstart', callback)
-  }
-}
-
-export const onCanplay = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('canplay', callback)
-  return () => {
-    audio?.removeEventListener('canplay', callback)
-  }
-}
-
-export const onEmptied = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('emptied', callback)
-  return () => {
-    audio?.removeEventListener('emptied', callback)
-  }
-}
-
-export const onTimeupdate = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('timeupdate', callback)
-  return () => {
-    audio?.removeEventListener('timeupdate', callback)
-  }
-}
-
-// 缓冲中
-export const onWaiting = (callback: Noop) => {
-  if (!audio) throw new Error('audio not defined')
-
-  audio.addEventListener('waiting', callback)
-  return () => {
-    audio?.removeEventListener('waiting', callback)
-  }
-}
+export const onPlaying = (callback: Noop) => registerEvent('playing', mpvPlayer.onPlaying, callback)
+export const onPause = (callback: Noop) => registerEvent('pause', mpvPlayer.onPause, callback)
+export const onEnded = (callback: Noop) => registerEvent('ended', mpvPlayer.onEnded, callback)
+export const onError = (callback: Noop) => registerEvent('error', mpvPlayer.onError, callback)
+export const onLoadeddata = (callback: Noop) => registerEvent('loadeddata', mpvPlayer.onLoadeddata, callback)
+export const onLoadstart = (callback: Noop) => registerEvent('loadstart', mpvPlayer.onLoadstart, callback)
+export const onCanplay = (callback: Noop) => registerEvent('canplay', mpvPlayer.onCanplay, callback)
+export const onEmptied = (callback: Noop) => registerEvent('emptied', mpvPlayer.onEmptied, callback)
+export const onTimeupdate = (callback: Noop) => registerEvent('timeupdate', mpvPlayer.onTimeupdate, callback)
+export const onWaiting = (callback: Noop) => registerEvent('waiting', mpvPlayer.onWaiting, callback)
 
 // 可见性改变
 export const onVisibilityChange = (callback: Noop) => {

@@ -6,12 +6,16 @@ import { debounce } from '@common/utils'
 import { playbackRate, setPlaybackRate } from '@renderer/store/player/playbackRate'
 import { appSetting, savePlaybackRate } from '@renderer/store/setting'
 
+const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
+
 export default () => {
   const handleSavePlaybackRate = debounce(savePlaybackRate, 300)
 
   setPlaybackRate(appSetting['player.playbackRate'])
-  setPlayerPlaybackRate(appSetting['player.playbackRate'])
-  setPreservesPitch(appSetting['player.preservesPitch'])
+  if (!isMpvEngine()) {
+    setPlayerPlaybackRate(appSetting['player.playbackRate'])
+    setPreservesPitch(appSetting['player.preservesPitch'])
+  }
 
 
   const handleSetPlaybackRate = (num: number) => {
@@ -35,7 +39,7 @@ export default () => {
 
   watch(playbackRate, rate => {
     handleSavePlaybackRate(rate)
-    setPlayerPlaybackRate(rate)
+    if (!isMpvEngine()) setPlayerPlaybackRate(rate)
   })
   watch(() => appSetting['player.playbackRate'], rate => {
     setPlaybackRate(rate)
@@ -43,7 +47,7 @@ export default () => {
 
 
   watch(() => appSetting['player.preservesPitch'], preservesPitch => {
-    setPreservesPitch(preservesPitch)
+    if (!isMpvEngine()) setPreservesPitch(preservesPitch)
   })
 
 

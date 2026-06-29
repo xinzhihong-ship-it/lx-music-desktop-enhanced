@@ -35,7 +35,7 @@ try {
 
 module.exports = merge(baseConfig, {
   mode: 'production',
-  devtool: 'source-map',
+  devtool: false,
   externals: [
     // ...Object.keys(dependencies || {}).filter(d => !whiteListedModules.includes(d)),
   ],

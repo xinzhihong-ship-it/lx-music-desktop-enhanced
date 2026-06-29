@@ -63,7 +63,8 @@ export default {
       try {
         script = await httpFetch(url, { follow_max: 3 }).promise.then(resp => resp.body)
       } catch (err) {
-        void dialog(this.$t('user_api_import__failed', { message: err.message }))
+        const message = String(err?.message ?? err)
+        void dialog(this.$t('user_api_import__failed', { message }))
         return
       } finally {
         this.disabled = false

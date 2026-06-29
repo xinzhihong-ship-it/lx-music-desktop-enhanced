@@ -30,7 +30,14 @@ export function mainHandle<V>(name: string, listener: LX.IpcMainInvokeEventListe
 export function mainHandle<T, V>(name: string, listener: LX.IpcMainInvokeEventListenerParamsValue<T, V>): void
 export function mainHandle<T, V>(name: string, listener: LX.IpcMainInvokeEventListenerParamsValue<T, V>): void {
   ipcMain.handle(name, async(event, params) => {
-    return listener({ event, params })
+    try {
+      return await listener({ event, params })
+    } catch (err: any) {
+      console.error(`[mainHandle] ${name} error:`, err)
+      if (err instanceof Error) throw err
+      const message = err?.message ?? (typeof err === 'string' ? err : String(err))
+      throw new Error(message || '未知错误')
+    }
   })
 }
 

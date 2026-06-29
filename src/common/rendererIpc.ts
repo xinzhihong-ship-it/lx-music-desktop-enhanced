@@ -17,7 +17,14 @@ export async function rendererInvoke<V>(name: string): Promise<V>
 export async function rendererInvoke<T>(name: string, params: T): Promise<void>
 export async function rendererInvoke<T, V>(name: string, params: T): Promise<V>
 export async function rendererInvoke <T, V>(name: string, params?: T): Promise<V> {
-  return ipcRenderer.invoke(name, params)
+  try {
+    return await ipcRenderer.invoke(name, params)
+  } catch (err: any) {
+    console.error(`[rendererInvoke] ${name} error:`, err)
+    if (err instanceof Error) throw err
+    const message = err?.message ?? (typeof err === 'string' ? err : String(err))
+    throw new Error(message || '未知错误')
+  }
 }
 
 export function rendererOn(name: string, listener: LX.IpcRendererEventListener): void

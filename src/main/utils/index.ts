@@ -33,8 +33,8 @@ export const parseEnvParams = (argv = process.argv): { cmdParams: LX.CmdParams, 
   }
 }
 
-const primitiveType = ['string', 'boolean', 'number']
-const checkPrimitiveType = (val: any): boolean => val === null || primitiveType.includes(typeof val)
+const primitiveType = ['string', 'boolean', 'number', 'object'] // 添加 object 支持数组
+const checkPrimitiveType = (val: any): boolean => val === null || (primitiveType.includes(typeof val) && (typeof val !== 'object' || Array.isArray(val)))
 // const handleMergeSetting = (defaultSetting: LX.AppSetting, currentSetting: Partial<LX.AppSetting>) => {
 //   const updatedSettingKeys: Array<keyof LX.AppSetting> = []
 //   for (const key of Object.keys(defaultSetting) as Array<keyof LX.AppSetting>) {

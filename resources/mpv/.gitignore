@@ -1,0 +1,8 @@
+# 忽略 mpv 二进制，只保留目录结构
+*.app
+mpv
+*.dylib
+*.dll
+*.so
+lib/
+!/.gitkeep

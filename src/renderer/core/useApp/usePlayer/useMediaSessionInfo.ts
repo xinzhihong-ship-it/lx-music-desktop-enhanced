@@ -49,10 +49,13 @@ export default () => {
     position?: number
     playbackRate?: number
   } = {}) => {
+    const duration = state.duration ?? getDuration()
+    if (duration <= 0) return
+    const position = state.position ?? getCurrentTime()
     navigator.mediaSession.setPositionState({
-      duration: state.duration ?? getDuration(),
+      duration,
       playbackRate: state.playbackRate ?? getPlaybackRate(),
-      position: state.position ?? getCurrentTime(),
+      position: Math.min(position, duration),
     })
   }
 

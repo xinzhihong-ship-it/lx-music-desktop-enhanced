@@ -19,6 +19,11 @@ module.exports = {
     bufferutil: 'bufferutil',
     'utf-8-validate': 'utf-8-validate',
     'qrc_decode.node': isDev ? path.join(__dirname, '../../build/Release/qrc_decode.node') : path.join('../build/Release/qrc_decode.node'),
+    'electron-debug': 'electron-debug',
+    'electron-devtools-installer': 'electron-devtools-installer',
+    'electron-is-dev': 'electron-is-dev',
+    'electron-localshortcut': 'electron-localshortcut',
+    'devtron': 'devtron',
   },
   resolve: {
     alias: {
@@ -30,6 +35,11 @@ module.exports = {
     extensions: ['.tsx', '.ts', '.js', '.mjs', '.json', '.node'],
   },
   module: {
+    parser: {
+      javascript: {
+        worker: false,
+      },
+    },
     rules: [
       {
         test: /\.node$/,

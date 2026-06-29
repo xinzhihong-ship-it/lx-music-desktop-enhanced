@@ -7,9 +7,15 @@ let userApiId: string | null
 export const getApiList = getUserApis
 
 export const importApi = async(script: string): Promise<LX.UserApi.ImportUserApi> => {
-  return {
-    apiInfo: await handleImportApi(script),
-    apiList: getUserApis(),
+  try {
+    return {
+      apiInfo: await handleImportApi(script),
+      apiList: getUserApis(),
+    }
+  } catch (err: any) {
+    console.error('[importApi] error:', err)
+    const message = String(err?.message ?? err)
+    throw new Error(message || '自定义源导入失败')
   }
 }
 export const removeApi = async(ids: string[]): Promise<LX.UserApi.UserApiInfo[]> => {

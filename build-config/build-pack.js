@@ -1,5 +1,6 @@
 /* eslint-disable no-template-curly-in-string */
 
+const fs = require('fs')
 const builder = require('electron-builder')
 const beforePack = require('./build-before-pack')
 const afterPack = require('./build-after-pack')
@@ -25,6 +26,11 @@ const options = {
   },
   files: [
     '!node_modules/**/*',
+    '!**/electron-debug/**/*',
+    '!**/electron-devtools-installer/**/*',
+    '!**/electron-is-dev/**/*',
+    '!**/electron-localshortcut/**/*',
+    '!**/devtron/**/*',
     'node_modules/font-list',
     'node_modules/better-sqlite3/lib',
     'node_modules/better-sqlite3/package.json',
@@ -37,6 +43,7 @@ const options = {
     'node_modules/utf-8-validate',
     'build/Release/qrc_decode.node',
     'dist/**/*',
+    '!dist/**/index-dev.js',
   ],
   asar: {
     smartUnpack: false,
@@ -52,6 +59,15 @@ const options = {
     },
   ],
 }
+const mpvResourcePath = `./resources/mpv/${process.platform}-${process.arch}`
+if (fs.existsSync(mpvResourcePath)) {
+  options.extraResources.push({
+    from: mpvResourcePath,
+    to: './bin',
+    filter: ['**/*', '!**/.gitkeep'],
+  })
+}
+
 /**
  * @type {import('electron-builder').Configuration}
  * @see https://www.electron.build/configuration/configuration

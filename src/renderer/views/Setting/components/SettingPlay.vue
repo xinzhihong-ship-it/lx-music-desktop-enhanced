@@ -1,6 +1,29 @@
 <template lang="pug">
 dt#play {{ $t('setting__play') }}
 dd
+  h3#basic_play_engine {{ $t('setting__play_engine') }}
+  div
+    base-selection.gap-left(v-model="playEngine" :list="playEngineList" item-key="id" item-name="label" @change="handlePlayEngineChange")
+  div.gap-left(v-if="playEngine == 'mpv'" style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_engine_mpv_desc') }}
+  div.gap-left(v-else style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_engine_electron_desc') }}
+//- mpv 专属设置
+dd(v-if="playEngine == 'mpv'")
+  h3#basic_mpv_path {{ $t('setting__play_mpv_path') }}
+  div
+    base-input.gap-left(v-model="mpvPath" :placeholder="$t('setting__play_mpv_path_placeholder')" @update:model-value="updateSetting({'player.mpv.path': $event})")
+  div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_path_order') }}
+dd(v-if="playEngine == 'mpv'")
+  h3#basic_mpv_extra_args {{ $t('setting__play_mpv_extra_args') }}
+  div
+    base-input.gap-left(v-model="mpvExtraArgs" :placeholder="$t('setting__play_mpv_extra_args_placeholder')" @update:model-value="handleMpvExtraArgsChange")
+  div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_extra_args_desc') }}
+dd
+  .gap-top(v-if="playEngine == 'mpv'")
+    base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="updateSetting({'player.mpv.bitPerfectMode': $event})")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')")
+  .gap-top(v-if="playEngine == 'mpv' && !isMac")
+    base-checkbox(id="setting_mpv_audio_exclusive" :model-value="appSetting['player.mpv.audioExclusive']" :label="$t('setting__play_mpv_audio_exclusive')" @update:model-value="updateSetting({'player.mpv.audioExclusive': $event})")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_audio_exclusive_tip')")
   .gap-top
     base-checkbox(id="setting_player_startup_auto_play" :model-value="appSetting['player.startupAutoPlay']" :label="$t('setting__play_startup_auto_play')" @update:model-value="updateSetting({'player.startupAutoPlay': $event})")
   .gap-top
@@ -50,11 +73,12 @@ dd(:aria-label="$t('setting__play_mediaDevice_title')")
 <script>
 import { ref, onBeforeUnmount, watch } from '@common/utils/vueTools'
 import { hasInitedAdvancedAudioFeatures, setMediaDeviceId } from '@renderer/plugins/player'
+import * as mpvPlayer from '@renderer/plugins/player/mpv'
 import { dialog } from '@renderer/plugins/Dialog'
 import { useI18n } from '@renderer/plugins/i18n'
 import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/setting'
 import { setPowerSaveBlocker } from '@renderer/core/player/utils'
-import { isPlay } from '@renderer/store/player/state'
+import { isPlay, playMusicInfo } from '@renderer/store/player/state'
 import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
 import { isMac } from '@common/utils'
 
@@ -65,12 +89,59 @@ export default {
     const t = useI18n()
     const playQualityList = [...TRY_QUALITYS_LIST, '128k'].reverse()
 
+    const playEngineList = [
+      { id: 'electron', label: t('setting__play_engine_electron') },
+      { id: 'mpv', label: t('setting__play_engine_mpv') },
+    ]
+    const playEngine = ref(appSetting['player.playEngine'])
+    const handlePlayEngineChange = async() => {
+      const newEngine = playEngine.value
+      const oldEngine = appSetting['player.playEngine']
+      if (newEngine == oldEngine) return
+
+      if (isPlay.value) {
+        const confirm = await dialog.confirm({
+          message: t('setting__play_engine_tip'),
+          cancelButtonText: t('cancel_button_text'),
+          confirmButtonText: t('confirm_button_text'),
+        })
+        if (!confirm) {
+          playEngine.value = oldEngine
+          return
+        }
+        window.app_event.stop()
+      }
+
+      updateSetting({ 'player.playEngine': newEngine })
+
+      // 切换到 electron 时强制刷新音频 URL，避免 gettingUrlId 缓存导致 play() 跳过获取
+      if (newEngine == 'electron' && playMusicInfo.musicInfo) {
+        import('@renderer/core/player/action').then(m => {
+          m.setMusicUrl(playMusicInfo.musicInfo, true)
+        }).catch(() => {})
+      }
+    }
+    watch(() => appSetting['player.playEngine'], val => {
+      playEngine.value = val
+    })
+
+    const mpvPath = ref(appSetting['player.mpv.path'])
+    watch(() => appSetting['player.mpv.path'], val => { mpvPath.value = val })
+
+    const mpvExtraArgs = ref(appSetting['player.mpv.extraArgs'].join(' '))
+    const handleMpvExtraArgsChange = (val) => {
+      mpvExtraArgs.value = val
+      updateSetting({ 'player.mpv.extraArgs': val.split(/\s+/).filter(Boolean) })
+    }
+    watch(() => appSetting['player.mpv.extraArgs'], val => {
+      mpvExtraArgs.value = val.join(' ')
+    })
+
     const mediaDevices = ref([])
     const getMediaDevice = async() => {
       const devices = await navigator.mediaDevices.enumerateDevices()
       let audioDevices = devices.filter(device => device.kind === 'audiooutput')
       mediaDevices.value = audioDevices
-      // console.log(this.mediaDevices)
     }
     void getMediaDevice()
 
@@ -80,7 +151,39 @@ export default {
     })
 
     const mediaDeviceId = ref(appSetting['player.mediaDeviceId'])
+    const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
+
+    // mpv 设备列表（从 main process 获取）
+    const mpvAudioDevices = ref([])
+    const loadMpvAudioDevices = () => {
+      mpvPlayer.listAudioDevices().then(devices => {
+        mpvAudioDevices.value = devices
+      }).catch(() => {})
+    }
+    // 引擎切换到 mpv 时加载设备列表
+    watch(() => appSetting['player.playEngine'], val => {
+      if (val == 'mpv') loadMpvAudioDevices()
+    })
+    if (isMpvEngine()) loadMpvAudioDevices()
+
     const handleMediaDeviceIdChnage = async() => {
+      // mpv 模式：通过 --audio-device 参数切换，不走 Electron API
+      if (isMpvEngine()) {
+        let deviceLabel = ''
+        for (const d of mediaDevices.value) {
+          if (d.deviceId === mediaDeviceId.value) { deviceLabel = d.label; break }
+        }
+        const label = deviceLabel || mediaDeviceId.value
+        updateSetting({
+          'player.mediaDeviceId': mediaDeviceId.value,
+          'player.mpv.extraArgs': updateMpvDeviceArg(appSetting['player.mpv.extraArgs'], mediaDeviceId.value, label),
+        })
+        // 销毁旧 mpv 进程，下次播放用新设备重建
+        mpvPlayer.destroy().catch(() => {})
+        window.app_event.stop()
+        return
+      }
+      // Electron 模式：走原有逻辑
       if (hasInitedAdvancedAudioFeatures()) {
         await dialog({
           message: t('setting__play_media_device_error_tip'),
@@ -104,6 +207,30 @@ export default {
       } else {
         appSetting['player.mediaDeviceId'] = mediaDeviceId.value
       }
+    }
+
+    // 将 Web Audio 设备 label 映射到 mpv 设备 ID（如 coreaudio/AppleUSBAudioEngine:...）
+    const resolveMpvDevice = (label) => {
+      if (!label) return null
+      for (const d of mpvAudioDevices.value) {
+        if (d.name === label) return d.id
+      }
+      // 也尝试通过名称包含关系匹配（处理设备名格式不一致的情况）
+      for (const d of mpvAudioDevices.value) {
+        if (label.includes(d.name) || d.name.includes(label)) return d.id
+      }
+      // 如果没有匹配到，直接返回 label（让 mpv 自己解析）
+      console.warn('无法映射设备名称:', label, '可用设备:', mpvAudioDevices.value)
+      return label
+    }
+
+    const updateMpvDeviceArg = (currentArgs, deviceId, label) => {
+      const filtered = currentArgs.filter(a => !a.startsWith('--audio-device='))
+      if (deviceId && deviceId !== 'default' && deviceId !== 'Default' && deviceId !== 'communications') {
+        const mpvId = resolveMpvDevice(label)
+        filtered.push(`--audio-device=${mpvId || label}`)
+      }
+      return filtered
     }
     watch(() => appSetting['player.mediaDeviceId'], val => {
       mediaDeviceId.value = val
@@ -148,6 +275,12 @@ export default {
       isMaxOutputChannelCount,
       handleUpdateMaxOutputChannelCount,
       playQualityList,
+      playEngineList,
+      playEngine,
+      handlePlayEngineChange,
+      mpvPath,
+      mpvExtraArgs,
+      handleMpvExtraArgsChange,
       isMac,
     }
   },

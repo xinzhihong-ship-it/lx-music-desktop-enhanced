@@ -99,6 +99,31 @@ declare global {
       'player.playQuality': LX.Quality
 
       /**
+       * 播放引擎
+       */
+      'player.playEngine': 'electron' | 'mpv'
+
+      /**
+       * mpv 可执行文件路径
+       */
+      'player.mpv.path': string
+
+      /**
+       * mpv 额外启动参数
+       */
+      'player.mpv.extraArgs': string[]
+
+      /**
+       * mpv WASAPI 独占输出（Windows）
+       */
+      'player.mpv.audioExclusive': boolean
+
+      /**
+       * mpv 高保真模式，关闭 replaygain 与音频滤镜
+       */
+      'player.mpv.bitPerfectMode': boolean
+
+      /**
        * 是否显示任务栏进度条
        */
       'player.isShowTaskProgess': boolean

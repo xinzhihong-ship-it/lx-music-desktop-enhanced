@@ -3,6 +3,7 @@ import { formatPlayTime2, getRandom } from '@common/utils/common'
 import { throttle } from '@common/utils'
 import { savePlayInfo } from '@renderer/utils/ipc'
 import { onTimeupdate, getCurrentTime, getDuration, setCurrentTime, onVisibilityChange } from '@renderer/plugins/player'
+import * as mpvPlayer from '@renderer/plugins/player/mpv'
 import { playProgress, setNowPlayTime, setMaxplayTime } from '@renderer/store/player/playProgress'
 import { musicInfo, playMusicInfo, playInfo } from '@renderer/store/player/state'
 // import { getList } from '@renderer/store/utils'
@@ -178,6 +179,9 @@ export default () => {
   const rOnTimeupdate = onTimeupdate(() => {
     setNowPlayTime(getCurrentTime())
   })
+  const rOnMpvDuration = mpvPlayer.onDuration((dur: number) => {
+    setMaxplayTime(dur)
+  })
 
   let currentPlayTime = 0
   const rVisibilityChange = onVisibilityChange(() => {
@@ -192,6 +196,7 @@ export default () => {
 
   onBeforeUnmount(() => {
     rOnTimeupdate()
+    rOnMpvDuration()
     rVisibilityChange()
     // window.app_event.off('play', handlePlay)
     window.app_event.off('pause', handlePause)

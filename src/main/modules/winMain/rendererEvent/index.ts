@@ -11,6 +11,7 @@ import data from './data'
 import music from './music'
 import download from './download'
 import soundEffect from './soundEffect'
+import mpv from './mpv'
 import openAPI from './openAPI'
 import { sendEvent } from '../main'
 
@@ -38,6 +39,7 @@ export default () => {
   music()
   download()
   soundEffect()
+  mpv()
   openAPI()
 
   global.lx.event_app.on('updated_config', (keys, setting) => {

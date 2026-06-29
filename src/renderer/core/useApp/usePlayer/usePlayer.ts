@@ -5,7 +5,7 @@ import { setTitle } from '@renderer/utils'
 import {
   getCurrentTime,
   getDuration,
-  setPause, setStop,
+  setPause, setPlay as playerSetPlay, setStop,
 } from '@renderer/plugins/player'
 
 import useMediaSessionInfo from './useMediaSessionInfo'
@@ -47,8 +47,12 @@ export default () => {
   usePlayEvent()
   useLyric()
   useVolume()
-  useMaxOutputChannelCount()
-  useSoundEffect()
+  if (appSetting['player.playEngine'] == 'electron') {
+    useMaxOutputChannelCount()
+    useSoundEffect()
+  } else {
+    // mpv 高保真模式走 mpv/FFmpeg -> 系统音频输出，不经过 HTMLAudioElement/AudioContext，内置 EQ/混响/变调/声像/可视化音效链不生效。
+  }
   usePlaybackRate()
   useWatchList()
   usePreloadNextMusic()
@@ -83,6 +87,9 @@ export default () => {
   const handleCanplay = () => {
     if (window.lx.isPlayedStop) {
       setPause()
+    } else {
+      // 引擎切换后 autoplay 可能被阻止，显式播放
+      playerSetPlay()
     }
   }
   const handleEnded = () => {
