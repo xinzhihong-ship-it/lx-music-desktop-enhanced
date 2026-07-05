@@ -136,6 +136,8 @@ jobs:
     name: Mac
     runs-on: macos-latest
     # needs: CheckCode
+    env:
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
