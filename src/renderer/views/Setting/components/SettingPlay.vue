@@ -19,10 +19,10 @@ dd(v-if="playEngine == 'mpv'")
   div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_extra_args_desc') }}
 dd
   .gap-top(v-if="playEngine == 'mpv'")
-    base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="updateSetting({'player.mpv.bitPerfectMode': $event})")
+    base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="handleMpvBitPerfectChange")
     svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')")
   .gap-top(v-if="playEngine == 'mpv' && !isMac")
-    base-checkbox(id="setting_mpv_audio_exclusive" :model-value="appSetting['player.mpv.audioExclusive']" :label="$t('setting__play_mpv_audio_exclusive')" @update:model-value="updateSetting({'player.mpv.audioExclusive': $event})")
+    base-checkbox(id="setting_mpv_audio_exclusive" :model-value="appSetting['player.mpv.audioExclusive']" :label="$t('setting__play_mpv_audio_exclusive')" @update:model-value="handleMpvAudioExclusiveChange")
     svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_audio_exclusive_tip')")
   .gap-top
     base-checkbox(id="setting_player_startup_auto_play" :model-value="appSetting['player.startupAutoPlay']" :label="$t('setting__play_startup_auto_play')" @update:model-value="updateSetting({'player.startupAutoPlay': $event})")
@@ -136,6 +136,22 @@ export default {
     watch(() => appSetting['player.mpv.extraArgs'], val => {
       mpvExtraArgs.value = val.join(' ')
     })
+
+    // 切换 MPV 的 bit-perfect / WASAPI 独占等影响启动参数的设置时，
+    // 销毁当前 mpv 进程并停止播放，让下次播放按新参数重建，确保独占正确释放或获取。
+    const restartMpvForSettingChange = () => {
+      if (!isMpvEngine()) return
+      mpvPlayer.destroy().catch(() => {})
+      window.app_event.stop()
+    }
+    const handleMpvBitPerfectChange = (val) => {
+      updateSetting({ 'player.mpv.bitPerfectMode': val })
+      restartMpvForSettingChange()
+    }
+    const handleMpvAudioExclusiveChange = (val) => {
+      updateSetting({ 'player.mpv.audioExclusive': val })
+      restartMpvForSettingChange()
+    }
 
     const mediaDevices = ref([])
     const getMediaDevice = async() => {
@@ -281,6 +297,8 @@ export default {
       mpvPath,
       mpvExtraArgs,
       handleMpvExtraArgsChange,
+      handleMpvBitPerfectChange,
+      handleMpvAudioExclusiveChange,
       isMac,
     }
   },
