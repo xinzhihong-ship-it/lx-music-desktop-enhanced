@@ -117,7 +117,10 @@ export const resolveMpvPath = (): MpvPathInfo => {
   return { path: exeName, source: 'system' }
 }
 
+let instanceCounter = 0
+
 export class MpvController {
+  readonly instanceId = ++instanceCounter
   private process: ChildProcess | null = null
   private socket: net.Socket | null = null
   private ipcPath = ''
@@ -137,7 +140,7 @@ export class MpvController {
   private isPlayingState = false
   private hasFileLoaded = false
   private isPaused = true
-  private pausedAt = 0
+  pausedAt = 0
 
   async ensureStarted(): Promise<MpvPathInfo> {
     if (this.socket && this.process && !this.process.killed) {
@@ -155,7 +158,7 @@ export class MpvController {
     this.startError = null
     const mpvPath = resolveMpvPath()
     const args = this.buildArgs()
-    log.info(`MpvController starting mpv source=${mpvPath.source} path=${mpvPath.path}`)
+    log.info(`MpvController starting mpv instance=${this.instanceId} source=${mpvPath.source} path=${mpvPath.path}`)
 
     const mpvProcess = spawn(mpvPath.path, args, {
       shell: false,
@@ -199,9 +202,10 @@ export class MpvController {
   }
 
   private buildArgs(): string[] {
+    // 每个实例使用独立的 IPC 路径，避免 restartMpvController 时新旧进程竞争同一 socket/pipe。
     this.ipcPath = isWin
-      ? `\\\\.\\pipe\\lx-music-mpv-${process.pid}`
-      : path.join(os.tmpdir(), `lx-music-mpv-${process.pid}.sock`)
+      ? `\\\\.\\pipe\\lx-music-mpv-${process.pid}-${this.instanceId}`
+      : path.join(os.tmpdir(), `lx-music-mpv-${process.pid}-${this.instanceId}.sock`)
     if (!isWin) {
       try {
         fs.unlinkSync(this.ipcPath)
@@ -348,6 +352,9 @@ export class MpvController {
   }
 
   private handlePropertyChange(name?: string, data?: unknown) {
+    // 进程正在销毁时，旧实例的事件不应再转发给 renderer，避免无感切换时
+    // 旧进程退出的 pause/stopped 事件把播放状态覆盖成暂停。
+    if (this.isDestroyed) return
     switch (name) {
       case 'time-pos':
         if (typeof data == 'number') {
@@ -460,7 +467,7 @@ export class MpvController {
 
   async loadUrl(url: string): Promise<void> {
     await this.ensureStarted()
-    log.info(`MpvController load url: ${sanitizeUrl(url)}`)
+    log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
     try {
       await this.command(['loadfile', url, 'replace'])
     } catch (err: any) {
@@ -560,14 +567,18 @@ export class MpvController {
   private startPolling() {
     if (this.pollTimer) return
     this.pollTimer = setInterval(() => {
-      if (!this.socket) return
+      if (!this.socket || this.isDestroyed) return
       void this.getPosition().then(position => {
+        if (this.isDestroyed) return
         this.sendEvent('timeUpdate', position)
       }).catch(() => {})
       void this.getDuration().then(duration => {
+        if (this.isDestroyed) return
         this.sendEvent('duration', duration)
       }).catch(() => {})
       void this.getPaused().then(paused => {
+        if (this.isDestroyed) return
+
         // 定期同步暂停状态，避免 property-change 事件丢失导致 UI 与实际状态不一致。
         if (paused) {
           if (this.isPlayingState) {
@@ -601,7 +612,7 @@ export class MpvController {
     if (this.process && !this.process.killed) this.process.kill()
     this.process = null
     this.cachedPathInfo = null
-    this.isDestroyed = false
+    // 保持 isDestroyed=true，避免退出事件被误转发给 renderer 造成播放状态混乱。
   }
 
   private cleanupSocket() {
@@ -624,6 +635,7 @@ export class MpvController {
   }
 
   private sendEvent(name: MpvEventName, data?: unknown) {
+    if (this.isDestroyed && name !== 'error') return
     const eventNames: Record<MpvEventName, string> = {
       started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_started,
       loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_loaded,
@@ -635,6 +647,10 @@ export class MpvController {
       timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_timeUpdate,
       duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_duration,
       seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_seeked,
+    }
+    // 仅对状态变化类事件保留调试日志，避免 timeUpdate/duration 刷屏。
+    if (name !== 'timeUpdate' && name !== 'duration') {
+      log.info(`[MpvController sendEvent] instance=${this.instanceId} name=${name} isDestroyed=${this.isDestroyed}`)
     }
     sendEvent(eventNames[name], data)
   }
@@ -668,8 +684,56 @@ export class MpvController {
   }
 }
 
-export const mpvController = new MpvController()
+let activeMpvController = new MpvController()
+export const getMpvController = () => activeMpvController
+
+export interface MpvRestartState {
+  url?: string
+  time?: number
+  playing?: boolean
+}
+
+export const restartMpvController = async(state: MpvRestartState): Promise<void> => {
+  const oldController = activeMpvController
+  const newController = new MpvController()
+  log.info(`[restartMpvController] start old=${oldController.instanceId} new=${newController.instanceId} url=${state.url ? sanitizeUrl(state.url) : '<none>'} time=${state.time} playing=${state.playing}`)
+
+  try {
+    await newController.ensureStarted()
+    log.info(`[restartMpvController] new controller ${newController.instanceId} started`)
+    if (state.url) {
+      await newController.loadUrl(state.url)
+      log.info(`[restartMpvController] new controller ${newController.instanceId} loaded url`)
+      // 把目标恢复位置记录到 pausedAt，play() 内部会精确 seek 到该位置
+      if (state.time && state.time > 0) {
+        newController.pausedAt = state.time
+      }
+      // 在新实例加载完成后立即接管，避免 loaded 事件触发的 renderer 侧 setPause
+      // 被错误地发给旧实例；此时新实例已是 pause 状态，再多一次 pause 也无害。
+      activeMpvController = newController
+      log.info(`[restartMpvController] switched to new controller ${newController.instanceId} before play`)
+      if (state.playing) {
+        await newController.play()
+        log.info(`[restartMpvController] new controller ${newController.instanceId} playing`)
+      }
+    } else {
+      // 新进程准备就绪后再接管，避免中间状态没有可用控制器
+      activeMpvController = newController
+      log.info(`[restartMpvController] switched to new controller ${newController.instanceId}`)
+    }
+  } catch (err) {
+    // 新进程启动失败，不接管，保持旧进程可用
+    log.error('[restartMpvController] new controller failed:', err)
+    await newController.destroy()
+    throw err
+  }
+
+  // 旧进程在新进程成功接管后再销毁，实现无感切换
+  log.info(`[restartMpvController] destroying old controller ${oldController.instanceId}`)
+  await oldController.destroy()
+  log.info('[restartMpvController] done')
+}
 
 app.on('before-quit', () => {
-  void mpvController.destroy()
+  void getMpvController().destroy()
 })

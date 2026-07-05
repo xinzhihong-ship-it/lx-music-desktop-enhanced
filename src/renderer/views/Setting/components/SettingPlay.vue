@@ -7,23 +7,26 @@ dd
   div.gap-left(v-if="playEngine == 'mpv'" style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_engine_mpv_desc') }}
   div.gap-left(v-else style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_engine_electron_desc') }}
 //- mpv 专属设置
-dd(v-if="playEngine == 'mpv'")
+dd(v-if="playEngine == 'mpv'" :class="$style.mpvSection")
   h3#basic_mpv_path {{ $t('setting__play_mpv_path') }}
   div
     base-input.gap-left(v-model="mpvPath" :placeholder="$t('setting__play_mpv_path_placeholder')" @update:model-value="updateSetting({'player.mpv.path': $event})")
-  div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_path_order') }}
-dd(v-if="playEngine == 'mpv'")
+    div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_path_order') }}
+
   h3#basic_mpv_extra_args {{ $t('setting__play_mpv_extra_args') }}
   div
     base-input.gap-left(v-model="mpvExtraArgs" :placeholder="$t('setting__play_mpv_extra_args_placeholder')" @update:model-value="handleMpvExtraArgsChange")
-  div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_extra_args_desc') }}
+    div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_extra_args_desc') }}
+
+  h3#basic_mpv_audio_output {{ $t('setting__play_mpv_audio_output') }}
+  div
+    .gap-top
+      base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="handleMpvBitPerfectChange")
+      svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')")
+    .gap-top(v-if="!isMac")
+      base-checkbox(id="setting_mpv_audio_exclusive" :model-value="appSetting['player.mpv.audioExclusive']" :label="$t('setting__play_mpv_audio_exclusive')" @update:model-value="handleMpvAudioExclusiveChange")
+      svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_audio_exclusive_tip')")
 dd
-  .gap-top(v-if="playEngine == 'mpv'")
-    base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="handleMpvBitPerfectChange")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')")
-  .gap-top(v-if="playEngine == 'mpv' && !isMac")
-    base-checkbox(id="setting_mpv_audio_exclusive" :model-value="appSetting['player.mpv.audioExclusive']" :label="$t('setting__play_mpv_audio_exclusive')" @update:model-value="handleMpvAudioExclusiveChange")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_audio_exclusive_tip')")
   .gap-top
     base-checkbox(id="setting_player_startup_auto_play" :model-value="appSetting['player.startupAutoPlay']" :label="$t('setting__play_startup_auto_play')" @update:model-value="updateSetting({'player.startupAutoPlay': $event})")
   .gap-top
@@ -71,10 +74,11 @@ dd(:aria-label="$t('setting__play_mediaDevice_title')")
 </template>
 
 <script>
-import { ref, onBeforeUnmount, watch } from '@common/utils/vueTools'
+import { ref, onBeforeUnmount, watch, computed } from '@common/utils/vueTools'
 import { hasInitedAdvancedAudioFeatures, setMediaDeviceId } from '@renderer/plugins/player'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
 import { dialog } from '@renderer/plugins/Dialog'
+import showTip from '@renderer/plugins/Tips/Tips'
 import { useI18n } from '@renderer/plugins/i18n'
 import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/setting'
 import { setPowerSaveBlocker } from '@renderer/core/player/utils'
@@ -94,6 +98,12 @@ export default {
       { id: 'mpv', label: t('setting__play_engine_mpv') },
     ]
     const playEngine = ref(appSetting['player.playEngine'])
+    // 临时诊断：确认 playEngine 与 appSetting 是否一致
+    const playEngineDebug = computed(() => JSON.stringify({
+      playEngine: playEngine.value,
+      appEngine: appSetting['player.playEngine'],
+      isMpv: playEngine.value == 'mpv',
+    }))
     const handlePlayEngineChange = async() => {
       const newEngine = playEngine.value
       const oldEngine = appSetting['player.playEngine']
@@ -137,20 +147,43 @@ export default {
       mpvExtraArgs.value = val.join(' ')
     })
 
-    // 切换 MPV 的 bit-perfect / WASAPI 独占等影响启动参数的设置时，
-    // 销毁当前 mpv 进程并停止播放，让下次播放按新参数重建，确保独占正确释放或获取。
-    const restartMpvForSettingChange = () => {
+    // 切换影响 MPV 启动参数的设置时，后台重建 mpv 进程并恢复播放状态，
+    // 实现独占/非独占模式的无感切换。
+    const restartMpvForSettingChange = async() => {
       if (!isMpvEngine()) return
-      mpvPlayer.destroy().catch(() => {})
-      window.app_event.stop()
+      try {
+        await mpvPlayer.restart(isPlay.value)
+        showTip({
+          message: 'MPV 已重建，设置已生效',
+          position: { top: 80, left: window.innerWidth / 2 },
+          autoCloseTime: 1500,
+        }, { beforeClose: () => {} })
+      } catch (err) {
+        console.error('[SettingPlay] restart failed:', err)
+        showTip({
+          message: 'MPV 重建失败：' + (err?.message ?? err),
+          position: { top: 80, left: window.innerWidth / 2 },
+          autoCloseTime: 3000,
+        }, { beforeClose: () => {} })
+      }
     }
     const handleMpvBitPerfectChange = (val) => {
+      showTip({
+        message: `正在切换 Bit Perfect：${val ? '开启' : '关闭'}`,
+        position: { top: 80, left: window.innerWidth / 2 },
+        autoCloseTime: 1500,
+      }, { beforeClose: () => {} })
       updateSetting({ 'player.mpv.bitPerfectMode': val })
-      restartMpvForSettingChange()
+      void restartMpvForSettingChange()
     }
     const handleMpvAudioExclusiveChange = (val) => {
+      showTip({
+        message: `正在切换 WASAPI 独占：${val ? '开启' : '关闭'}`,
+        position: { top: 80, left: window.innerWidth / 2 },
+        autoCloseTime: 1500,
+      }, { beforeClose: () => {} })
       updateSetting({ 'player.mpv.audioExclusive': val })
-      restartMpvForSettingChange()
+      void restartMpvForSettingChange()
     }
 
     const mediaDevices = ref([])
@@ -300,7 +333,17 @@ export default {
       handleMpvBitPerfectChange,
       handleMpvAudioExclusiveChange,
       isMac,
+      playEngineDebug,
     }
   },
 }
 </script>
+
+<style lang="less" module>
+.mpvSection {
+  h3 {
+    margin-top: 20px;
+    margin-bottom: 10px;
+  }
+}
+</style>

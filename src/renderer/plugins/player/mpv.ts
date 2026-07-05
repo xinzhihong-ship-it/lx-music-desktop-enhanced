@@ -22,6 +22,7 @@ type MpvEventKey =
   | 'mpv_seeked'
 
 let empty = true
+let currentUrl = ''
 let currentTime = 0
 let duration = 0
 let volume = 100
@@ -59,6 +60,7 @@ export const init = async() => {
 }
 
 export const setResource = (src: string): Promise<void> => {
+  currentUrl = src
   currentTime = 0
   duration = 0
   // 启动恢复或加载前可能已经有待执行的 seek，保留到加载完成后再应用
@@ -90,6 +92,7 @@ export const setPause = async() => {
 
 export const setStop = async() => {
   empty = true
+  currentUrl = ''
   currentTime = 0
   duration = 0
   pendingSeekTime = null
@@ -102,11 +105,25 @@ export const listAudioDevices = async(): Promise<Array<{ id: string, name: strin
 
 export const destroy = async() => {
   empty = true
+  currentUrl = ''
   currentTime = 0
   duration = 0
   pendingSeekTime = null
   await invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_destroy)
 }
+
+export const restart = async(playing = false) => {
+  console.log('[mpv.ts restart] currentUrl=', currentUrl, 'currentTime=', currentTime, 'playing=', playing)
+  if (!currentUrl) return
+  await invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_restart, {
+    url: currentUrl,
+    time: currentTime,
+    playing,
+  })
+  console.log('[mpv.ts restart] ipc returned')
+}
+
+export const getCurrentUrl = () => currentUrl
 
 export const isEmpty = () => empty
 
@@ -176,6 +193,7 @@ on('mpv_duration', time => {
 })
 on('mpv_stopped', () => {
   empty = true
+  currentUrl = ''
   currentTime = 0
   duration = 0
   pendingSeekTime = null

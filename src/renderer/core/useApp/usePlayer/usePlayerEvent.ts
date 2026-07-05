@@ -16,12 +16,10 @@ import {
 
 export default () => {
   const rOnPlaying = onPlaying(() => {
-    console.log('onPlaying')
     window.app_event.playerPlaying()
     window.app_event.play()
   })
   const rOnPause = onPause(() => {
-    console.log('onPause')
     window.app_event.playerPause()
     window.app_event.pause()
   })

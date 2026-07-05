@@ -104,6 +104,7 @@ const modules = {
     mpv_getDuration: 'winMain_mpv_getDuration',
     mpv_getPaused: 'winMain_mpv_getPaused',
     mpv_destroy: 'winMain_mpv_destroy',
+    mpv_restart: 'winMain_mpv_restart',
     mpv_started: 'winMain_mpv_started',
     mpv_loaded: 'winMain_mpv_loaded',
     mpv_playing: 'winMain_mpv_playing',
