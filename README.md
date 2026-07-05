@@ -3,8 +3,8 @@
 <h1 align="center">LX Music 桌面版 · 增强版</h1>
 
 <p align="center">
-  <a href="https://github.com/xinzhihong/lx-music-desktop-enhanced/releases"><img src="https://img.shields.io/github/release/xinzhihong/lx-music-desktop-enhanced" alt="Release version"></a>
-  <a href="https://github.com/xinzhihong/lx-music-desktop-enhanced/blob/main/LICENSE"><img src="https://img.shields.io/github/license/xinzhihong/lx-music-desktop-enhanced" alt="License"></a>
+  <a href="https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/releases"><img src="https://img.shields.io/github/release/xinzhihong-ship-it/lx-music-desktop-enhanced" alt="Release version"></a>
+  <a href="https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/blob/main/LICENSE"><img src="https://img.shields.io/github/license/xinzhihong-ship-it/lx-music-desktop-enhanced" alt="License"></a>
 </p>
 
 <p align="center">基于 <a href="https://github.com/lyswhut/lx-music-desktop">LX Music（洛雪音乐助手）桌面版</a> 的二次开发/增强版本。</p>
@@ -48,7 +48,7 @@
 
 ### 方式一：直接下载 Release（推荐）
 
-1. 打开本项目的 [Releases](https://github.com/xinzhihong/lx-music-desktop-enhanced/releases) 页面。
+1. 打开本项目的 [Releases](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/releases) 页面。
 2. 根据你的系统选择对应安装包：
    - **Windows**：`.exe` 安装程序 或 `.7z` 绿色版
    - **macOS**：`.dmg` 镜像
@@ -69,7 +69,7 @@
 #### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/xinzhihong/lx-music-desktop-enhanced.git
+git clone https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced.git
 cd lx-music-desktop-enhanced
 ```
 
