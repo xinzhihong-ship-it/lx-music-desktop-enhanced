@@ -114,11 +114,6 @@ declare global {
       'player.mpv.extraArgs': string[]
 
       /**
-       * mpv WASAPI 独占输出（Windows）
-       */
-      'player.mpv.audioExclusive': boolean
-
-      /**
        * mpv 高保真模式，关闭 replaygain 与音频滤镜
        */
       'player.mpv.bitPerfectMode': boolean

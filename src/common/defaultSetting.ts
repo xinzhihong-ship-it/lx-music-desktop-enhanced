@@ -29,7 +29,6 @@ const defaultSetting: LX.AppSetting = {
   'player.playEngine': 'electron',
   'player.mpv.path': '',
   'player.mpv.extraArgs': [],
-  'player.mpv.audioExclusive': false,
   'player.mpv.bitPerfectMode': true,
   'player.isShowTaskProgess': true,
   'player.isShowStatusBarLyric': false,

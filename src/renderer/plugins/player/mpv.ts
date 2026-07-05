@@ -29,10 +29,17 @@ let volume = 100
 let muted = false
 let pendingSeekTime: number | null = null
 
+const setPendingSeekTime = (time: number | null) => {
+  pendingSeekTime = time
+}
+const clearPendingSeekTime = () => {
+  pendingSeekTime = null
+}
+
 const applyPendingSeek = () => {
   if (pendingSeekTime == null) return
   const time = pendingSeekTime
-  pendingSeekTime = null
+  clearPendingSeekTime()
   void invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_seek, time).catch(err => {
     console.error('mpv seek failed', err)
   })
@@ -59,27 +66,28 @@ export const init = async() => {
   return invoke<MpvPathInfo>(WIN_MAIN_RENDERER_EVENT_NAME.mpv_init)
 }
 
-export const setResource = (src: string): Promise<void> => {
+export const setResource = async(src: string): Promise<void> => {
   currentUrl = src
   currentTime = 0
   duration = 0
   // 启动恢复或加载前可能已经有待执行的 seek，保留到加载完成后再应用
   const seekTime = pendingSeekTime
-  pendingSeekTime = null
-  return invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_loadUrl, src).then(() => {
+  clearPendingSeekTime()
+  try {
+    await invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_loadUrl, src)
     empty = false
     if (seekTime != null) {
-      pendingSeekTime = seekTime
+      setPendingSeekTime(seekTime)
       applyPendingSeek()
     }
     // 正常切歌时不再这里主动 seek 0：主进程 loadUrl 已经把文件暂停在 0:00，
     // 且 play() 会在真正恢复前再 seek 一次目标位置，避免 play 和 seek 竞争导致先播后跳。
-  }).catch(err => {
+  } catch (err: any) {
     console.error('mpv load url failed:', err?.message ?? err)
     empty = true
-    pendingSeekTime = null
+    clearPendingSeekTime()
     throw err
-  })
+  }
 }
 
 export const setPlay = async() => {
@@ -114,7 +122,7 @@ export const destroy = async() => {
 
 export const restart = async(playing = false) => {
   console.log('[mpv.ts restart] currentUrl=', currentUrl, 'currentTime=', currentTime, 'playing=', playing)
-  if (!currentUrl) return
+  // currentUrl 可能因 HMR 等原因丢失，main process 会用旧控制器记录的 URL 作为 fallback
   await invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_restart, {
     url: currentUrl,
     time: currentTime,
@@ -190,6 +198,9 @@ on('mpv_timeUpdate', time => {
 })
 on('mpv_duration', time => {
   if (typeof time == 'number') duration = time
+})
+on('mpv_loaded', () => {
+  empty = false
 })
 on('mpv_stopped', () => {
   empty = true

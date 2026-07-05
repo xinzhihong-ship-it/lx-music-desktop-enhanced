@@ -138,9 +138,10 @@ export class MpvController {
   private startError: Error | null = null
   private cachedPathInfo: MpvPathInfo | null = null
   private isPlayingState = false
-  private hasFileLoaded = false
+  hasFileLoaded = false
   private isPaused = true
   pausedAt = 0
+  loadedUrl = ''
 
   async ensureStarted(): Promise<MpvPathInfo> {
     if (this.socket && this.process && !this.process.killed) {
@@ -223,9 +224,6 @@ export class MpvController {
 
     if (global.lx.appSetting['player.mpv.bitPerfectMode']) {
       args.push('--replaygain=no', '--af-clr')
-    }
-    if (isWin && global.lx.appSetting['player.mpv.audioExclusive']) {
-      args.push('--ao=wasapi', '--audio-exclusive=yes')
     }
 
     const extraArgs = global.lx.appSetting['player.mpv.extraArgs']
@@ -465,8 +463,9 @@ export class MpvController {
     return false
   }
 
-  async loadUrl(url: string): Promise<void> {
+  async loadUrl(url: string, options?: { emitLoaded?: boolean }): Promise<void> {
     await this.ensureStarted()
+    this.loadedUrl = url
     log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
     try {
       await this.command(['loadfile', url, 'replace'])
@@ -497,11 +496,14 @@ export class MpvController {
     // 否则紧接着的 play() 会把新文件 seek 到上一首的暂停位置。
     this.pausedAt = 0
     await this.command(['seek', 0, 'absolute', 'exact']).catch(() => {})
-    // 所有初始化完成后再通知 renderer 可以开始播放，保证待恢复 seek 已先应用。
-    this.sendEvent('loaded')
-    void this.getDuration().then(duration => {
-      this.sendEvent('duration', duration)
-    }).catch(() => {})
+    // restart 场景下由调用方在 play() 成功后再通知 renderer，
+    // 避免 renderer 在切换期间误发 pause 覆盖新实例的播放命令。
+    if (options?.emitLoaded !== false) {
+      this.sendEvent('loaded')
+      void this.getDuration().then(duration => {
+        this.sendEvent('duration', duration)
+      }).catch(() => {})
+    }
   }
 
   async play(): Promise<void> {
@@ -562,6 +564,11 @@ export class MpvController {
   async getPaused(): Promise<boolean> {
     await this.ensureStarted()
     return (await this.command<boolean | null>(['get_property', 'pause'])) ?? true
+  }
+
+  async getPath(): Promise<string | null> {
+    await this.ensureStarted()
+    return await this.command<string | null>(['get_property', 'path']).catch(() => null)
   }
 
   private startPolling() {
@@ -634,7 +641,7 @@ export class MpvController {
     }
   }
 
-  private sendEvent(name: MpvEventName, data?: unknown) {
+  sendEvent(name: MpvEventName, data?: unknown) {
     if (this.isDestroyed && name !== 'error') return
     const eventNames: Record<MpvEventName, string> = {
       started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_started,
@@ -686,6 +693,9 @@ export class MpvController {
 
 let activeMpvController = new MpvController()
 export const getMpvController = () => activeMpvController
+const setActiveMpvController = (controller: MpvController) => {
+  activeMpvController = controller
+}
 
 export interface MpvRestartState {
   url?: string
@@ -696,13 +706,22 @@ export interface MpvRestartState {
 export const restartMpvController = async(state: MpvRestartState): Promise<void> => {
   const oldController = activeMpvController
   const newController = new MpvController()
-  log.info(`[restartMpvController] start old=${oldController.instanceId} new=${newController.instanceId} url=${state.url ? sanitizeUrl(state.url) : '<none>'} time=${state.time} playing=${state.playing}`)
+  // renderer 端的 currentUrl 可能因 HMR 等原因丢失，优先使用 main process 记录的 URL
+  let url = state.url && state.url.length > 0 ? state.url : oldController.loadedUrl
+  log.info(`[restartMpvController] start old=${oldController.instanceId} new=${newController.instanceId} rendererUrl=${state.url ? sanitizeUrl(state.url) : '<none>'} loadedUrl=${oldController.loadedUrl ? sanitizeUrl(oldController.loadedUrl) : '<none>'} time=${state.time} playing=${state.playing}`)
+  if (!url && oldController.hasFileLoaded) {
+    const pathFromMpv = await oldController.getPath().catch(() => null)
+    log.info(`[restartMpvController] fallback path from mpv: ${pathFromMpv ? sanitizeUrl(pathFromMpv) : '<none>'}`)
+    if (pathFromMpv) url = pathFromMpv
+  }
 
   try {
     await newController.ensureStarted()
     log.info(`[restartMpvController] new controller ${newController.instanceId} started`)
-    if (state.url) {
-      await newController.loadUrl(state.url)
+    if (url) {
+      // 先不通知 renderer loaded，等 play() 成功后再补发，避免切换期间 renderer 侧
+      // handleCanplay 调用 setPause 与新实例的 play 命令竞争。
+      await newController.loadUrl(url, { emitLoaded: false })
       log.info(`[restartMpvController] new controller ${newController.instanceId} loaded url`)
       // 把目标恢复位置记录到 pausedAt，play() 内部会精确 seek 到该位置
       if (state.time && state.time > 0) {
@@ -710,15 +729,27 @@ export const restartMpvController = async(state: MpvRestartState): Promise<void>
       }
       // 在新实例加载完成后立即接管，避免 loaded 事件触发的 renderer 侧 setPause
       // 被错误地发给旧实例；此时新实例已是 pause 状态，再多一次 pause 也无害。
-      activeMpvController = newController
+      setActiveMpvController(newController)
       log.info(`[restartMpvController] switched to new controller ${newController.instanceId} before play`)
       if (state.playing) {
         await newController.play()
         log.info(`[restartMpvController] new controller ${newController.instanceId} playing`)
+        // 等待 loadUrl 阶段排队的 pause=true 事件被处理，并确认播放状态
+        await new Promise(resolve => setTimeout(resolve, 100))
+        const isPaused = await newController.getPaused().catch(() => true)
+        if (isPaused) {
+          log.warn(`[restartMpvController] controller ${newController.instanceId} still paused, replaying`)
+          await newController.play()
+        }
       }
+      // 播放命令生效后再通知 renderer，保证状态同步不会把新实例暂停。
+      newController.sendEvent('loaded')
+      void newController.getDuration().then(duration => {
+        newController.sendEvent('duration', duration)
+      }).catch(() => {})
     } else {
       // 新进程准备就绪后再接管，避免中间状态没有可用控制器
-      activeMpvController = newController
+      setActiveMpvController(newController)
       log.info(`[restartMpvController] switched to new controller ${newController.instanceId}`)
     }
   } catch (err) {

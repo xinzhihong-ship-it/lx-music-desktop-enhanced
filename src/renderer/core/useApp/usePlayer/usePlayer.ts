@@ -7,7 +7,10 @@ import {
   getDuration,
   setPause, setPlay as playerSetPlay, setStop,
 } from '@renderer/plugins/player'
-import { getShouldPlayAfterLoad, clearShouldPlayAfterLoad, getShouldPlayAfterSeek, clearShouldPlayAfterSeek } from '@renderer/core/player'
+import {
+  getShouldPlayAfterLoad, clearShouldPlayAfterLoad, getShouldPlayAfterSeek, clearShouldPlayAfterSeek,
+  playNext, pause, playPrev, togglePlay, collectMusic, uncollectMusic, dislikeMusic,
+} from '@renderer/core/player'
 
 import useMediaSessionInfo from './useMediaSessionInfo'
 import usePlayProgress from './usePlayProgress'
@@ -33,7 +36,6 @@ import useLyric from './useLyric'
 import useVolume from './useVolume'
 import useWatchList from './useWatchList'
 import { HOTKEY_PLAYER } from '@common/hotKey'
-import { playNext, pause, playPrev, togglePlay, collectMusic, uncollectMusic, dislikeMusic } from '@renderer/core/player'
 import usePlaybackRate from './usePlaybackRate'
 import useSoundEffect from './useSoundEffect'
 import useMaxOutputChannelCount from './useMaxOutputChannelCount'
@@ -99,9 +101,12 @@ export default () => {
       // 避免 seek 期间 isPlay 被浏览器临时置为 false 而误暂停。
       playerSetPlay()
       clearShouldPlayAfterSeek()
-    } else if (appSetting['player.playEngine'] == 'mpv' || !isPlay.value) {
-      // MPV 加载完成后必须显式暂停，避免误播；
-      // 内置引擎在未播放时（如启动不自动播放）也需要暂停。
+    } else if (appSetting['player.playEngine'] == 'mpv') {
+      // MPV 引擎由主进程控制播放/暂停；加载完成后若用户原本就在播放，
+      // 不主动暂停，避免与主进程切歌/restart 时的播放命令竞争。
+      if (!isPlay.value) setPause()
+    } else if (!isPlay.value) {
+      // 内置引擎在未播放时（如启动不自动播放）需要暂停。
       setPause()
     } else {
       // 内置引擎在播放中 seek/缓冲后，如果 audio 被浏览器停在暂停状态，

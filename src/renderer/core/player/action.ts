@@ -30,7 +30,7 @@ let shouldPlayAfterLoad = false
 const getMusicQualityLabel = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): string => {
   if ('progress' in musicInfo) return '下载'
   if (musicInfo.source == 'local') return '本地'
-  return getPlayQuality(appSetting['player.playQuality'], musicInfo as LX.Music.MusicInfoOnline)
+  return getPlayQuality(appSetting['player.playQuality'], musicInfo)
 }
 export const setShouldPlayAfterLoad = (val: boolean) => { shouldPlayAfterLoad = val }
 export const getShouldPlayAfterLoad = () => shouldPlayAfterLoad

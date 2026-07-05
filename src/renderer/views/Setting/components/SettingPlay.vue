@@ -1,32 +1,27 @@
 <template lang="pug">
 dt#play {{ $t('setting__play') }}
 dd
-  h3#basic_play_engine {{ $t('setting__play_engine') }}
-  div
-    base-selection.gap-left(v-model="playEngine" :list="playEngineList" item-key="id" item-name="label" @change="handlePlayEngineChange")
-  div.gap-left(v-if="playEngine == 'mpv'" style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_engine_mpv_desc') }}
-  div.gap-left(v-else style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_engine_electron_desc') }}
+  div(:class="$style.engineSection")
+    h3#basic_play_engine {{ $t('setting__play_engine') }}
+    base-selection(:class="$style.engineSelect" v-model="playEngine" :list="playEngineList" item-key="id" item-name="label" @change="handlePlayEngineChange")
+    p(:class="$style.engineDesc")
+      span(v-if="playEngine == 'mpv'") {{ $t('setting__play_engine_mpv_desc') }}
+      span(v-else) {{ $t('setting__play_engine_electron_desc') }}
 //- mpv 专属设置
-dd(v-if="playEngine == 'mpv'" :class="$style.mpvSection")
-  h3#basic_mpv_path {{ $t('setting__play_mpv_path') }}
-  div
-    base-input.gap-left(v-model="mpvPath" :placeholder="$t('setting__play_mpv_path_placeholder')" @update:model-value="updateSetting({'player.mpv.path': $event})")
-    div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_path_order') }}
-
-  h3#basic_mpv_extra_args {{ $t('setting__play_mpv_extra_args') }}
-  div
-    base-input.gap-left(v-model="mpvExtraArgs" :placeholder="$t('setting__play_mpv_extra_args_placeholder')" @update:model-value="handleMpvExtraArgsChange")
-    div.gap-left(style="font-size: 13px; color: #888; margin-top: 4px;") {{ $t('setting__play_mpv_extra_args_desc') }}
-
-  h3#basic_mpv_audio_output {{ $t('setting__play_mpv_audio_output') }}
-  div
-    .gap-top
-      base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="handleMpvBitPerfectChange")
-      svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')")
-    .gap-top(v-if="!isMac")
-      base-checkbox(id="setting_mpv_audio_exclusive" :model-value="appSetting['player.mpv.audioExclusive']" :label="$t('setting__play_mpv_audio_exclusive')" @update:model-value="handleMpvAudioExclusiveChange")
-      svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_audio_exclusive_tip')")
+dd(v-if="playEngine == 'mpv'")
+  div(:class="$style.mpvSettings")
+    div(:class="$style.formItem")
+      h3#basic_mpv_path(:class="$style.formLabel") {{ $t('setting__play_mpv_path') }}
+      base-input(:class="$style.formInput" v-model="mpvPath" :placeholder="$t('setting__play_mpv_path_placeholder')" @update:model-value="updateSetting({'player.mpv.path': $event})")
+      p(:class="$style.formDesc") {{ $t('setting__play_mpv_path_order') }}
+    div(:class="$style.formItem")
+      h3#basic_mpv_extra_args(:class="$style.formLabel") {{ $t('setting__play_mpv_extra_args') }}
+      base-input(:class="$style.formInput" v-model="mpvExtraArgs" :placeholder="$t('setting__play_mpv_extra_args_placeholder')" @update:model-value="handleMpvExtraArgsChange")
+      p(:class="$style.formDesc") {{ $t('setting__play_mpv_extra_args_desc') }}
 dd
+  .gap-top(v-if="playEngine == 'mpv'")
+    base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="handleMpvBitPerfectChange")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')")
   .gap-top
     base-checkbox(id="setting_player_startup_auto_play" :model-value="appSetting['player.startupAutoPlay']" :label="$t('setting__play_startup_auto_play')" @update:model-value="updateSetting({'player.startupAutoPlay': $event})")
   .gap-top
@@ -147,17 +142,11 @@ export default {
       mpvExtraArgs.value = val.join(' ')
     })
 
-    // 切换影响 MPV 启动参数的设置时，后台重建 mpv 进程并恢复播放状态，
-    // 实现独占/非独占模式的无感切换。
+    // 切换影响 MPV 启动参数的设置时，后台重建 mpv 进程并恢复播放状态。
     const restartMpvForSettingChange = async() => {
       if (!isMpvEngine()) return
       try {
         await mpvPlayer.restart(isPlay.value)
-        showTip({
-          message: 'MPV 已重建，设置已生效',
-          position: { top: 80, left: window.innerWidth / 2 },
-          autoCloseTime: 1500,
-        }, { beforeClose: () => {} })
       } catch (err) {
         console.error('[SettingPlay] restart failed:', err)
         showTip({
@@ -168,24 +157,9 @@ export default {
       }
     }
     const handleMpvBitPerfectChange = (val) => {
-      showTip({
-        message: `正在切换 Bit Perfect：${val ? '开启' : '关闭'}`,
-        position: { top: 80, left: window.innerWidth / 2 },
-        autoCloseTime: 1500,
-      }, { beforeClose: () => {} })
       updateSetting({ 'player.mpv.bitPerfectMode': val })
       void restartMpvForSettingChange()
     }
-    const handleMpvAudioExclusiveChange = (val) => {
-      showTip({
-        message: `正在切换 WASAPI 独占：${val ? '开启' : '关闭'}`,
-        position: { top: 80, left: window.innerWidth / 2 },
-        autoCloseTime: 1500,
-      }, { beforeClose: () => {} })
-      updateSetting({ 'player.mpv.audioExclusive': val })
-      void restartMpvForSettingChange()
-    }
-
     const mediaDevices = ref([])
     const getMediaDevice = async() => {
       const devices = await navigator.mediaDevices.enumerateDevices()
@@ -331,7 +305,6 @@ export default {
       mpvExtraArgs,
       handleMpvExtraArgsChange,
       handleMpvBitPerfectChange,
-      handleMpvAudioExclusiveChange,
       isMac,
       playEngineDebug,
     }
@@ -340,10 +313,53 @@ export default {
 </script>
 
 <style lang="less" module>
-.mpvSection {
-  h3 {
-    margin-top: 20px;
-    margin-bottom: 10px;
+@import '@renderer/assets/styles/layout.less';
+
+.engineSection {
+  // 复用全局 dd > div 的 15px 水平内边距，使标题、下拉框、说明左对齐
+}
+.engineSelect {
+  --selection-width: 260px;
+  margin-top: 3px;
+}
+.engineDesc {
+  margin-top: 6px;
+  margin-bottom: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-font-label);
+}
+
+.mpvSettings {
+  margin-top: 16px;
+}
+
+.formItem {
+  margin-bottom: 16px;
+  &:last-child {
+    margin-bottom: 0;
   }
+}
+
+.formLabel {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--color-button-font);
+}
+
+.formInput {
+  width: 100%;
+  max-width: 520px;
+  box-sizing: border-box;
+}
+
+.formDesc {
+  margin-top: 4px;
+  margin-bottom: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-font-label);
 }
 </style>
