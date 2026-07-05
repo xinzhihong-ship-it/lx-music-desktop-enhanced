@@ -57,6 +57,7 @@ const options = {
       provider: 'github',
       owner: 'xinzhihong-ship-it',
       repo: 'lx-music-desktop-enhanced',
+      releaseType: 'release',
     },
   ],
 }
