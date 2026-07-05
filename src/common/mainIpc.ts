@@ -1,3 +1,4 @@
+import { log } from '@common/utils'
 import { ipcMain } from 'electron'
 
 export function mainOn(name: string, listener: LX.IpcMainEventListener): void
@@ -33,7 +34,7 @@ export function mainHandle<T, V>(name: string, listener: LX.IpcMainInvokeEventLi
     try {
       return await listener({ event, params })
     } catch (err: any) {
-      console.error(`[mainHandle] ${name} error:`, err)
+      log.error(`[mainHandle] ${name} error:`, err)
       if (err instanceof Error) throw err
       let message = err?.message
       if (message == null) message = typeof err === 'string' ? err : String(err)

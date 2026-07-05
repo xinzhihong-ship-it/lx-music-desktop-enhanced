@@ -124,6 +124,10 @@ export class AppEvent extends Event {
     this.emit('playerWaiting')
   }
 
+  playerSeeked() {
+    this.emit('playerSeeked')
+  }
+
   playerDeviceChanged() {
     this.emit('playerDeviceChanged')
   }

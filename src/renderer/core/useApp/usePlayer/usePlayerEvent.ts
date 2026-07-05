@@ -9,6 +9,7 @@ import {
   onCanplay,
   onEmptied,
   onWaiting,
+  onSeeked,
   getErrorCode,
 } from '@renderer/plugins/player'
 
@@ -54,8 +55,13 @@ export default () => {
   })
   const rOnWaiting = onWaiting(() => {
     console.log('onWaiting')
-    window.app_event.pause()
+    // 内置引擎在缓冲时不应真正暂停 audio，否则 seek/缓冲结束后会停在暂停状态。
+    // 只需要显示缓冲状态并启动缓冲超时检测。
     window.app_event.playerWaiting()
+  })
+  const rOnSeeked = onSeeked(() => {
+    console.log('onSeeked')
+    window.app_event.playerSeeked()
   })
 
 
@@ -69,5 +75,6 @@ export default () => {
     rOnCanplay()
     rOnEmptied()
     rOnWaiting()
+    rOnSeeked()
   })
 }

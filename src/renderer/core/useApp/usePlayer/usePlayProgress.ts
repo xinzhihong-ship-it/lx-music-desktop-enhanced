@@ -2,13 +2,14 @@ import { onBeforeUnmount, watch } from '@common/utils/vueTools'
 import { formatPlayTime2, getRandom } from '@common/utils/common'
 import { throttle } from '@common/utils'
 import { savePlayInfo } from '@renderer/utils/ipc'
-import { onTimeupdate, getCurrentTime, getDuration, setCurrentTime, onVisibilityChange } from '@renderer/plugins/player'
+import { onTimeupdate, getCurrentTime, getDuration, setCurrentTime, setPlay, onVisibilityChange } from '@renderer/plugins/player'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
+import { clearPendingSeek } from '@renderer/plugins/player/mpv'
 import { playProgress, setNowPlayTime, setMaxplayTime } from '@renderer/store/player/playProgress'
-import { musicInfo, playMusicInfo, playInfo } from '@renderer/store/player/state'
+import { musicInfo, playMusicInfo, playInfo, isPlay } from '@renderer/store/player/state'
 // import { getList } from '@renderer/store/utils'
 import { appSetting } from '@renderer/store/setting'
-import { playNext } from '@renderer/core/player'
+import { playNext, setShouldPlayAfterSeek } from '@renderer/core/player'
 import { updateListMusics } from '@renderer/store/list/action'
 
 const delaySavePlayInfo = throttle(savePlayInfo, 2000)
@@ -60,6 +61,8 @@ export default () => {
 
   const setProgress = (time: number, maxTime?: number) => {
     if (!musicInfo.id) return
+    // 记录拖动前的播放状态，用于内置引擎 seek 后主动恢复。
+    const wasPlaying = isPlay.value
     if (maxTime != null) setMaxplayTime(maxTime)
     console.log('setProgress', time, maxTime)
     if (time > 0) restorePlayTime = time
@@ -69,13 +72,27 @@ export default () => {
       startBuffering()
     }
     setNowPlayTime(time)
+
+    // 内置引擎拖动进度条前若正在播放，则标记 seek 后需要恢复播放，
+    // 避免 audio seek 期间 isPlay 被临时置为 false 导致 canplay 时误暂停。
+    if (appSetting['player.playEngine'] == 'electron' && wasPlaying) {
+      setShouldPlayAfterSeek(true)
+    }
+
     setCurrentTime(time)
 
-    // if (!isPlay) audio.play()
+    // 内置引擎在拖动进度条后，某些情况下 audio 会被浏览器停在暂停状态，
+    // 如果拖动前正在播放，则主动调用 play() 恢复。
+    if (appSetting['player.playEngine'] == 'electron' && wasPlaying) {
+      setPlay()
+    }
   }
 
   const handlePause = () => {
     clearBufferTimeout()
+    // 暂停时清空残留的恢复位置，避免恢复播放时被旧 seek 目标拉回去。
+    restorePlayTime = 0
+    mediaBuffer.playTime = 0
   }
 
   const handleStop = () => {
@@ -90,6 +107,13 @@ export default () => {
 
   const handleLoadeddata = () => {
     setMaxplayTime(getDuration())
+
+    // 启动恢复时，在文件加载完成后立即 seek 到上次保存的位置，
+    // 避免 MPV 先开始播放再 seek 造成的短暂“从头播放”。
+    if (restorePlayTime > 0) {
+      setCurrentTime(restorePlayTime)
+      restorePlayTime = 0
+    }
 
     if (playMusicInfo.musicInfo && 'source' in playMusicInfo.musicInfo && !playMusicInfo.musicInfo.interval) {
       // console.log(formatPlayTime2(playProgress.maxPlayTime))
@@ -128,9 +152,10 @@ export default () => {
   }
 
   const handleSetPlayInfo = () => {
-    // restorePlayTime = playProgress.nowPlayTime
-    setCurrentTime(restorePlayTime = playProgress.nowPlayTime)
-    // setMaxplayTime(playProgress.maxPlayTime)
+    // 切歌时新文件应从头播放，不应继承上一首歌的 restorePlayTime，
+    // 否则 MPV 加载后会 seek 到上一首歌的位置，出现“回退/跳跃几秒”。
+    restorePlayTime = 0
+    clearPendingSeek()
     handlePause()
     if (!playMusicInfo.isTempPlay && playMusicInfo.listId) {
       delaySavePlayInfo({

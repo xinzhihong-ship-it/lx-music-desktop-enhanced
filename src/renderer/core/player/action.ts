@@ -1,4 +1,4 @@
-import { isEmpty, setPause, setPlay, setResource, setStop } from '@renderer/plugins/player'
+import { isEmpty, setPause, setPlay, setResource, setStop, getCurrentTime, setCurrentTime } from '@renderer/plugins/player'
 import { isPlay, playedList, playInfo, playMusicInfo, tempPlayList, musicInfo as _musicInfo } from '@renderer/store/player/state'
 import {
   getList,
@@ -11,9 +11,11 @@ import {
   removeTempPlayList,
   setPlayListId,
   removePlayedList,
+  setPlayQuality,
 } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { getMusicUrl, getPicPath, getLyricInfo } from '../music/index'
+import { getPlayQuality } from '../music/utils'
 import { filterList } from './utils'
 import { requestMsg } from '@renderer/utils/message'
 import { getRandom } from '@renderer/utils/index'
@@ -23,6 +25,24 @@ import { addDislikeInfo } from '@renderer/core/dislikeList'
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
 let gettingUrlId = ''
+let shouldPlayAfterLoad = false
+
+const getMusicQualityLabel = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): string => {
+  if ('progress' in musicInfo) return '下载'
+  if (musicInfo.source == 'local') return '本地'
+  return getPlayQuality(appSetting['player.playQuality'], musicInfo as LX.Music.MusicInfoOnline)
+}
+export const setShouldPlayAfterLoad = (val: boolean) => { shouldPlayAfterLoad = val }
+export const getShouldPlayAfterLoad = () => shouldPlayAfterLoad
+export const clearShouldPlayAfterLoad = () => { shouldPlayAfterLoad = false }
+// 内置引擎拖动进度条后，若拖动前正在播放，则应在 canplay 时恢复播放，
+// 避免 audio seek 期间 isPlay 被临时置为 false 导致 handleCanplay 误暂停。
+let shouldPlayAfterSeek = false
+export const setShouldPlayAfterSeek = (val: boolean) => { shouldPlayAfterSeek = val }
+export const getShouldPlayAfterSeek = () => shouldPlayAfterSeek
+export const clearShouldPlayAfterSeek = () => { shouldPlayAfterSeek = false }
+// renderer 端也记录暂停位置，作为 MPV 主进程 pausedAt 失效时的兜底。
+let rendererPausedAt = 0
 const createGettingUrlId = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem) => {
   const tInfo = 'progress' in musicInfo ? musicInfo.metadata.musicInfo.meta.toggleMusicInfo : musicInfo.meta.toggleMusicInfo
   return `${musicInfo.id}_${tInfo?.id ?? ''}`
@@ -131,7 +151,22 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   if (cancelDelayRetry) cancelDelayRetry()
   gettingUrlId = createGettingUrlId(musicInfo)
   void getMusicPlayUrl(musicInfo, isRefresh).then((url) => {
-    if (!url) return
+    if (!url) {
+      // 没有获取到 URL 时，如果是用户主动播放/自动播放则按错误处理；
+      // 否则（如启动预加载）清空加载状态，避免一直显示“音乐加载中...”。
+      if (shouldPlayAfterLoad) {
+        setAllStatus(window.i18n.t('player__error'))
+        window.app_event.error()
+      } else {
+        setAllStatus('')
+        window.app_event.playerEmptied()
+      }
+      return
+    }
+    // 记录当前播放音质，用于在主界面显示。
+    if (musicInfo.id == playMusicInfo.musicInfo?.id) {
+      setPlayQuality(getMusicQualityLabel(musicInfo))
+    }
     setResource(url)
   }).catch((err: any) => {
     console.log(err)
@@ -151,10 +186,19 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
   const musicInfo = playMusicInfo.musicInfo
   if (!musicInfo) return
 
+  const autoPlay = appSetting['player.startupAutoPlay']
+
+  // MPV 引擎在启动时不会保留播放状态，需要重新加载 URL；
+  // 内置引擎则保持原有行为，由用户手动触发或 startupAutoPlay 控制。
+  if (appSetting['player.playEngine'] == 'mpv') {
+    shouldPlayAfterLoad = autoPlay
+    setMusicUrl(musicInfo)
+  }
+
   setImmediate(() => {
     if (musicInfo.id != playMusicInfo.musicInfo?.id) return
     window.app_event.setProgress(appSetting['player.isSavePlayTime'] ? restorePlayInfo.time : 0, restorePlayInfo.maxTime)
-    window.app_event.pause()
+    if (!autoPlay) window.app_event.pause()
   })
 
 
@@ -187,6 +231,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
 // 处理音乐播放
 const handlePlay = () => {
   window.lx.isPlayedStop &&= false
+  rendererPausedAt = 0
 
   resetRandomNextMusicInfo()
   if (window.lx.restorePlayInfo) {
@@ -207,6 +252,7 @@ const handlePlay = () => {
 
   if (appSetting['player.togglePlayMethod'] == 'random' && !playMusicInfo.isTempPlay) addPlayedList({ ...(playMusicInfo as LX.Player.PlayMusicInfo) })
 
+  shouldPlayAfterLoad = true
   setMusicUrl(musicInfo)
 
   void getPicPath({ musicInfo, listId: playMusicInfo.listId }).then((url: string) => {
@@ -584,8 +630,18 @@ export const play = () => {
   window.lx.isPlayedStop &&= false
   if (playMusicInfo.musicInfo == null) return
   if (isEmpty()) {
-    if (createGettingUrlId(playMusicInfo.musicInfo) != gettingUrlId) setMusicUrl(playMusicInfo.musicInfo)
+    if (createGettingUrlId(playMusicInfo.musicInfo) != gettingUrlId) {
+      shouldPlayAfterLoad = true
+      setMusicUrl(playMusicInfo.musicInfo)
+    }
     return
+  }
+  clearShouldPlayAfterLoad()
+  // renderer 端兜底：如果主进程没有正确恢复暂停位置，先把进度 seek 回去再播放。
+  if (rendererPausedAt > 0) {
+    const resumeTime = rendererPausedAt
+    rendererPausedAt = 0
+    setCurrentTime(resumeTime)
   }
   setPlay()
 }
@@ -594,6 +650,8 @@ export const play = () => {
  * 暂停播放
  */
 export const pause = () => {
+  clearShouldPlayAfterLoad()
+  rendererPausedAt = getCurrentTime()
   setPause()
 }
 
@@ -601,6 +659,8 @@ export const pause = () => {
  * 停止播放
  */
 export const stop = () => {
+  clearShouldPlayAfterLoad()
+  setPlayQuality('')
   setStop()
   setTimeout(() => {
     window.app_event.stop()

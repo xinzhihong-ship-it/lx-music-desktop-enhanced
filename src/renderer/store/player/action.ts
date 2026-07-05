@@ -12,6 +12,7 @@ import {
   playMusicInfo,
   playedList,
   tempPlayList,
+  playQuality,
 } from './state'
 import { getListMusicsFromCache } from '@renderer/store/list/action'
 import { downloadList } from '@renderer/store/download/state'
@@ -54,6 +55,10 @@ export const setAllStatus = (val: string) => {
   console.log('setAllStatus', val)
   status.value = val
   statusText.value = val
+}
+
+export const setPlayQuality = (val: string) => {
+  playQuality.value = val
 }
 
 

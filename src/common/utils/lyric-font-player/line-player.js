@@ -185,7 +185,7 @@ export default class LinePlayer {
   }
 
   play(curTime = 0) {
-    if (!this.lines.length) return
+    if (!this.lines || !this.lines.length) return
     this.pause()
     this.isPlay = true
 
@@ -212,7 +212,7 @@ export default class LinePlayer {
 
   setPlaybackRate(rate) {
     this._rate = rate
-    if (!this.lines.length) return
+    if (!this.lines || !this.lines.length) return
     if (!this.isPlay) return
     this.play(this._currentTime())
   }

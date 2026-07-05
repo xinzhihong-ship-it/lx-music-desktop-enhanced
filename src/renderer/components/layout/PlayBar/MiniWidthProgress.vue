@@ -5,8 +5,11 @@
       <div v-else :class="$style.emptyPic">L<span>X</span></div>
     </div>
     <div :class="$style.infoContent">
-      <div :class="$style.title" :aria-label="title + $t('copy_tip')" @click="handleCopy(title)">
-        {{ title }}
+      <div :class="$style.titleRow">
+        <div :class="$style.title" :aria-label="title + $t('copy_tip')" @click="handleCopy(title)">
+          {{ title }}
+        </div>
+        <play-quality-tag />
       </div>
       <div :class="$style.status">{{ statusText }}</div>
     </div>
@@ -51,6 +54,7 @@ import { useRouter } from '@common/utils/vueRouter'
 import { clipboardWriteText } from '@common/utils/electron'
 import ControlBtns from './ControlBtns.vue'
 import PlayProgress from './PlayProgress.vue'
+import PlayQualityTag from './PlayQualityTag.vue'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 // import { lyric } from '@renderer/core/share/lyric'
 import {
@@ -75,6 +79,7 @@ export default {
   components: {
     ControlBtns,
     PlayProgress,
+    PlayQualityTag,
   },
   setup() {
     const router = useRouter()
@@ -244,8 +249,16 @@ export default {
   line-height: 1.5;
 }
 
-.title {
+.titleRow {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  min-width: 0;
   max-width: 100%;
+}
+.title {
+  flex: auto;
+  min-width: 0;
   font-size: 12px;
   color: var(--color-font-label);
   .mixin-ellipsis-1();

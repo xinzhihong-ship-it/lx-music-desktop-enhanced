@@ -31,6 +31,7 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
 
 <script>
 import { importUserApi, removeUserApi, showSelectDialog, setAllowShowUserApiUpdateAlert } from '@renderer/utils/ipc'
+import { writeRendererLog } from '@common/rendererIpc'
 import { readFile } from '@common/utils/nodejs'
 import { openUrl } from '@common/utils/electron'
 import apiSourceInfo from '@renderer/utils/musicSdk/api-source-info'
@@ -65,11 +66,27 @@ export default {
   },
   methods: {
     async importUserApi(script) {
+      writeRendererLog('[UserApiModal importUserApi] called, script length:', script?.length, 'type:', typeof script)
+      console.log('[UserApiModal importUserApi] script length:', script?.length)
       return importUserApi(script).then(({ apiList }) => {
+        console.log('[UserApiModal importUserApi] success, apiList length:', apiList?.length)
         userApi.list = apiList
       }).catch((err) => {
+        writeRendererLog('[UserApiModal importUserApi] catch error:', err)
+        console.error('[UserApiModal importUserApi] error:', err)
+        const typeInfo = `type=${typeof err}, isError=${err instanceof Error}, toString=${Object.prototype.toString.call(err)}`
+        const rawValue = `raw=${String(err)}`
         const message = String(err?.message ?? err)
-        void dialog(this.$t('user_api_import__failed', { message }))
+        const detail = (() => {
+          try {
+            return JSON.stringify(err, Object.getOwnPropertyNames(err), 2)
+          } catch {
+            return String(err)
+          }
+        })()
+        const stack = err?.stack ? String(err.stack) : ''
+        const fullMessage = `${message}\n\n${typeInfo}\n${rawValue}\n\nDetail:\n${detail}${stack ? '\n\nStack:\n' + stack : ''}`
+        void dialog(this.$t('user_api_import__failed', { message: fullMessage }))
       })
     },
     handleImport() {

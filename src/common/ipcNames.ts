@@ -113,6 +113,7 @@ const modules = {
     mpv_error: 'winMain_mpv_error',
     mpv_timeUpdate: 'winMain_mpv_timeUpdate',
     mpv_duration: 'winMain_mpv_duration',
+    mpv_seeked: 'winMain_mpv_seeked',
     mpv_listAudioDevices: 'winMain_mpv_listAudioDevices',
     save_sound_effect_pitch_shifter_preset: 'winMain_save_sound_effect_pitch_shifter_preset',
     get_hot_key: 'winMain_get_hot_key',

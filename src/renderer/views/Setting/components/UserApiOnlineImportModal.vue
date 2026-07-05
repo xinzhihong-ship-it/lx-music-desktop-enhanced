@@ -20,6 +20,7 @@
 
 <script>
 import { dialog } from '@renderer/plugins/Dialog'
+import { writeRendererLog } from '@common/rendererIpc'
 import { httpFetch } from '@renderer/utils/request'
 
 export default {
@@ -60,11 +61,25 @@ export default {
       this.disabled = true
       this.btnText = this.$t('user_api_import_online__input_loading')
       let script
+      writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetching url:', url)
       try {
         script = await httpFetch(url, { follow_max: 3 }).promise.then(resp => resp.body)
+        writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetch success, script length:', script?.length)
       } catch (err) {
+        writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetch error:', err)
+        const typeInfo = `type=${typeof err}, isError=${err instanceof Error}, toString=${Object.prototype.toString.call(err)}`
+        const rawValue = `raw=${String(err)}`
         const message = String(err?.message ?? err)
-        void dialog(this.$t('user_api_import__failed', { message }))
+        const detail = (() => {
+          try {
+            return JSON.stringify(err, Object.getOwnPropertyNames(err), 2)
+          } catch {
+            return String(err)
+          }
+        })()
+        const stack = err?.stack ? String(err.stack) : ''
+        const fullMessage = `${message}\n\n${typeInfo}\n${rawValue}\n\nDetail:\n${detail}${stack ? '\n\nStack:\n' + stack : ''}`
+        void dialog(this.$t('user_api_import__failed', { message: fullMessage }))
         return
       } finally {
         this.disabled = false

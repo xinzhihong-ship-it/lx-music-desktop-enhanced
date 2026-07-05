@@ -15,7 +15,7 @@ export interface MpvPathInfo {
   source: MpvPathSource
 }
 
-type MpvEventName = 'started' | 'loaded' | 'playing' | 'pause' | 'stopped' | 'ended' | 'error' | 'timeUpdate' | 'duration'
+type MpvEventName = 'started' | 'loaded' | 'playing' | 'pause' | 'stopped' | 'ended' | 'error' | 'timeUpdate' | 'duration' | 'seeked'
 
 interface MpvIpcResponse {
   request_id?: number
@@ -135,6 +135,9 @@ export class MpvController {
   private startError: Error | null = null
   private cachedPathInfo: MpvPathInfo | null = null
   private isPlayingState = false
+  private hasFileLoaded = false
+  private isPaused = true
+  private pausedAt = 0
 
   async ensureStarted(): Promise<MpvPathInfo> {
     if (this.socket && this.process && !this.process.killed) {
@@ -169,6 +172,8 @@ export class MpvController {
     mpvProcess.once('error', err => {
       this.startError = err
       this.isPlayingState = false
+      this.hasFileLoaded = false
+      this.isPaused = true
       this.rejectAll(err)
       this.sendEvent('error', { message: err.message })
     })
@@ -176,6 +181,8 @@ export class MpvController {
       const message = `mpv exited code=${code ?? 'null'} signal=${signal ?? 'null'}`
       log.warn(message)
       this.isPlayingState = false
+      this.hasFileLoaded = false
+      this.isPaused = true
       this.cleanupSocket()
       this.rejectAll(new Error(message))
       if (!this.isDestroyed) this.sendEvent('error', { message })
@@ -207,6 +214,7 @@ export class MpvController {
       '--force-window=no',
       '--audio-display=no',
       `--input-ipc-server=${this.ipcPath}`,
+      '--hr-seek=yes',
     ]
 
     if (global.lx.appSetting['player.mpv.bitPerfectMode']) {
@@ -307,22 +315,24 @@ export class MpvController {
 
     switch (message.event) {
       case 'file-loaded':
-        this.sendEvent('loaded')
+        this.hasFileLoaded = true
+        // loaded / duration 事件推迟到 loadUrl 完成所有初始化（pause、seek 0）后再发送，
+        // 避免 renderer 在待恢复 seek 还没应用前就进入播放。
         if (this.fileLoadedResolve) this.fileLoadedResolve()
-        void this.getDuration().then(duration => {
-          this.sendEvent('duration', duration)
-        }).catch(() => {})
         break
       case 'playback-restart':
-        if (!this.isPlayingState) {
+        // 只有在真正有文件在播放时才上报 playing，避免空闲/加载状态误报。
+        if (this.hasFileLoaded && !this.isPaused && !this.isPlayingState) {
           this.sendEvent('playing')
           this.isPlayingState = true
+          this.startPolling()
         }
-        this.startPolling()
         break
       case 'end-file':
+        this.hasFileLoaded = false
         this.stopPolling()
         this.isPlayingState = false
+        this.pausedAt = 0
         if (message.reason == 'eof') {
           this.sendEvent('ended')
         } else if (message.reason == 'error') {
@@ -340,26 +350,42 @@ export class MpvController {
   private handlePropertyChange(name?: string, data?: unknown) {
     switch (name) {
       case 'time-pos':
-        if (typeof data == 'number') this.sendEvent('timeUpdate', data)
+        if (typeof data == 'number') {
+          this.sendEvent('timeUpdate', data)
+          // time-pos 变化意味着文件已加载且正在推进；某些场景下 file-loaded 或
+          // pause property-change 可能延迟/丢失，这里补充同步状态，避免 UI 卡在加载中。
+          // 但必须排除已暂停的情况，否则暂停后的残余 time-pos 更新会误报 playing。
+          if (!this.hasFileLoaded) this.hasFileLoaded = true
+          if (!this.isPaused && !this.isPlayingState) {
+            this.sendEvent('playing')
+            this.isPlayingState = true
+            this.startPolling()
+          }
+        }
         break
       case 'duration':
         if (typeof data == 'number') this.sendEvent('duration', data)
         break
       case 'pause':
+        this.isPaused = !!data
         if (data) {
           this.sendEvent('pause')
           this.isPlayingState = false
           this.stopPolling()
         } else {
-          if (!this.isPlayingState) {
+          // MPV 在空闲/未加载文件时 pause 也可能为 false，
+          // 必须确认已有文件加载完成才上报 playing，否则会出现“假播放”。
+          if (this.hasFileLoaded && !this.isPlayingState) {
             this.sendEvent('playing')
             this.isPlayingState = true
+            this.startPolling()
           }
-          this.startPolling()
         }
         break
       case 'idle-active':
         if (data) {
+          this.hasFileLoaded = false
+          this.isPaused = true
           this.stopPolling()
           this.isPlayingState = false
           this.sendEvent('stopped')
@@ -422,29 +448,82 @@ export class MpvController {
     return this.fileLoadedPromise
   }
 
+  private async waitForProperty<T>(name: string, expected: T, timeout = 2000): Promise<boolean> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const value = await this.command<T>(['get_property', name]).catch(() => null)
+      if (value === expected) return true
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    return false
+  }
+
   async loadUrl(url: string): Promise<void> {
     await this.ensureStarted()
     log.info(`MpvController load url: ${sanitizeUrl(url)}`)
-    await this.command(['loadfile', url, 'replace'])
-    await this.waitForFileLoaded().catch(() => {})
-    await this.command(['set_property', 'pause', false]).catch(() => {})
-    this.startPolling()
+    try {
+      await this.command(['loadfile', url, 'replace'])
+    } catch (err: any) {
+      // 某些 MPV 启动状态下会把 replace 标志误解析为 index 参数，
+      // 重试一次不带 flags（replace 是默认值）。
+      const msg = err?.message ?? ''
+      if (msg.includes('invalid parameter') || msg.includes('incompatible type')) {
+        log.warn(`loadfile with replace failed (${msg}), retrying without flags`)
+        await new Promise(resolve => setTimeout(resolve, 200))
+        await this.command(['loadfile', url])
+      } else {
+        throw err
+      }
+    }
+    await this.waitForFileLoaded()
+    // 文件加载完成后立即置为暂停，使 pause 属性从 false/undefined 变为 true，
+    // 从而触发 property-change 事件；同时避免 MPV 在加载后进入 playback-restart
+    // 并误报 playing 事件。
+    await this.command(['set_property', 'pause', true]).catch(() => {})
+    // 等待 pause=true 真正生效后再返回，避免 renderer 紧接着调用 play() 时
+    // 与 pause=true 命令竞争，导致播放/暂停状态错乱。
+    const paused = await this.waitForProperty('pause', true)
+    this.isPaused = paused
+    this.isPlayingState = false
+    this.stopPolling()
+    // 新文件加载后必须回到 0:00，且要清除上一首残留的 pausedAt，
+    // 否则紧接着的 play() 会把新文件 seek 到上一首的暂停位置。
+    this.pausedAt = 0
+    await this.command(['seek', 0, 'absolute', 'exact']).catch(() => {})
+    // 所有初始化完成后再通知 renderer 可以开始播放，保证待恢复 seek 已先应用。
+    this.sendEvent('loaded')
+    void this.getDuration().then(duration => {
+      this.sendEvent('duration', duration)
+    }).catch(() => {})
   }
 
   async play(): Promise<void> {
     await this.ensureStarted()
+    // 恢复/开始播放前先把位置对齐到目标（暂停位置或 0），再解除暂停。
+    // 这样可以避免 MPV 在加载后从错误位置先播一小段，然后又被 seek 拉回头。
+    const target = this.pausedAt > 0 ? this.pausedAt : 0
+    this.pausedAt = 0
+    await this.command(['seek', target, 'absolute', 'exact']).catch(() => {})
     await this.command(['set_property', 'pause', false])
-    this.startPolling()
+    // 轮询由 pause=false 的 property-change 启动，避免在真正恢复前误报 pause。
   }
 
   async pause(): Promise<void> {
     await this.ensureStarted()
+    // 先立即发送暂停命令，避免等待 get_position 造成 UI 反应慢；
+    // 恢复播放时使用 exact seek，即使 pausedAt 是包边界也能精确对齐。
     await this.command(['set_property', 'pause', true])
+    // 立刻把内部状态置为暂停，避免 pause property-change 回来前，
+    // 轮询/time-pos 误发 playing 导致播放按钮闪烁。
+    this.isPaused = true
+    this.isPlayingState = false
     this.stopPolling()
+    this.pausedAt = await this.getPosition().catch(() => 0)
   }
 
   async stop(): Promise<void> {
     if (!this.socket) return
+    this.pausedAt = 0
     await this.command(['stop']).catch(() => {})
     this.stopPolling()
     this.sendEvent('stopped')
@@ -452,7 +531,10 @@ export class MpvController {
 
   async seek(seconds: number): Promise<void> {
     await this.ensureStarted()
-    await this.command(['seek', seconds, 'absolute'])
+    // 使用 absolute+exact seek，配合 --hr-seek=yes，避免按关键帧 seek 造成的回退/前进偏移。
+    await this.command(['seek', seconds, 'absolute', 'exact'])
+    this.pausedAt = seconds
+    this.sendEvent('seeked')
   }
 
   async setVolume(volume: number): Promise<void> {
@@ -485,6 +567,18 @@ export class MpvController {
       void this.getDuration().then(duration => {
         this.sendEvent('duration', duration)
       }).catch(() => {})
+      void this.getPaused().then(paused => {
+        // 定期同步暂停状态，避免 property-change 事件丢失导致 UI 与实际状态不一致。
+        if (paused) {
+          if (this.isPlayingState) {
+            this.isPlayingState = false
+            this.sendEvent('pause')
+          }
+        } else if (this.hasFileLoaded && !this.isPlayingState) {
+          this.isPlayingState = true
+          this.sendEvent('playing')
+        }
+      }).catch(() => {})
     }, 1000)
   }
 
@@ -497,6 +591,8 @@ export class MpvController {
   async destroy(): Promise<void> {
     this.isDestroyed = true
     this.isPlayingState = false
+    this.hasFileLoaded = false
+    this.isPaused = true
     this.stopPolling()
     if (this.socket) {
       await this.command(['quit']).catch(() => {})
@@ -538,6 +634,7 @@ export class MpvController {
       error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_error,
       timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_timeUpdate,
       duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_duration,
+      seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_seeked,
     }
     sendEvent(eventNames[name], data)
   }

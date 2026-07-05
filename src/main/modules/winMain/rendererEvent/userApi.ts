@@ -1,3 +1,4 @@
+import { log } from '@common/utils'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { mainHandle } from '@common/mainIpc'
 import {
@@ -13,8 +14,10 @@ import {
 import { sendEvent } from '@main/modules/winMain/main'
 
 export default () => {
-  mainHandle<string, LX.UserApi.ImportUserApi>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, async({ params: script }) => {
-    return importApi(script)
+  mainHandle<string, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, async({ params: script }) => {
+    await importApi(script)
+    log.info('[rendererEvent import_user_api] importApi done, returning true')
+    return true
   })
 
   mainHandle<string[], LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.remove_user_api, async({ params: apiIds }) => {

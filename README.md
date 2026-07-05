@@ -1,119 +1,145 @@
-<p align="center"><a href="https://github.com/lyswhut/lx-music-desktop"><img width="200" src="https://github.com/lyswhut/lx-music-desktop/blob/master/doc/images/icon.png" alt="lx-music logo"></a></p>
+<p align="center"><img width="160" src="./doc/images/icon.png" alt="LX Music Enhanced logo"></p>
 
-<h1 align="center">LX Music 桌面版</h1>
+<h1 align="center">LX Music 桌面版 · 增强版</h1>
 
 <p align="center">
-  <a href="https://github.com/lyswhut/lx-music-desktop/releases"><img src="https://img.shields.io/github/release/lyswhut/lx-music-desktop" alt="Release version"></a>
-  <a href="https://github.com/lyswhut/lx-music-desktop/actions/workflows/release.yml"><img src="https://github.com/lyswhut/lx-music-desktop/workflows/Build/badge.svg" alt="Build status"></a>
-  <a href="https://github.com/lyswhut/lx-music-desktop/actions/workflows/beta-pack.yml"><img src="https://github.com/lyswhut/lx-music-desktop/workflows/Build%20Beta/badge.svg" alt="Build status"></a>
-  <a href="https://electronjs.org/releases/stable"><img src="https://img.shields.io/github/package-json/dependency-version/lyswhut/lx-music-desktop/dev/electron/master" alt="Electron version"></a>
-  <!-- <a href="https://github.com/lyswhut/lx-music-desktop/releases"><img src="https://img.shields.io/github/downloads/lyswhut/lx-music-desktop/latest/total" alt="Downloads"></a> -->
-  <a href="https://github.com/lyswhut/lx-music-desktop/tree/dev"><img src="https://img.shields.io/github/package-json/v/lyswhut/lx-music-desktop/dev" alt="Dev branch version"></a>
-  <!-- <a href="https://github.com/lyswhut/lx-music-desktop/blob/master/LICENSE"><img src="https://img.shields.io/github/license/lyswhut/lx-music-desktop" alt="License"></a> -->
+  <a href="https://github.com/xinzhihong/lx-music-desktop-enhanced/releases"><img src="https://img.shields.io/github/release/xinzhihong/lx-music-desktop-enhanced" alt="Release version"></a>
+  <a href="https://github.com/xinzhihong/lx-music-desktop-enhanced/blob/main/LICENSE"><img src="https://img.shields.io/github/license/xinzhihong/lx-music-desktop-enhanced" alt="License"></a>
 </p>
 
-<!-- [![GitHub release][1]][2]
-[![Build status][3]][4]
-[![GitHub Releases Download][5]][6]
-[![dev branch][7]][8]
-[![GitHub license][9]][10] -->
-
-<!-- [1]: https://img.shields.io/github/release/lyswhut/lx-music-desktop
-[2]: https://github.com/lyswhut/lx-music-desktop/releases
-[3]: https://ci.appveyor.com/api/projects/status/flrsqd5ymp8fnte5?svg=true
-[4]: https://ci.appveyor.com/project/lyswhut/lx-music-desktop
-[5]: https://img.shields.io/github/downloads/lyswhut/lx-music-desktop/latest/total
-[5]: https://img.shields.io/github/downloads/lyswhut/lx-music-desktop/total
-[6]: https://github.com/lyswhut/lx-music-desktop/releases
-[7]: https://img.shields.io/github/package-json/v/lyswhut/lx-music-desktop/dev
-[8]: https://github.com/lyswhut/lx-music-desktop/tree/dev
-[9]: https://img.shields.io/github/license/lyswhut/lx-music-desktop
-[10]: https://github.com/lyswhut/lx-music-desktop/blob/master/LICENSE -->
-
-<p align="center">一个基于 Electron & Vue 开发的音乐软件</p>
+<p align="center">基于 <a href="https://github.com/lyswhut/lx-music-desktop">LX Music（洛雪音乐助手）桌面版</a> 的二次开发/增强版本。</p>
 
 ## 说明
 
-所用技术栈：
+本项目是 [LX Music 桌面版](https://github.com/lyswhut/lx-music-desktop) 的**个人魔改/增强 fork**，在保留原项目核心功能的基础上，针对日常使用中的痛点做了少量修改与增强。
 
-- Electron 30+
-- Vue 3
+### 主要改动
 
-已支持的平台：
+- **MPV 播放器增强**
+  - 打包时自动下载并集成对应平台/架构的 mpv 二进制，减少终端用户手动配置成本。
+  - 修复 MPV 播放状态同步问题，优化 `playing` / `pause` / `seeked` 等事件上报。
+  - 改进启动恢复逻辑，支持启动后自动恢复上次播放。
+  - 优化进度条拖动后的播放恢复行为。
+
+- **自定义源（UserApi）修复**
+  - 修复自定义源导入/列表返回数据在 Electron IPC 下无法被结构化克隆序列化的问题。
+  - 增加关键路径日志，方便定位导入失败原因。
+
+- **播放体验优化**
+  - 新增播放音质标签，直观显示当前播放音质与使用的播放引擎。
+  - 优化网络请求错误处理，对非 `Error` 类型的异常进行兜底转换。
+  - 修复内置播放器在 seek 期间状态被误置为暂停的问题。
+
+- **构建流程优化**
+  - 新增 `npm run download:mpv` 脚本，支持按需下载指定平台 mpv。
+  - 打包脚本会根据目标平台自动下载并集成 mpv 资源。
+
+> 提示：由于本 fork 以个人使用为主，不保证与上游功能完全同步，也不会提供官方支持渠道。遇到问题请先查阅原项目文档。
+
+### 支持平台
 
 - Linux
 - macOS
 - Windows 7 及以上
 
-*移动版项目地址：https://github.com/lyswhut/lx-music-mobile*
+技术栈与原项目保持一致：Electron 30+、Vue 3。
 
-*LX Music 项目发展调整与新项目计划：https://github.com/lyswhut/lx-music-desktop/issues/1912*
+## 安装说明
 
-软件变化请查看[更新日志](https://github.com/lyswhut/lx-music-desktop/blob/master/CHANGELOG.md)。
+### 方式一：直接下载 Release（推荐）
 
-软件下载请查看 [GitHub Releases](https://github.com/lyswhut/lx-music-desktop/releases)。
+1. 打开本项目的 [Releases](https://github.com/xinzhihong/lx-music-desktop-enhanced/releases) 页面。
+2. 根据你的系统选择对应安装包：
+   - **Windows**：`.exe` 安装程序 或 `.7z` 绿色版
+   - **macOS**：`.dmg` 镜像
+   - **Linux**：`.deb` / `.rpm` / `.AppImage` / `.pacman`
+3. 下载后按常规方式安装/运行即可。
 
-使用常见问题请参阅[桌面版常见问题](https://lyswhut.github.io/lx-music-doc/desktop/faq)。
+### 方式二：源码构建
 
-目前本项目的原始发布地址只有 [**GitHub**](https://github.com/lyswhut/lx-music-desktop/releases)，其他渠道均为第三方转载发布，与本项目无关！
+如果你希望自己构建，或想基于本仓库继续二次开发，请参考以下步骤。
 
-为了提高使用门槛，本软件内的默认设置、UI 操作不以新手友好为目标，所以使用前建议先根据你的喜好浏览调整一遍软件设置，阅读一遍[音乐播放列表机制](https://lyswhut.github.io/lx-music-doc/desktop/faq/playlist)及[可用的鼠标、键盘快捷操作](https://lyswhut.github.io/lx-music-doc/desktop/faq/hotkey)。
+#### 环境要求
 
-### Scheme URL 支持
+- [Node.js](https://nodejs.org/) >= 22
+- [npm](https://www.npmjs.com/) >= 8.5.2
+- Git
+- 7-Zip（Windows 下构建时需要，用于解压 mpv 压缩包）
 
-从 v1.17.0 起支持 Scheme URL，可以使用此功能在浏览器等场景下调用 LX Music，我们开发了一个[油猴脚本](https://github.com/lyswhut/lx-music-script#readme)配套使用。
+#### 1. 克隆仓库
 
-脚本安装地址：[LX Music 辅助脚本](https://greasyfork.org/zh-CN/scripts/438148)。
+```bash
+git clone https://github.com/xinzhihong/lx-music-desktop-enhanced.git
+cd lx-music-desktop-enhanced
+```
 
-若你想自己调用 LX Music，可以参考文档「[Scheme URL 支持](https://lyswhut.github.io/lx-music-doc/desktop/scheme-url)」部分。
+#### 2. 安装依赖
 
-### 数据同步服务
+```bash
+npm install
+```
 
-从 v2.2.0 起，我们发布了一个独立的[数据同步服务](https://github.com/lyswhut/lx-music-sync-server#readme)。如果你有服务器，可以将其部署到服务器上作为私人多端同步服务使用，详情看该项目说明。
+> 安装过程中 `electron-builder install-app-deps` 会自动执行，为本地原生依赖（如 `better-sqlite3`）编译对应 Electron 版本的二进制。
 
-### 开放 API 支持
+#### 3. 开发调试
 
-从 v2.7.0 起支持开放 API 服务。启用该功能后，将会在本地启动一个 HTTP 服务，提供播放器相关的接口供第三方软件调用，详情看文档「[开放 API 服务](https://lyswhut.github.io/lx-music-doc/desktop/open-api)」部分。
+```bash
+npm run dev
+```
 
-### 数据存储目录
+启动开发服务器后，会自动打开 Electron 主窗口，并启用热更新。
 
-默认情况下，软件的数据存储在：
+#### 4. 构建生产版本
 
-- Linux：`$XDG_CONFIG_HOME/lx-music-desktop` 或 `~/.config/lx-music-desktop`
-- macOS：`~/Library/Application Support/lx-music-desktop`
-- Windows：`%APPDATA%/lx-music-desktop`
+构建当前平台的目录版（不生成安装包）：
 
-在 Windows 平台上，若程序文件夹中存在 `portable` 文件夹，则自动使用此文件夹作为数据存储文件夹（适用于 v1.17.0 及以上版本）。
+```bash
+npm run build
+```
 
-## 用户界面
+构建当前平台的安装包：
 
-<p><img width="100%" src="./doc/images/app.png" alt="lx-music desktop UI"></p>
+```bash
+# Windows x64 安装包
+npm run pack:win:setup:x64
 
-## 贡献代码
+# macOS x64 dmg
+npm run pack:mac:dmg
 
-本项目欢迎 PR，但为了 PR 能顺利合并，需要注意以下几点：
+# Linux x64 deb
+npm run pack:linux:deb:amd64
+```
 
-- 对于添加新功能的 PR，建议在提交 PR 前先创建 Issue 进行说明，以确认该功能是否确实需要。
-- 对于修复 bug 的 PR，请提供修复前后的说明及重现方式。
-- 对于其他类型的 PR，则适当附上说明。
+更多平台/架构请参阅 `package.json` 中的 `scripts` 字段。
 
-贡献代码步骤：
+#### 5. 关于 mpv 二进制
 
-1. 参照[源码使用方法](https://lyswhut.github.io/lx-music-doc/desktop/use-source-code)设置开发环境；
-2. 克隆本仓库代码并切换至 `dev` 分支进行开发；
-3. 提交 PR 至 `dev` 分支。
+本项目默认会在打包时尝试自动下载对应平台的 mpv 二进制并集成到安装包中：
 
-## 源码使用方法
+```bash
+# 手动下载当前平台 mpv（开发调试用）
+npm run download:mpv -- --platform=darwin --arch=arm64
+```
 
-请参阅：<https://lyswhut.github.io/lx-music-doc/desktop/use-source-code>
+- Windows / macOS 默认会自动下载。
+- Linux 没有配置默认静态构建源，构建 Linux 包时请手动放置 mpv 到 `resources/mpv/linux-x64/`（或自行配置 `build-config/download-mpv.js` 中的 `SOURCES.linux`）。
+- `resources/mpv/` 目录已被 `.gitignore` 忽略，不会提交到仓库。
+
+> 注意：分发包含 mpv 的安装包时，请确保你遵守 mpv / FFmpeg 相关的 GPL/LGPL 许可证义务。
+
+## 与上游项目的关系
+
+- 上游项目：[lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop)
+- 本仓库基于上游代码进行修改，所有原始代码的版权归原项目作者所有。
+- 本 fork 的改动部分由当前仓库维护者负责，不代表上游项目立场。
 
 ## 项目协议
 
-本项目基于 [Apache License 2.0](https://github.com/lyswhut/lx-music-desktop/blob/master/LICENSE) 许可证发行，以下协议是对于 Apache License 2.0 的补充，如有冲突，以以下协议为准。
+本项目基于 [Apache License 2.0](./LICENSE) 许可证发行，以下协议是对于 Apache License 2.0 的补充，如有冲突，以以下协议为准。
 
 ---
 
-*词语约定：本协议中的“本项目”指 LX Music（洛雪音乐助手）桌面版项目；“使用者”指签署本协议的使用者；“官方音乐平台”指对本项目内置的包括酷我、酷狗、咪咕等音乐源的官方平台统称；“版权数据”指包括但不限于图像、音频、名字等在内的他人拥有所属版权的数据。*
+*词语约定：本协议中的“本项目”指 LX Music（洛雪音乐助手）桌面版及其衍生项目；“使用者”指签署本协议的使用者；“官方音乐平台”指对本项目内置的包括酷我、酷狗、咪咕等音乐源的官方平台统称；“版权数据”指包括但不限于图像、音频、名字等在内的他人拥有所属版权的数据。*
 
 ### 一、数据来源
 
@@ -159,4 +185,7 @@
 
 ---
 
-若对此有疑问请 mail to: lyswhut+qq.com (请将 `+` 替换为 `@`)
+## 致谢
+
+- 感谢 [lyswhut](https://github.com/lyswhut) 开发并开源 [LX Music](https://github.com/lyswhut/lx-music-desktop) 项目。
+- 感谢 mpv、Electron、Vue 等开源项目提供的优秀基础设施。

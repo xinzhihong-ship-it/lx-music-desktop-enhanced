@@ -4,12 +4,29 @@ This directory defines the optional mpv sidecar layout for the high-fidelity ext
 
 Place platform mpv binaries here when preparing a distributable build:
 
-- `resources/mpv/darwin-arm64/mpv`
-- `resources/mpv/darwin-x64/mpv`
-- `resources/mpv/win32-x64/mpv.exe`
-- `resources/mpv/linux-x64/mpv`
+- macOS: `resources/mpv/darwin-arm64/mpv.app/Contents/MacOS/mpv` (or `resources/mpv/darwin-x64/mpv.app/Contents/MacOS/mpv`)
+- Windows: `resources/mpv/win32-x64/mpv.exe` (or `resources/mpv/win32-arm64/mpv.exe`)
+- Linux: `resources/mpv/linux-x64/mpv` (or `resources/mpv/linux-arm64/mpv`, `resources/mpv/linux-armv7l/mpv`)
 
 Do **not** commit real mpv binaries to this repository. Keep only placeholders and documentation in source control.
+
+## Auto-download
+
+You can let the build system download mpv automatically:
+
+```bash
+# macOS
+npm run download:mpv -- --platform=darwin --arch=arm64
+
+# Windows
+npm run download:mpv -- --platform=win32 --arch=x64
+npm run download:mpv -- --platform=win32 --arch=arm64
+
+# Linux (no default static source; set SOURCES.linux.url in download-mpv.js first)
+npm run download:mpv -- --platform=linux --arch=x64
+```
+
+`npm run pack:*` / `npm run publish:*` will also call this automatically before electron-builder starts, so end users do not need to install mpv themselves.
 
 Runtime lookup order:
 

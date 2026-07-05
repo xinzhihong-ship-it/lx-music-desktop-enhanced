@@ -14,7 +14,10 @@ import { initAppSetting } from '@main/app'
 import registerModules from '@main/modules'
 
 // 初始化应用
+let isInited = false
 const init = () => {
+  if (isInited) return
+  isInited = true
   console.log('init')
   void initAppSetting().then(() => {
     registerModules()

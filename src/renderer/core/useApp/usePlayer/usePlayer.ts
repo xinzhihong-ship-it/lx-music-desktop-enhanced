@@ -7,6 +7,7 @@ import {
   getDuration,
   setPause, setPlay as playerSetPlay, setStop,
 } from '@renderer/plugins/player'
+import { getShouldPlayAfterLoad, clearShouldPlayAfterLoad, getShouldPlayAfterSeek, clearShouldPlayAfterSeek } from '@renderer/core/player'
 
 import useMediaSessionInfo from './useMediaSessionInfo'
 import usePlayProgress from './usePlayProgress'
@@ -16,6 +17,7 @@ import {
   musicInfo,
   playMusicInfo,
   playedList,
+  isPlay,
 } from '@renderer/store/player/state'
 import {
   setPlay,
@@ -87,8 +89,23 @@ export default () => {
   const handleCanplay = () => {
     if (window.lx.isPlayedStop) {
       setPause()
+    } else if (getShouldPlayAfterLoad()) {
+      // 仅在明确需要加载后播放时才显式调用播放，
+      // 避免 MPV 启动恢复或加载完成后自动进入“假播放”状态。
+      playerSetPlay()
+      clearShouldPlayAfterLoad()
+    } else if (getShouldPlayAfterSeek()) {
+      // 内置引擎拖动进度条后，在 canplay 时按拖动前的播放意图恢复播放，
+      // 避免 seek 期间 isPlay 被浏览器临时置为 false 而误暂停。
+      playerSetPlay()
+      clearShouldPlayAfterSeek()
+    } else if (appSetting['player.playEngine'] == 'mpv' || !isPlay.value) {
+      // MPV 加载完成后必须显式暂停，避免误播；
+      // 内置引擎在未播放时（如启动不自动播放）也需要暂停。
+      setPause()
     } else {
-      // 引擎切换后 autoplay 可能被阻止，显式播放
+      // 内置引擎在播放中 seek/缓冲后，如果 audio 被浏览器停在暂停状态，
+      // 通过 canplay 主动恢复播放，避免“拖进度条后自动暂停”。
       playerSetPlay()
     }
   }

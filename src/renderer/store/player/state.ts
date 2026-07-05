@@ -40,6 +40,9 @@ export const isShowPlayComment = ref(false)
 
 export const isShowLrcSelectContent = ref(false)
 
+// 当前实际播放音质（如 128k / 320k / flac / 本地 / 下载）
+export const playQuality = ref('')
+
 export const playMusicInfo = shallowReactive<{
   /**
    * 当前播放歌曲的列表 id

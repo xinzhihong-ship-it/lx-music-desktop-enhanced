@@ -1,8 +1,8 @@
 import { onBeforeUnmount } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
-import { musicInfo, playMusicInfo } from '@renderer/store/player/state'
+import { musicInfo, playMusicInfo, isPlay } from '@renderer/store/player/state'
 import { setStop, isEmpty } from '@renderer/plugins/player'
-import { playNext, setMusicUrl } from '@renderer/core/player'
+import { playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 
@@ -29,7 +29,12 @@ export default () => {
         void playNext(true)
       } else {
         prevTimeoutId = musicInfo.id
-        if (playMusicInfo.musicInfo) setMusicUrl(playMusicInfo.musicInfo, true)
+        if (playMusicInfo.musicInfo) {
+          // 只有当前确实在播放才保持加载后自动播放；
+          // 启动恢复或用户未主动播放时保持原有暂停状态。
+          if (isPlay.value) setShouldPlayAfterLoad(true)
+          setMusicUrl(playMusicInfo.musicInfo, true)
+        }
       }
     }, 25000)
   }
@@ -64,7 +69,9 @@ export default () => {
   }
 
   const handleLoadeddata = () => {
-    setAllStatus(t('player__loading'))
+    // 文件已加载完成，清除“加载中”状态；
+    // 若随后进入播放，handlePlaying 会再次清空；若保持暂停，也不应继续显示加载中。
+    setAllStatus('')
   }
 
   const handlePlaying = () => {
@@ -89,6 +96,8 @@ export default () => {
     if (playMusicInfo.musicInfo && errCode !== 1 && retryNum < 2) { // 若音频URL无效则尝试刷新2次URL
       // console.log(this.retryNum)
       retryNum++
+      // 仅在当前正在播放时才恢复自动播放，避免启动恢复时刷新 URL 后误播。
+      if (isPlay.value) setShouldPlayAfterLoad(true)
       setMusicUrl(playMusicInfo.musicInfo, true)
       setAllStatus(t('player__refresh_url'))
       return

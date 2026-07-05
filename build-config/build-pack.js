@@ -4,6 +4,7 @@ const fs = require('fs')
 const builder = require('electron-builder')
 const beforePack = require('./build-before-pack')
 const afterPack = require('./build-after-pack')
+const { downloadMpv } = require('./download-mpv')
 
 /**
 * @type {import('electron-builder').Configuration}
@@ -59,13 +60,35 @@ const options = {
     },
   ],
 }
-const mpvResourcePath = `./resources/mpv/${process.platform}-${process.arch}`
-if (fs.existsSync(mpvResourcePath)) {
-  options.extraResources.push({
-    from: mpvResourcePath,
-    to: './bin',
-    filter: ['**/*', '!**/.gitkeep'],
-  })
+/**
+ * 根据目标平台/架构自动下载并集成 mpv 二进制，然后返回包含 mpv extraResources 的 build 配置。
+ * @param {import('electron-builder').Configuration} baseOptions
+ * @param {'win32'|'darwin'|'linux'} mpvPlatform
+ * @param {string} mpvArch
+ * @returns {Promise<import('electron-builder').Configuration>}
+ */
+const withMpvResources = async (baseOptions, mpvPlatform, mpvArch) => {
+  const buildOptions = { ...baseOptions }
+  if (mpvPlatform && mpvArch) {
+    try {
+      await downloadMpv(mpvPlatform, mpvArch)
+    } catch (err) {
+      console.error(`[download mpv] ${err.message}`)
+      // 继续打包：用户可能已经手动放置了 mpv 二进制
+    }
+    const mpvResourcePath = `./resources/mpv/${mpvPlatform}-${mpvArch}`
+    if (fs.existsSync(mpvResourcePath)) {
+      buildOptions.extraResources = [
+        ...buildOptions.extraResources,
+        {
+          from: mpvResourcePath,
+          to: './bin',
+          filter: ['**/*', '!**/.gitkeep'],
+        },
+      ]
+    }
+  }
+  return buildOptions
 }
 
 /**
@@ -285,12 +308,17 @@ const createTarget = {
  */
 const build = async(target, arch, packageType, publishType) => {
   if (target == 'dir') {
+    const buildOptions = await withMpvResources(options, process.platform, process.arch)
     await builder.build({
       dir: true,
-      config: { ...options, ...winOptions, ...linuxOptions, ...macOptions },
+      config: { ...buildOptions, ...winOptions, ...linuxOptions, ...macOptions },
     })
     return
   }
+  const platformMap = { win: 'win32', mac: 'darwin', linux: 'linux' }
+  const mpvPlatform = platformMap[target]
+  const mpvArch = arch === 'x86_64' ? 'x64' : arch
+  const buildOptions = await withMpvResources(options, mpvPlatform, mpvArch)
   const targetInfo = createTarget[target](arch, packageType)
   // Promise is returned
   await builder.build({
@@ -300,7 +328,7 @@ const build = async(target, arch, packageType, publishType) => {
     ia32: arch == 'x86' || arch == 'x86_64',
     arm64: arch == 'arm64',
     armv7l: arch == 'armv7l',
-    config: { ...options, ...targetInfo.options },
+    config: { ...buildOptions, ...targetInfo.options },
   })
   // .then((result) => {
   //   console.log(JSON.stringify(result))

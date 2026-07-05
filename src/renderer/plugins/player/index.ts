@@ -399,6 +399,12 @@ const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
 
 export const setResource = (src: string) => {
   if (isMpvEngine()) {
+    if (!src) {
+      console.warn('mpv setResource skipped: empty src')
+      return
+    }
+    // MPV 的 loadstart 需要手动触发，与 audio.loadstart 语义对齐。
+    window.app_event?.playerLoadstart()
     void mpvPlayer.setResource(src).catch(err => {
       console.error('mpv load url failed:', err?.message ?? err)
       window.alert(`mpv 播放失败：${err?.message ?? err}\n\n请确认：\n1. mpv 已安装（brew install mpv）\n2. 或切换到内置引擎（设置 → 播放引擎 → 内置引擎）`)
@@ -418,7 +424,10 @@ export const setPlay = () => {
     })
     return
   }
-  void audio?.play()
+  void audio?.play().catch(err => {
+    console.error('audio play failed:', err)
+    window.app_event.pause()
+  })
 }
 
 export const setPause = () => {
@@ -542,6 +551,7 @@ export const onCanplay = (callback: Noop) => registerEvent('canplay', mpvPlayer.
 export const onEmptied = (callback: Noop) => registerEvent('emptied', mpvPlayer.onEmptied, callback)
 export const onTimeupdate = (callback: Noop) => registerEvent('timeupdate', mpvPlayer.onTimeupdate, callback)
 export const onWaiting = (callback: Noop) => registerEvent('waiting', mpvPlayer.onWaiting, callback)
+export const onSeeked = (callback: Noop) => registerEvent('seeked', mpvPlayer.onSeeked, callback)
 
 // 可见性改变
 export const onVisibilityChange = (callback: Noop) => {

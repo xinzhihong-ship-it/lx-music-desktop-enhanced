@@ -12,6 +12,7 @@ import {
   setPlaybackRate,
 } from '@renderer/core/lyric'
 import { appSetting } from '@renderer/store/setting'
+import { isPlay } from '@renderer/store/player/state'
 
 const handleApplyPlaybackRate = debounce(setPlaybackRate, 300)
 
@@ -35,6 +36,16 @@ export default () => {
   window.app_event.on('musicToggled', setPlayInfo)
   window.app_event.on('lyricUpdated', setLyric)
   window.app_event.on('setPlaybackRate', handleApplyPlaybackRate)
+  const handleSeeked = () => {
+    // 暂停时只跳转到新位置，不启动滚动；播放时才继续滚动。
+    if (isPlay.value) {
+      play()
+    } else {
+      play()
+      pause()
+    }
+  }
+  window.app_event.on('playerSeeked', handleSeeked)
 
   onBeforeUnmount(() => {
     window.app_event.off('play', play)
@@ -44,5 +55,6 @@ export default () => {
     window.app_event.off('musicToggled', setPlayInfo)
     window.app_event.off('lyricUpdated', setLyric)
     window.app_event.off('setPlaybackRate', handleApplyPlaybackRate)
+    window.app_event.off('playerSeeked', handleSeeked)
   })
 }

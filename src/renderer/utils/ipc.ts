@@ -1,4 +1,4 @@
-import { rendererSend, rendererInvoke, rendererOn, rendererOff } from '@common/rendererIpc'
+import { rendererSend, rendererInvoke, rendererOn, rendererOff, writeRendererLog } from '@common/rendererIpc'
 import { HOTKEY_RENDERER_EVENT_NAME, WIN_MAIN_RENDERER_EVENT_NAME, CMMON_EVENT_NAME } from '@common/ipcNames'
 import { type ProgressInfo, type UpdateDownloadedEvent, type UpdateInfo } from 'electron-updater'
 import { markRaw } from '@common/utils/vueTools'
@@ -121,8 +121,20 @@ export const onUpdateNotAvailable = (listener: LX.IpcRendererEventListenerParams
 }
 
 
-export const importUserApi = async(fileText: string) => {
-  return rendererInvoke<string, LX.UserApi.ImportUserApi>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, fileText)
+export const importUserApi = async(fileText: string): Promise<LX.UserApi.ImportUserApi> => {
+  writeRendererLog('[renderer importUserApi] input length:', fileText?.length, 'type:', typeof fileText)
+  try {
+    await rendererInvoke<string, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, fileText)
+    writeRendererLog('[renderer importUserApi] import_user_api returned, calling getUserApiList')
+    const apiList = await getUserApiList()
+    const apiInfo = apiList[apiList.length - 1]
+    writeRendererLog('[renderer importUserApi] success, apiList length:', apiList?.length)
+    return { apiInfo, apiList }
+  } catch (err: any) {
+    writeRendererLog('[renderer importUserApi] error:', err)
+    console.error('[renderer importUserApi] error:', err)
+    throw err
+  }
 }
 export const setUserApi = async(source: LX.UserApi.UserApiSetApiParams): Promise<void> => {
   return rendererInvoke<LX.UserApi.UserApiSetApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api, source)
