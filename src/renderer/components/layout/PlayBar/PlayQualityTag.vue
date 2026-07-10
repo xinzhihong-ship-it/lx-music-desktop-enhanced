@@ -11,7 +11,12 @@ export default {
   setup() {
     const label = computed(() => {
       if (!musicInfo.id) return ''
-      const engine = appSetting['player.playEngine'] == 'mpv' ? 'MPV' : '内置'
+      const engineMap = {
+        mpv: 'MPV',
+        audirvana: 'Audirvana',
+        electron: '内置',
+      }
+      const engine = engineMap[appSetting['player.playEngine']] ?? '内置'
       const quality = playQuality.value
       return quality ? `${quality} · ${engine}` : engine
     })

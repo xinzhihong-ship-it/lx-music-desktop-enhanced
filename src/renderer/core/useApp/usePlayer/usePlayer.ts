@@ -55,7 +55,7 @@ export default () => {
     useMaxOutputChannelCount()
     useSoundEffect()
   } else {
-    // mpv 高保真模式走 mpv/FFmpeg -> 系统音频输出，不经过 HTMLAudioElement/AudioContext，内置 EQ/混响/变调/声像/可视化音效链不生效。
+    // mpv / Audirvana 高保真模式走外部播放器 -> 系统音频输出，不经过 HTMLAudioElement/AudioContext，内置 EQ/混响/变调/声像/可视化音效链不生效。
   }
   usePlaybackRate()
   useWatchList()
@@ -101,9 +101,9 @@ export default () => {
       // 避免 seek 期间 isPlay 被浏览器临时置为 false 而误暂停。
       playerSetPlay()
       clearShouldPlayAfterSeek()
-    } else if (appSetting['player.playEngine'] == 'mpv') {
-      // MPV 引擎由主进程控制播放/暂停；加载完成后若用户原本就在播放，
-      // 不主动暂停，避免与主进程切歌/restart 时的播放命令竞争。
+    } else if (appSetting['player.playEngine'] == 'mpv' || appSetting['player.playEngine'] == 'audirvana') {
+      // MPV / Audirvana 引擎由外部播放器控制播放/暂停；加载完成后若用户原本就在播放，
+      // 不主动暂停，避免与外部播放器切歌时的播放命令竞争。
       if (!isPlay.value) setPause()
     } else if (!isPlay.value) {
       // 内置引擎在未播放时（如启动不自动播放）需要暂停。

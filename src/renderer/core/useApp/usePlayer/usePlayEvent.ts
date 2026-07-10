@@ -64,11 +64,13 @@ export default () => {
 
   const handleLoadstart = () => {
     if (window.lx.isPlayedStop) return
+    if (appSetting['player.playEngine'] === 'audirvana') return
     if (appSetting['player.autoSkipOnError']) startLoadingTimeout()
     setAllStatus(t('player__loading'))
   }
 
   const handleLoadeddata = () => {
+    if (appSetting['player.playEngine'] === 'audirvana') return
     // 文件已加载完成，清除“加载中”状态；
     // 若随后进入播放，handlePlaying 会再次清空；若保持暂停，也不应继续显示加载中。
     setAllStatus('')

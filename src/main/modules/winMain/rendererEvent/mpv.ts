@@ -1,5 +1,6 @@
 import { mainHandle } from '@common/mainIpc'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
+import { log } from '@common/utils'
 import { getMpvController, MpvController } from '../mpvController'
 
 const notFoundMessage = '未找到 mpv，请安装 mpv、设置 mpv 路径，或放置内置 mpv'
@@ -52,6 +53,7 @@ export default () => {
     return restartMpvController(state ?? {})
   })
   mainHandle(WIN_MAIN_RENDERER_EVENT_NAME.mpv_listAudioDevices, async() => {
+    log.info('[listAudioDevices] IPC invoked')
     return MpvController.listAudioDevices()
   })
 }

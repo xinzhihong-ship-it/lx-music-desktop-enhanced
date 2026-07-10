@@ -101,7 +101,7 @@ declare global {
       /**
        * 播放引擎
        */
-      'player.playEngine': 'electron' | 'mpv'
+      'player.playEngine': 'electron' | 'mpv' | 'audirvana'
 
       /**
        * mpv 可执行文件路径

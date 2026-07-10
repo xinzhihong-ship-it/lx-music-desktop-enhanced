@@ -38,6 +38,10 @@ export default () => {
   mainOn(WIN_MAIN_RENDERER_EVENT_NAME.quit, () => {
     quitApp()
   })
+  mainOn(WIN_MAIN_RENDERER_EVENT_NAME.restart_window, () => {
+    app.relaunch()
+    quitApp()
+  })
   mainOn(WIN_MAIN_RENDERER_EVENT_NAME.min_toggle, () => {
     toggleMinimize()
   })

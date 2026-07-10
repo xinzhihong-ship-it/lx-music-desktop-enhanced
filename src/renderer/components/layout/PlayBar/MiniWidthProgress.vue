@@ -44,6 +44,7 @@
           <use xlink:href="#icon-nextMusic" />
         </svg>
       </div>
+      <stop-btn />
     </div>
   </div>
 </template>
@@ -55,6 +56,7 @@ import { clipboardWriteText } from '@common/utils/electron'
 import ControlBtns from './ControlBtns.vue'
 import PlayProgress from './PlayProgress.vue'
 import PlayQualityTag from './PlayQualityTag.vue'
+import StopBtn from './StopBtn.vue'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 // import { lyric } from '@renderer/core/share/lyric'
 import {
@@ -80,6 +82,7 @@ export default {
     ControlBtns,
     PlayProgress,
     PlayQualityTag,
+    StopBtn,
   },
   setup() {
     const router = useRouter()

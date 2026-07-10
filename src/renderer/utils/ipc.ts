@@ -865,3 +865,10 @@ export const downloadTasksRemove = async(ids: string[]) => {
 export const downloadListClear = async() => {
   return rendererInvoke(WIN_MAIN_RENDERER_EVENT_NAME.download_list_clear)
 }
+
+/**
+ * 重启应用
+ */
+export const restartApp = () => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.restart_window)
+}

@@ -142,6 +142,7 @@ export class MpvController {
   private isPaused = true
   pausedAt = 0
   loadedUrl = ''
+  private cachedVolume: number | null = null
 
   async ensureStarted(): Promise<MpvPathInfo> {
     if (this.socket && this.process && !this.process.killed) {
@@ -197,6 +198,9 @@ export class MpvController {
     await this.command(['observe_property', 2, 'duration']).catch(err => log.warn(err))
     await this.command(['observe_property', 3, 'pause']).catch(err => log.warn(err))
     await this.command(['observe_property', 4, 'idle-active']).catch(err => log.warn(err))
+    if (this.cachedVolume != null) {
+      await this.command(['set_property', 'volume', this.cachedVolume]).catch(err => log.warn(err))
+    }
     this.sendEvent('started', mpvPath)
     this.cachedPathInfo = mpvPath
     return mpvPath
@@ -220,19 +224,26 @@ export class MpvController {
       '--audio-display=no',
       `--input-ipc-server=${this.ipcPath}`,
       '--hr-seek=yes',
+      '--audio-exclusive=no',
     ]
 
     if (global.lx.appSetting['player.mpv.bitPerfectMode']) {
       args.push('--replaygain=no', '--af-clr')
     }
 
+    // 输出设备由 player.mediaDeviceId 单独控制，不污染 player.mpv.extraArgs
+    const mediaDeviceId = global.lx.appSetting['player.mediaDeviceId']
+    if (mediaDeviceId && mediaDeviceId !== 'default' && mediaDeviceId !== 'Default' && mediaDeviceId !== 'communications') {
+      args.push(`--audio-device=${mediaDeviceId}`)
+    }
+
     const extraArgs = global.lx.appSetting['player.mpv.extraArgs']
     log.info(`mpv extraArgs from config: ${JSON.stringify(extraArgs)}`)
     log.info(`mpv appSetting keys: ${Object.keys(global.lx.appSetting).filter(k => k.includes('mpv')).join(', ')}`)
 
-    // 使用配置中的参数，如果为空则使用默认设备
+    // 使用配置中的参数，过滤掉由本代码统一处理的 --audio-device
     if (Array.isArray(extraArgs) && extraArgs.length > 0) {
-      args.push(...extraArgs.filter(arg => typeof arg == 'string' && arg.length))
+      args.push(...extraArgs.filter(arg => typeof arg == 'string' && arg.length && !arg.startsWith('--audio-device=')))
       log.info('Using extraArgs from config')
     } else {
       log.info('No extraArgs in config, using default audio device')
@@ -547,27 +558,28 @@ export class MpvController {
   }
 
   async setVolume(volume: number): Promise<void> {
-    await this.ensureStarted()
+    this.cachedVolume = volume
+    if (!this.socket) return
     await this.command(['set_property', 'volume', volume])
   }
 
   async getPosition(): Promise<number> {
-    await this.ensureStarted()
+    if (!this.socket) return 0
     return (await this.command<number | null>(['get_property', 'time-pos'])) ?? 0
   }
 
   async getDuration(): Promise<number> {
-    await this.ensureStarted()
+    if (!this.socket) return 0
     return (await this.command<number | null>(['get_property', 'duration'])) ?? 0
   }
 
   async getPaused(): Promise<boolean> {
-    await this.ensureStarted()
+    if (!this.socket) return true
     return (await this.command<boolean | null>(['get_property', 'pause'])) ?? true
   }
 
   async getPath(): Promise<string | null> {
-    await this.ensureStarted()
+    if (!this.socket) return null
     return await this.command<string | null>(['get_property', 'path']).catch(() => null)
   }
 
@@ -667,26 +679,48 @@ export class MpvController {
    */
   static async listAudioDevices(): Promise<Array<{ id: string, name: string }>> {
     const mpvPath = resolveMpvPath()
+    log.info(`[listAudioDevices] mpv path: ${mpvPath.path} source: ${mpvPath.source}`)
     return new Promise((resolve) => {
-      const proc = spawn(mpvPath.path, ['--audio-device=help'], {
+      // 仅枚举设备，不加载用户配置，不初始化视频/窗口，避免 probing 时抢占音频设备
+      const proc = spawn(mpvPath.path, ['--no-config', '--no-video', '--force-window=no', '--audio-device=help'], {
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       let output = ''
       proc.stdout?.on('data', (data) => { output += String(data) })
       proc.stderr?.on('data', (data) => { output += String(data) })
-      proc.on('close', () => {
+      proc.on('close', (code) => {
+        log.info(`[listAudioDevices] mpv exited code=${code ?? 'null'} output length=${output.length}`)
         const devices: Array<{ id: string, name: string }> = [{ id: 'auto', name: '默认设备' }]
+        // macOS 上 mpv 会同时列出 coreaudio 与 avfoundation 两套驱动，
+        // 造成同一物理设备重复出现；按名称去重，并优先保留 avfoundation（mpv 默认驱动）
+        const deviceMap = new Map<string, string>()
         for (const line of output.split('\n')) {
           const match = line.match(/^\s*'([^']+)'\s*\(([^)]+)\)/)
-          if (match && match[1] !== 'auto') {
-            devices.push({ id: match[1], name: match[2] })
+          if (!match || match[1] === 'auto') continue
+          const id = match[1]
+          const name = match[2]
+          const existingId = deviceMap.get(name)
+          if (!existingId) {
+            deviceMap.set(name, id)
+          } else if (isMac && id.startsWith('avfoundation/') && !existingId.startsWith('avfoundation/')) {
+            deviceMap.set(name, id)
           }
         }
+        for (const [name, id] of deviceMap) {
+          devices.push({ id, name })
+        }
+        log.info(`[listAudioDevices] parsed devices: ${JSON.stringify(devices)}`)
         resolve(devices)
       })
-      proc.on('error', () => { resolve([]) })
-      setTimeout(() => { resolve([]) }, 5000)
+      proc.on('error', (err) => {
+        log.warn(`[listAudioDevices] mpv spawn error: ${err.message}`)
+        resolve([])
+      })
+      setTimeout(() => {
+        log.warn('[listAudioDevices] mpv timeout')
+        resolve([])
+      }, 5000)
     })
   }
 }
@@ -753,15 +787,21 @@ export const restartMpvController = async(state: MpvRestartState): Promise<void>
       log.info(`[restartMpvController] switched to new controller ${newController.instanceId}`)
     }
   } catch (err) {
-    // 新进程启动失败，不接管，保持旧进程可用
+    // 新进程启动失败，回退到旧进程，避免 active controller 指向被销毁的实例
     log.error('[restartMpvController] new controller failed:', err)
     await newController.destroy()
+    if (getMpvController() === newController) {
+      setActiveMpvController(oldController)
+      log.info(`[restartMpvController] rolled back to old controller ${oldController.instanceId}`)
+    }
     throw err
   }
 
   // 旧进程在新进程成功接管后再销毁，实现无感切换
-  log.info(`[restartMpvController] destroying old controller ${oldController.instanceId}`)
-  await oldController.destroy()
+  if (getMpvController() === newController) {
+    log.info(`[restartMpvController] destroying old controller ${oldController.instanceId}`)
+    await oldController.destroy()
+  }
   log.info('[restartMpvController] done')
 }
 

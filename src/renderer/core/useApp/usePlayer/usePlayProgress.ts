@@ -81,9 +81,9 @@ export default () => {
 
     setCurrentTime(time)
 
-    // 内置引擎在拖动进度条后，某些情况下 audio 会被浏览器停在暂停状态，
+    // 内置引擎 / Audirvana 在拖动进度条后，某些情况下会被停在暂停状态，
     // 如果拖动前正在播放，则主动调用 play() 恢复。
-    if (appSetting['player.playEngine'] == 'electron' && wasPlaying) {
+    if ((appSetting['player.playEngine'] == 'electron' || appSetting['player.playEngine'] == 'audirvana') && wasPlaying) {
       setPlay()
     }
   }
@@ -201,9 +201,17 @@ export default () => {
   window.app_event.on('playerEmptied', handleEmpied)
   window.app_event.on('musicToggled', handleSetPlayInfo)
 
-  const rOnTimeupdate = onTimeupdate(() => {
+  let rOnTimeupdate = onTimeupdate(() => {
     setNowPlayTime(getCurrentTime())
   })
+  const subscribeTimeupdate = () => {
+    rOnTimeupdate?.()
+    rOnTimeupdate = onTimeupdate(() => {
+      setNowPlayTime(getCurrentTime())
+    })
+  }
+  watch(() => appSetting['player.playEngine'], subscribeTimeupdate)
+
   const rOnMpvDuration = mpvPlayer.onDuration((dur: number) => {
     setMaxplayTime(dur)
   })
@@ -220,7 +228,7 @@ export default () => {
   })
 
   onBeforeUnmount(() => {
-    rOnTimeupdate()
+    rOnTimeupdate?.()
     rOnMpvDuration()
     rVisibilityChange()
     // window.app_event.off('play', handlePlay)

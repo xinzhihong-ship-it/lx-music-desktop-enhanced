@@ -97,17 +97,28 @@ export default () => {
   window.app_event.on('setProgress', setProgress)
   window.app_event.on('musicToggled', handleSetPlayInfo)
 
-  const rOnTimeupdate = onTimeupdate(() => {
+  let rOnTimeupdate = onTimeupdate(() => {
     const time = getCurrentTime()
     const duration = playProgress.maxPlayTime
     if (duration > 10 && duration - time < 10 && !preloadMusicInfo.info) {
       void preloadNextMusicUrl(time)
     }
   })
+  const subscribeTimeupdate = () => {
+    rOnTimeupdate?.()
+    rOnTimeupdate = onTimeupdate(() => {
+      const time = getCurrentTime()
+      const duration = playProgress.maxPlayTime
+      if (duration > 10 && duration - time < 10 && !preloadMusicInfo.info) {
+        void preloadNextMusicUrl(time)
+      }
+    })
+  }
+  watch(() => appSetting['player.playEngine'], subscribeTimeupdate)
 
 
   onBeforeUnmount(() => {
-    rOnTimeupdate()
+    rOnTimeupdate?.()
     window.app_event.off('setProgress', setProgress)
     window.app_event.off('musicToggled', handleSetPlayInfo)
   })

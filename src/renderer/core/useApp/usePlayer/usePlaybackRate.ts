@@ -6,13 +6,16 @@ import { debounce } from '@common/utils'
 import { playbackRate, setPlaybackRate } from '@renderer/store/player/playbackRate'
 import { appSetting, savePlaybackRate } from '@renderer/store/setting'
 
-const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
+const isExternalEngine = () => {
+  const engine = appSetting['player.playEngine']
+  return engine === 'mpv' || engine === 'audirvana'
+}
 
 export default () => {
   const handleSavePlaybackRate = debounce(savePlaybackRate, 300)
 
   setPlaybackRate(appSetting['player.playbackRate'])
-  if (!isMpvEngine()) {
+  if (!isExternalEngine()) {
     setPlayerPlaybackRate(appSetting['player.playbackRate'])
     setPreservesPitch(appSetting['player.preservesPitch'])
   }
@@ -39,7 +42,7 @@ export default () => {
 
   watch(playbackRate, rate => {
     handleSavePlaybackRate(rate)
-    if (!isMpvEngine()) setPlayerPlaybackRate(rate)
+    if (!isExternalEngine()) setPlayerPlaybackRate(rate)
   })
   watch(() => appSetting['player.playbackRate'], rate => {
     setPlaybackRate(rate)
@@ -47,7 +50,7 @@ export default () => {
 
 
   watch(() => appSetting['player.preservesPitch'], preservesPitch => {
-    if (!isMpvEngine()) setPreservesPitch(preservesPitch)
+    if (!isExternalEngine()) setPreservesPitch(preservesPitch)
   })
 
 

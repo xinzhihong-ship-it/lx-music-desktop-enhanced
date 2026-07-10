@@ -33,13 +33,20 @@
           <use xlink:href="#icon-nextMusic" />
         </svg>
       </div>
+      <div v-if="isMac && appSetting['player.playEngine'] === 'audirvana'" :class="$style.playBtn" :aria-label="$t('player__audirvana_stop')" @click="stop()">
+        <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 1024 1024" space="preserve">
+          <rect x="256" y="256" width="512" height="512" rx="80" ry="80" />
+        </svg>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { playNext, playPrev, togglePlay } from '@renderer/core/player'
+import { isMac } from '@common/utils'
+import { playNext, playPrev, togglePlay, stop } from '@renderer/core/player'
 import { status, isPlay } from '@renderer/store/player/state'
+import { appSetting } from '@renderer/store/setting'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 
 import ControlBtns from './components/ControlBtns.vue'

@@ -22,10 +22,28 @@ import { getRandom } from '@renderer/utils/index'
 import { addListMusics, removeListMusics } from '@renderer/store/list/action'
 import { loveList } from '@renderer/store/list/state'
 import { addDislikeInfo } from '@renderer/core/dislikeList'
+import { qualityList } from '@renderer/store'
+import { buildSavePath } from '@renderer/store/download/utils'
+import { createDownloadInfo } from '@renderer/worker/download/utils'
+import { joinPath } from '@common/utils/nodejs'
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
 let gettingUrlId = ''
 let shouldPlayAfterLoad = false
+
+const getOnlineMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): LX.Music.MusicInfoOnline | null => {
+  if ('progress' in musicInfo) return musicInfo.metadata.musicInfo
+  if (musicInfo.source === 'local') return null
+  return musicInfo as LX.Music.MusicInfoOnline
+}
+
+const buildAudirvanaFilePath = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): string | null => {
+  if (appSetting['player.playEngine'] !== 'audirvana') return null
+  const onlineInfo = getOnlineMusicInfo(musicInfo)
+  if (!onlineInfo) return null
+  const downloadInfo = createDownloadInfo(onlineInfo, appSetting['player.playQuality'], appSetting['download.fileName'], qualityList.value, playMusicInfo.listId ?? undefined)
+  return joinPath(buildSavePath(downloadInfo), downloadInfo.metadata.fileName)
+}
 
 const getMusicQualityLabel = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): string => {
   if ('progress' in musicInfo) return '下载'
@@ -150,7 +168,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   if (!diffCurrentMusicInfo(musicInfo)) return
   if (cancelDelayRetry) cancelDelayRetry()
   gettingUrlId = createGettingUrlId(musicInfo)
-  void getMusicPlayUrl(musicInfo, isRefresh).then((url) => {
+  void getMusicPlayUrl(musicInfo, isRefresh).then(async(url) => {
     if (!url) {
       // 没有获取到 URL 时，如果是用户主动播放/自动播放则按错误处理；
       // 否则（如启动预加载）清空加载状态，避免一直显示“音乐加载中...”。
@@ -166,6 +184,34 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     // 记录当前播放音质，用于在主界面显示。
     if (musicInfo.id == playMusicInfo.musicInfo?.id) {
       setPlayQuality(getMusicQualityLabel(musicInfo))
+    }
+    if (appSetting['player.playEngine'] === 'audirvana') {
+      const audirvanaFilePath = buildAudirvanaFilePath(musicInfo)
+      try {
+        await setResource(url, audirvanaFilePath ? (musicInfo as LX.Music.MusicInfo) : undefined, audirvanaFilePath ?? undefined)
+        return
+      } catch (err: any) {
+        console.error('setResource failed', err)
+        // Audirvana 需要先下载到本地再播放，部分音源链接有效期极短，
+        // 若提示链接过期/无权限/不存在，先刷新 URL 重试一次
+        const msg = err.message ?? ''
+        const isUrlExpired = msg.includes('已过期') || msg.includes('无权限') || msg.includes('不存在')
+        if (isUrlExpired) {
+          console.log('[Audirvana] URL expired, refreshing and retrying...')
+          setAllStatus(window.i18n.t('player__refresh_url'))
+          const newUrl = await getMusicPlayUrl(musicInfo, true)
+          if (newUrl && newUrl !== url) {
+            try {
+              await setResource(newUrl, audirvanaFilePath ? (musicInfo as LX.Music.MusicInfo) : undefined, audirvanaFilePath ?? undefined)
+              return
+            } catch (err2: any) {
+              console.error('[Audirvana] setResource retry failed', err2)
+              throw err2
+            }
+          }
+        }
+        throw err
+      }
     }
     setResource(url)
   }).catch((err: any) => {
@@ -188,9 +234,9 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
 
   const autoPlay = appSetting['player.startupAutoPlay']
 
-  // MPV 引擎在启动时不会保留播放状态，需要重新加载 URL；
+  // MPV / Audirvana 引擎在启动时不会保留播放状态，需要重新加载 URL；
   // 内置引擎则保持原有行为，由用户手动触发或 startupAutoPlay 控制。
-  if (appSetting['player.playEngine'] == 'mpv') {
+  if (appSetting['player.playEngine'] == 'mpv' || appSetting['player.playEngine'] == 'audirvana') {
     shouldPlayAfterLoad = autoPlay
     setMusicUrl(musicInfo)
   }

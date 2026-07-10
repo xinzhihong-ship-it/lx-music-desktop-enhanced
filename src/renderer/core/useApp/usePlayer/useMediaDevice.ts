@@ -16,6 +16,10 @@ const getDevices = async() => {
 let isShowingTipAlert = false
 
 export default () => {
+  // MPV 引擎使用 mpv 自己的音频设备管理，Web Audio 设备列表里找不到 mpv 设备 ID，
+  // 强行匹配会把 player.mediaDeviceId 重置回 default。
+  const isMpvEngine = () => appSetting['player.playEngine'] === 'mpv'
+
   let prevDeviceLabel: string | null = null
   let prevDeviceId = ''
 
@@ -67,6 +71,7 @@ export default () => {
   }
 
   const handleMediaListChange = async() => {
+    if (isMpvEngine()) return
     const mediaDeviceId = appSetting['player.mediaDeviceId']
     const device = await getMediaDevice(mediaDeviceId)
 
@@ -77,14 +82,16 @@ export default () => {
   }
 
   watch(() => appSetting['player.mediaDeviceId'], (id) => {
-    if (prevDeviceId == id) return
+    if (isMpvEngine() || prevDeviceId == id) return
     void getMediaDevice(id).then(async({ deviceId, label }) => setMediaDevice(deviceId, label))
   })
 
-  void getMediaDevice(appSetting['player.mediaDeviceId']).then(async({ deviceId, label }) => setMediaDevice(deviceId, label))
+  if (!isMpvEngine()) {
+    void getMediaDevice(appSetting['player.mediaDeviceId']).then(async({ deviceId, label }) => setMediaDevice(deviceId, label))
 
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
-  navigator.mediaDevices.addEventListener('devicechange', handleMediaListChange)
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    navigator.mediaDevices.addEventListener('devicechange', handleMediaListChange)
+  }
 
   onBeforeUnmount(() => {
     // eslint-disable-next-line @typescript-eslint/no-misused-promises

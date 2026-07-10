@@ -12,6 +12,7 @@ import music from './music'
 import download from './download'
 import soundEffect from './soundEffect'
 import mpv from './mpv'
+import audirvana from './audirvana'
 import openAPI from './openAPI'
 import { sendEvent } from '../main'
 
@@ -40,6 +41,7 @@ export default () => {
   download()
   soundEffect()
   mpv()
+  audirvana()
   openAPI()
 
   global.lx.event_app.on('updated_config', (keys, setting) => {

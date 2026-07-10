@@ -12,6 +12,7 @@ import createWorkers from './worker'
 import { migrateDBData } from './utils/migrate'
 import { openDirInExplorer } from '@common/utils/electron'
 import { setProxyByHost } from '@common/utils/request'
+import { cleanup as cleanupAudirvanaTemp, quit as quitAudirvana } from './modules/winMain/audirvanaController'
 
 export const initGlobalData = () => {
   const envParams = parseEnvParams()
@@ -215,6 +216,10 @@ export const listenerAppEvent = (startApp: () => void) => {
 
   app.on('before-quit', () => {
     global.lx.isSkipTrayQuit = true
+    if (global.lx.appSetting?.['player.playEngine'] === 'audirvana') {
+      // 同步阻塞等待 Audirvana 退出，确保洛雪关闭时它一定被关掉
+      quitAudirvana()
+    }
   })
   app.on('window-all-closed', () => {
     if (isMac) return
@@ -228,6 +233,8 @@ export const listenerAppEvent = (startApp: () => void) => {
   app.on('ready', () => {
     screen.on('display-metrics-changed', initScreenParams)
     initScreenParams()
+    // 清理 Audirvana 旧临时文件（保留 24 小时）
+    cleanupAudirvanaTemp()
   })
 
   nativeTheme.addListener('updated', () => {
