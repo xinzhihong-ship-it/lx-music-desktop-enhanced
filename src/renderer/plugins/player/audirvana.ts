@@ -11,10 +11,8 @@ const invoke = async<T = void>(name: string, params?: unknown): Promise<T> => {
 type Noop = () => void
 
 let empty = true
-let currentUrl = ''
 let currentTime = 0
 let duration = 0
-let volume = 1
 let muted = false
 let isPlaying = false
 let statePollTimer: NodeJS.Timeout | null = null
@@ -54,7 +52,7 @@ const startStatePoll = () => {
       isPlaying = state === 'playing'
 
       // 从 Audirvana 同步真实进度与时长
-      let position = currentTime
+      let position = lastPosition
       if (state === 'playing' || state === 'paused') {
         const [pos, dur] = await Promise.all([
           invoke<number>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_get_position),
@@ -69,24 +67,13 @@ const startStatePoll = () => {
       }
 
       // 检测假播放：状态显示 playing 但进度连续 3 秒没走，认为播放失败
-      if (isPlaying) {
-        if (Math.abs(position - lastPosition) < 0.05) {
-          positionStuckCount++
-          if (positionStuckCount >= 3) {
-            console.error('[Audirvana] fake playing detected, position stuck')
-            isPlaying = false
-            positionStuckCount = 0
-            emit('error')
-            emit('timeupdate')
-            return
-          }
-        } else {
-          positionStuckCount = 0
-        }
-      } else {
-        positionStuckCount = 0
+      if (isPositionStuck(position, isPlaying)) {
+        console.error('[Audirvana] fake playing detected, position stuck')
+        isPlaying = false
+        emit('error')
+        emit('timeupdate')
+        return
       }
-      lastPosition = position
 
       // 加载期间不传播状态变化，避免中途短暂 stopped 被误判为结束
       if (isLoading) {
@@ -144,6 +131,27 @@ const stopStatePoll = () => {
   positionStuckCount = 0
 }
 
+const isPositionStuck = (position: number, playing: boolean): boolean => {
+  if (!playing) {
+    positionStuckCount = 0
+    lastPosition = position
+    return false
+  }
+
+  if (Math.abs(position - lastPosition) < 0.05) {
+    positionStuckCount++
+    if (positionStuckCount >= 3) {
+      positionStuckCount = 0
+      return true
+    }
+  } else {
+    positionStuckCount = 0
+  }
+
+  lastPosition = position
+  return false
+}
+
 const waitForState = async(target: 'playing', maxWaitMs = 6000): Promise<boolean> => {
   const start = Date.now()
   while (Date.now() - start < maxWaitMs) {
@@ -155,7 +163,6 @@ const waitForState = async(target: 'playing', maxWaitMs = 6000): Promise<boolean
 }
 
 export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string) => {
-  currentUrl = src
   currentTime = 0
   duration = 0
   empty = false
@@ -226,7 +233,6 @@ export const setStop = async() => {
     console.error('audirvana stop failed', err)
   }
   empty = true
-  currentUrl = ''
   currentTime = 0
   duration = 0
   isPlaying = false
@@ -257,9 +263,9 @@ export const getMute = () => muted
 export const setMute = (isMute: boolean) => {
   muted = isMute
   if (muted) {
-    setPause()
+    void setPause()
   } else if (isPlaying) {
-    setPlay()
+    void setPlay()
   }
 }
 
@@ -285,8 +291,7 @@ export const setMediaDeviceId = async(_mediaDeviceId: string): Promise<void> => 
   // Audirvana 自己管理输出设备
 }
 
-export const setVolume = (value: number) => {
-  volume = value
+export const setVolume = (_value: number) => {
   // Audirvana 建议通过其界面或系统音量控制
 }
 
@@ -312,7 +317,9 @@ export const onWaiting = (callback: Noop) => subscribe('waiting', callback)
 export const onSeeked = (callback: Noop) => subscribe('seeked', callback)
 
 export const onVisibilityChange = (callback: Noop) => {
-  const handler = () => callback()
+  const handler = () => {
+    callback()
+  }
   document.addEventListener('visibilitychange', handler)
   return () => {
     document.removeEventListener('visibilitychange', handler)

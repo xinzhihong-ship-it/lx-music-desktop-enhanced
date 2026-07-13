@@ -29,6 +29,7 @@ declare namespace LX {
       qualitys: MusicQualityType[]
       _qualitys: _MusicQualityType
       albumId?: string | number // 歌曲专辑ID
+      accountTrackId?: string // 平台歌单条目ID，仅用于云端歌单删除
     }
 
     interface MusicInfoMeta_local extends MusicInfoMetaBase {

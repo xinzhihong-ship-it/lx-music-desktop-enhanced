@@ -7,20 +7,7 @@ import music from '@renderer/utils/musicSdk'
 process.versions.app = pkg.version
 
 export const apiSource = ref<string | null>(null)
-export const proxy: {
-  enable: boolean
-  host: string
-  port: string
-
-  envProxy?: {
-    host: string
-    port: string
-  }
-} = {
-  enable: false,
-  host: '',
-  port: '',
-}
+export { proxy } from './proxy'
 export const sync: {
   enable: boolean
   mode: LX.AppSetting['sync.mode']

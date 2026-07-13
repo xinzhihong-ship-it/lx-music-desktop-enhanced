@@ -314,6 +314,94 @@ export const getSystemFonts = async() => {
   })
 }
 
+export const getAccounts = async() => {
+  return rendererInvoke<LX.Account.PlatformAccount[]>(WIN_MAIN_RENDERER_EVENT_NAME.account_list)
+}
+
+export const startMusicRecognition = async(): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_start)
+}
+
+export const stopMusicRecognition = async(): Promise<void> => {
+  await rendererInvoke(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_stop)
+}
+
+export const getMusicRecognitionSnapshot = async(): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_snapshot)
+}
+
+export const clearMusicRecognitionHistory = async(): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_clear_history)
+}
+
+export const removeMusicRecognitionHistory = async(id: string): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<string, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_remove_history, id)
+}
+
+export const recognizeMusicFromMic = async(pcm: Uint8Array): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<Uint8Array, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_recognize_mic, pcm)
+}
+
+export const getMusicRecognitionConfig = async(): Promise<LX.MusicRecognition.AcrcloudConfig> => {
+  return rendererInvoke<LX.MusicRecognition.AcrcloudConfig>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_get_config)
+}
+
+export const setMusicRecognitionConfig = async(config: LX.MusicRecognition.AcrcloudConfig): Promise<LX.MusicRecognition.AcrcloudConfig> => {
+  return rendererInvoke<LX.MusicRecognition.AcrcloudConfig, LX.MusicRecognition.AcrcloudConfig>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_set_config, config)
+}
+
+export const onMusicRecognitionStatus = (callback: (snapshot: LX.MusicRecognition.Snapshot) => void) => {
+  const listener: LX.IpcRendererEventListenerParams<LX.MusicRecognition.Snapshot> = ({ params }) => {
+    callback(params)
+  }
+  rendererOn(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_status, listener)
+  return () => {
+    rendererOff(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_status, listener)
+  }
+}
+
+export const removeAccount = async(id: string) => {
+  return rendererInvoke<string>(WIN_MAIN_RENDERER_EVENT_NAME.account_remove, id)
+}
+
+export const loginAccount = async(params: LX.Account.LoginRequest) => {
+  return rendererInvoke<LX.Account.LoginRequest, LX.Account.PlatformAccount>(WIN_MAIN_RENDERER_EVENT_NAME.account_login, params)
+}
+
+export const createAccountQrCode = async(source: LX.Account.Source) => {
+  return rendererInvoke<LX.Account.Source, LX.Account.QrCodeLoginState>(WIN_MAIN_RENDERER_EVENT_NAME.account_qr_create, source)
+}
+
+export const checkAccountQrCode = async(source: LX.Account.Source, requestId: string) => {
+  return rendererInvoke<{ source: LX.Account.Source, requestId: string }, LX.Account.QrCodeLoginResult>(
+    WIN_MAIN_RENDERER_EVENT_NAME.account_qr_check,
+    { source, requestId },
+  )
+}
+
+export const getAccountPlaylists = async(accountId: string) => {
+  return rendererInvoke<string, LX.Account.PlaylistInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.account_playlists, accountId)
+}
+
+export const getAccountPlaylistTrackIds = async(accountId: string, playlistId: string, dirId?: string) => {
+  return rendererInvoke<{ accountId: string, playlistId: string, dirId?: string }, LX.Account.PlaylistTrackInfo[]>(
+    WIN_MAIN_RENDERER_EVENT_NAME.account_playlist_tracks,
+    { accountId, playlistId, dirId },
+  )
+}
+
+export const addAccountPlaylistTracks = async(params: LX.Account.PlaylistMutationRequest) => {
+  return rendererInvoke<LX.Account.PlaylistMutationRequest>(WIN_MAIN_RENDERER_EVENT_NAME.account_playlist_add_tracks, params)
+}
+
+export const removeAccountPlaylistTracks = async(params: LX.Account.PlaylistMutationRequest) => {
+  return rendererInvoke<LX.Account.PlaylistMutationRequest>(WIN_MAIN_RENDERER_EVENT_NAME.account_playlist_remove_tracks, params)
+}
+
+export const getAccountDailyTrackIds = async(accountId: string) => {
+  return rendererInvoke<string, string[]>(WIN_MAIN_RENDERER_EVENT_NAME.account_daily_tracks, accountId)
+}
+
 export const getUserSoundEffectEQPresetList = async() => {
   return rendererInvoke<LX.SoundEffect.EQPreset[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_sound_effect_eq_preset)
 }

@@ -39,6 +39,22 @@ const router = createRouter({
       },
     },
     {
+      path: '/platformMusic',
+      name: 'PlatformMusic',
+      component: require('./views/PlatformMusic/index.vue').default,
+      meta: {
+        name: 'PlatformMusic',
+      },
+    },
+    {
+      path: '/musicRecognition',
+      name: 'MusicRecognition',
+      component: require('./views/MusicRecognition/index.vue').default,
+      meta: {
+        name: 'MusicRecognition',
+      },
+    },
+    {
       path: '/list',
       name: 'List',
       component: require('./views/List/index.vue').default,

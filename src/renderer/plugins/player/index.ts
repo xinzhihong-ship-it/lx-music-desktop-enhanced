@@ -493,7 +493,10 @@ export const isEmpty = (): boolean => {
 }
 
 export const setLoopPlay = (isLoop: boolean) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.setLoopPlay(isLoop)
+  if (isAudirvanaEngine()) {
+    audirvanaPlayer.setLoopPlay(isLoop)
+    return
+  }
   if (audio) audio.loop = isLoop
 }
 
@@ -504,14 +507,20 @@ export const getPlaybackRate = (): number => {
 
 export const setPlaybackRate = (rate: number) => {
   if (isMpvEngine()) return
-  if (isAudirvanaEngine()) return audirvanaPlayer.setPlaybackRate(rate)
+  if (isAudirvanaEngine()) {
+    audirvanaPlayer.setPlaybackRate(rate)
+    return
+  }
   if (!audio) return
   audio.defaultPlaybackRate = rate
   audio.playbackRate = rate
 }
 
 export const setPreservesPitch = (preservesPitch: boolean) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.setPreservesPitch(preservesPitch)
+  if (isAudirvanaEngine()) {
+    audirvanaPlayer.setPreservesPitch(preservesPitch)
+    return
+  }
   if (!audio) return
   audio.preservesPitch = preservesPitch
 }
@@ -526,7 +535,10 @@ export const setMute = (isMute: boolean) => {
     mpvPlayer.setMute(isMute)
     return
   }
-  if (isAudirvanaEngine()) return audirvanaPlayer.setMute(isMute)
+  if (isAudirvanaEngine()) {
+    audirvanaPlayer.setMute(isMute)
+    return
+  }
   if (audio) audio.muted = isMute
 }
 
@@ -542,7 +554,10 @@ export const setCurrentTime = (time: number) => {
     mpvPlayer.setCurrentTime(time)
     return
   }
-  if (isAudirvanaEngine()) return audirvanaPlayer.setCurrentTime(time)
+  if (isAudirvanaEngine()) {
+    audirvanaPlayer.setCurrentTime(time)
+    return
+  }
   if (audio) audio.currentTime = time
 }
 
@@ -557,7 +572,10 @@ export const setVolume = (volume: number) => {
     mpvPlayer.setVolume(volume)
     return
   }
-  if (isAudirvanaEngine()) return audirvanaPlayer.setVolume(volume)
+  if (isAudirvanaEngine()) {
+    audirvanaPlayer.setVolume(volume)
+    return
+  }
   if (audio) audio.volume = volume
 }
 

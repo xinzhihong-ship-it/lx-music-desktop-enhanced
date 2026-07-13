@@ -6,19 +6,17 @@ import path from 'node:path'
 import os from 'node:os'
 import { log } from '@common/utils'
 import { checkAndCreateDir, joinPath } from '@common/utils/nodejs'
-import { filterFileName } from '@common/utils/common'
-import { clipFileNameLength, formatMusicName } from '@common/utils/tools'
 
 const isMac = process.platform == 'darwin'
 const defaultTmpDir = path.join(os.tmpdir(), 'lx-music-audirvana')
 
-const runAppleScript = (script: string, timeout = 10000): Promise<string> => {
+const runAppleScript = async(script: string, timeout = 10000, logSuccess = true): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!isMac) {
       reject(new Error('Audirvana is only available on macOS'))
       return
     }
-    log.info(`[Audirvana] AppleScript: ${script.replace(/\n/g, ' ').substring(0, 200)}`)
+    if (logSuccess) log.info(`[Audirvana] AppleScript: ${script.replace(/\n/g, ' ').substring(0, 200)}`)
     execFile('osascript', ['-e', script], { timeout }, (err, stdout, stderr) => {
       if (err) {
         log.warn(`[Audirvana] AppleScript error: ${err.message}\nstderr: ${stderr}`)
@@ -26,28 +24,22 @@ const runAppleScript = (script: string, timeout = 10000): Promise<string> => {
         return
       }
       const output = stdout.trim()
-      if (output) log.info(`[Audirvana] AppleScript output: ${output}`)
+      if (output && logSuccess) log.info(`[Audirvana] AppleScript output: ${output}`)
       resolve(output)
     })
   })
 }
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+const delay = async(ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
-const isAudirvanaRunning = async (): Promise<boolean> => {
-  try {
-    const result = await runAppleScript('tell application "System Events" to (name of processes) contains "Audirvana"')
-    return result === 'true'
-  } catch {
-    return false
-  }
-}
-
-const hideAudirvanaWindow = (): Promise<void> => {
+const hideAudirvanaWindow = async(): Promise<void> => {
   // 启动后强制隐藏 Audirvana 主窗口，避免它跳到前台
-  return runAppleScript('tell application "System Events" to set visible of process "Audirvana" to false')
-    .then(() => log.info('[Audirvana] window hidden'))
-    .catch(err => log.warn('[Audirvana] hide window failed', err))
+  try {
+    await runAppleScript('tell application "System Events" to set visible of process "Audirvana" to false')
+    log.info('[Audirvana] window hidden')
+  } catch (err) {
+    log.warn('[Audirvana] hide window failed', err)
+  }
 }
 
 const ensureAudirvanaRunning = async() => {
@@ -82,7 +74,7 @@ const ensureAudirvanaRunning = async() => {
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
-const downloadFile = (url: string, dest: string, redirectCount = 0): Promise<void> => {
+const downloadFile = async(url: string, dest: string, redirectCount = 0): Promise<void> => {
   return new Promise((resolve, reject) => {
     if (redirectCount > 5) {
       reject(new Error('too many redirects'))
@@ -99,9 +91,9 @@ const downloadFile = (url: string, dest: string, redirectCount = 0): Promise<voi
       method: 'GET',
       headers: {
         'User-Agent': UA,
-        'Accept': '*/*',
+        Accept: '*/*',
         'Accept-Encoding': 'identity',
-        'Connection': 'keep-alive',
+        Connection: 'keep-alive',
       },
       timeout: 30000,
     }, (res) => {
@@ -158,7 +150,7 @@ const fileExistsAndValid = (filePath: string): boolean => {
 
 export const getState = async(): Promise<'stopped' | 'playing' | 'paused'> => {
   try {
-    const result = await runAppleScript('tell application "Audirvana" to get player state')
+    const result = await runAppleScript('tell application "Audirvana" to get player state', 10000, false)
     const state = result.toLowerCase()
     if (state.includes('play')) return 'playing'
     if (state.includes('paus')) return 'paused'
@@ -170,7 +162,7 @@ export const getState = async(): Promise<'stopped' | 'playing' | 'paused'> => {
 
 export const getPosition = async(): Promise<number> => {
   try {
-    const result = await runAppleScript('tell application "Audirvana" to get player position')
+    const result = await runAppleScript('tell application "Audirvana" to get player position', 10000, false)
     const pos = parseFloat(result)
     return isNaN(pos) ? 0 : pos
   } catch {
@@ -180,7 +172,7 @@ export const getPosition = async(): Promise<number> => {
 
 export const getDuration = async(): Promise<number> => {
   try {
-    const result = await runAppleScript('tell application "Audirvana" to get playing track duration')
+    const result = await runAppleScript('tell application "Audirvana" to get playing track duration', 10000, false)
     const dur = parseInt(result, 10)
     return isNaN(dur) ? 0 : dur
   } catch {
@@ -373,7 +365,7 @@ end tell`
   return fileUrl
 }
 
-const openWithAudirvana = (filePath: string): Promise<void> => {
+const openWithAudirvana = async(filePath: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     log.info(`[Audirvana] opening file with Audirvana in background: ${filePath}`)
     // -g 让应用保持在后台，不激活到前台
@@ -426,7 +418,7 @@ export const previous = async() => {
 }
 
 export const cleanup = (targetDir?: string, maxAgeMs = 24 * 60 * 60 * 1000) => {
-  const dir = targetDir || defaultTmpDir
+  const dir = targetDir ?? defaultTmpDir
   try {
     if (!fs.existsSync(dir)) return
     const now = Date.now()

@@ -68,7 +68,7 @@ const options = {
  * @param {string} mpvArch
  * @returns {Promise<import('electron-builder').Configuration>}
  */
-const withMpvResources = async (baseOptions, mpvPlatform, mpvArch) => {
+const withMpvResources = async(baseOptions, mpvPlatform, mpvArch) => {
   const buildOptions = { ...baseOptions }
   if (mpvPlatform && mpvArch) {
     try {
@@ -88,6 +88,18 @@ const withMpvResources = async (baseOptions, mpvPlatform, mpvArch) => {
         },
       ]
     }
+  }
+  if (mpvPlatform === 'darwin') {
+    const audioTeePath = './node_modules/audiotee/bin/audiotee'
+    if (!fs.existsSync(audioTeePath)) throw new Error(`Missing music recognition binary: ${audioTeePath}`)
+    if ((fs.statSync(audioTeePath).mode & 0o111) === 0) throw new Error(`Music recognition binary is not executable: ${audioTeePath}`)
+    buildOptions.extraResources = [
+      ...buildOptions.extraResources,
+      {
+        from: audioTeePath,
+        to: './bin/music-recognition/audiotee',
+      },
+    ]
   }
   return buildOptions
 }
@@ -149,6 +161,12 @@ const macOptions = {
   mac: {
     icon: './resources/icons/icon.icns',
     category: 'public.app-category.music',
+    entitlements: './resources/entitlements.mac.plist',
+    entitlementsInherit: './resources/entitlements.mac.plist',
+    extendInfo: {
+      NSAudioCaptureUsageDescription: '用于听歌识曲，采集电脑正在播放的音频。',
+      NSMicrophoneUsageDescription: '用于听歌识曲所需的系统音频采集。',
+    },
     // artifactName: '${productName}-${version}.${ext}',
   },
   dmg: {

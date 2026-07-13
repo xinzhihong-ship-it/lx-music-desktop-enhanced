@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "2.13.0-enhanced.1",
+  "version": "2.13.0-enhanced.2",
   "description": "基于 LX Music（洛雪音乐助手）桌面版的二次开发/增强版本，一个免费的音乐查找助手",
   "main": "./dist/main.js",
   "scripts": {
@@ -112,6 +112,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/needle": "^3.3.0",
     "@types/node": "^20.19.39",
+    "@types/qrcode": "^1.5.6",
     "@types/tunnel": "^0.0.7",
     "@types/ws": "8.5.4",
     "@vue/language-plugin-pug": "^3.2.7",
@@ -168,6 +169,7 @@
   },
   "dependencies": {
     "@simonwep/pickr": "^1.9.1",
+    "audiotee": "0.0.7",
     "better-sqlite3": "^12.9.0",
     "bufferutil": "^4.1.0",
     "comlink": "~4.3.1",
@@ -179,10 +181,13 @@
     "jschardet": "^3.1.4",
     "long": "^5.3.2",
     "message2call": "^0.1.3",
+    "mqtt": "^5.15.2",
     "music-metadata": "^11.12.3",
     "needle": "github:lyswhut/needle#93299ac841b7e9a9f82ca7279b88aaaeda404060",
     "node-id3": "^0.2.9",
+    "qrcode": "^1.5.4",
     "sortablejs": "^1.15.7",
+    "st-shazam": "1.1.1",
     "tunnel": "^0.0.6",
     "undici": "^7.25.0",
     "utf-8-validate": "^6.0.6",

@@ -34,7 +34,7 @@ let shouldPlayAfterLoad = false
 const getOnlineMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): LX.Music.MusicInfoOnline | null => {
   if ('progress' in musicInfo) return musicInfo.metadata.musicInfo
   if (musicInfo.source === 'local') return null
-  return musicInfo as LX.Music.MusicInfoOnline
+  return musicInfo
 }
 
 const buildAudirvanaFilePath = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): string | null => {

@@ -5,6 +5,8 @@ import registerTray from './tray'
 import registerAppMenu from './appMenu'
 import registerWinLyric from './winLyric'
 import registerCommonRenderers from './commonRenderers'
+import registerAccount from './account'
+import registerMusicRecognition from './musicRecognition'
 
 let isRegistered = false
 export default () => {
@@ -17,4 +19,6 @@ export default () => {
   registerTray()
   registerAppMenu()
   registerWinLyric()
+  registerAccount()
+  registerMusicRecognition()
 }

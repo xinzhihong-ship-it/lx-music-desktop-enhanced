@@ -142,8 +142,12 @@ export default {
       type: Boolean,
       default: false,
     },
+    allowPlatformRemove: {
+      type: Boolean,
+      default: false,
+    },
   },
-  emits: ['show-menu', 'play-list', 'togglePage'],
+  emits: ['show-menu', 'play-list', 'togglePage', 'remove-from-platform'],
   setup(props, { emit }) {
     const actionButtonsVisible = appSetting['list.actionButtonsVisible']
     const rightClickSelectedIndex = ref(-1)
@@ -191,6 +195,7 @@ export default {
       menuClick,
     } = useMenu({
       props,
+      selectedList,
       assertApiSupport,
       emit,
 

@@ -112,4 +112,87 @@ declare namespace LX {
     version: string
     desc: string
   }
+
+  namespace Account {
+    type Source = 'wy' | 'tx' | 'kg'
+    type LoginMethod = 'qrcode' | 'phone_password' | 'phone_sms' | 'cookie'
+
+    interface QrCodeLoginState {
+      key: string
+      qrUrl: string
+      status: 'waiting' | 'scanned' | 'confirmed' | 'expired' | 'failed'
+      message?: string
+      cookies?: Record<string, string>
+    }
+
+    interface QrCodeLoginResult extends QrCodeLoginState {
+      account?: PlatformAccount
+    }
+
+    interface LoginRequest {
+      source: Source
+      method: LoginMethod
+      cookie?: string
+    }
+
+    interface PlaylistInfo {
+      id: string
+      name: string
+      author: string
+      play_count: string
+      img: string
+      desc: string | null
+      source: Source
+      total?: string
+      dirId?: string
+      isEditable?: boolean
+    }
+
+    interface PlaylistTrackInfo {
+      id: string
+      removeId?: string
+    }
+
+    interface PlaylistMutationTrack {
+      source: Source
+      songId: string
+      platformId?: string
+      name: string
+      hash?: string
+      albumId?: string
+    }
+
+    interface PlaylistMutationRequest {
+      accountId: string
+      playlistId: string
+      dirId?: string
+      tracks: PlaylistMutationTrack[]
+    }
+
+    interface PlatformAccount {
+      id: string
+      source: Source
+      nickname: string
+      avatar?: string
+      isLogin: boolean
+    }
+
+    interface LoginSession {
+      source: Source
+      cookies: Record<string, string>
+      tokens: Record<string, string>
+      expiresAt?: number
+    }
+
+    interface EncryptedSession {
+      data: string
+    }
+
+    interface LoginCredentials {
+      source: Source
+      cookie?: string
+      token?: string
+      [key: string]: string | undefined
+    }
+  }
 }

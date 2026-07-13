@@ -5,6 +5,7 @@ import { hasDislike } from '@renderer/core/dislikeList'
 
 export default ({
   props,
+  selectedList,
   assertApiSupport,
   emit,
 
@@ -66,7 +67,11 @@ export default ({
         action: 'dislike',
         disabled: !itemMenuControl.dislike,
       },
-    ]
+      props.allowPlatformRemove && {
+        name: t('account__playlist_remove_tracks'),
+        action: 'removeFromPlatform',
+      },
+    ].filter(Boolean)
   })
 
   const showMenu = (event, musicInfo) => {
@@ -123,6 +128,9 @@ export default ({
         break
       case 'dislike':
         handleDislikeMusic(index)
+        break
+      case 'removeFromPlatform':
+        emit('remove-from-platform', selectedList.value.length ? [...selectedList.value] : [props.list[index]])
         break
     }
   }

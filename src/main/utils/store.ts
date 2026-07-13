@@ -66,6 +66,11 @@ class Store {
     this.store = value
     this.writeFile()
   }
+
+  delete(key: string) {
+    Reflect.deleteProperty(this.store, key)
+    this.writeFile()
+  }
 }
 
 /**

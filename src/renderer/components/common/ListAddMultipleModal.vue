@@ -10,6 +10,14 @@
           </svg>
           <base-input :class="$style.newListInput" :value="newListName" :placeholder="$t('lists__new_list_input')" @keyup.enter="handleSaveList($event)" @blur="handleSaveList($event)" />
         </base-btn>
+        <h3 v-if="platformPlaylists.length" :class="$style.sectionTitle">{{ $t('account__playlist_platform_section') }}</h3>
+        <base-btn
+          v-for="(item, index) in platformPlaylists"
+          :key="`${item.account.id}:${item.playlist.id}`"
+          :class="$style.btn"
+          :aria-label="$t('account__playlist_add_to', { name: item.playlist.name })"
+          @click="handlePlatformClick(index)"
+        >{{ item.playlist.name }}</base-btn>
         <span v-for="i in spaceNum" :key="i" :class="$style.btn" />
       </div>
     </main>
@@ -17,12 +25,13 @@
 </template>
 
 <script>
-import { computed } from '@common/utils/vueTools'
+import { computed, ref, watch } from '@common/utils/vueTools'
 import { defaultList, loveList, userLists } from '@renderer/store/list/state'
 import { addListMusics, moveListMusics, createUserList } from '@renderer/store/list/action'
 import useKeyDown from '@renderer/utils/compositions/useKeyDown'
 import { useI18n } from '@root/lang'
 import { dialog } from '@renderer/plugins/Dialog'
+import { addToPlatformPlaylist, getEditablePlatformPlaylists } from '@renderer/store/account'
 
 export default {
   props: {
@@ -75,9 +84,24 @@ export default {
         ...userLists,
       ].filter(l => !props.excludeListId.includes(l.id))
     })
+    const normalizedMusicList = computed(() => props.musicList.length && 'progress' in props.musicList[0]
+      ? props.musicList.map(track => track.metadata.musicInfo)
+      : props.musicList)
+    const platformPlaylists = ref([])
+    watch(() => props.show, show => {
+      platformPlaylists.value = []
+      if (!show || props.isMove || !normalizedMusicList.value.length) return
+      const source = normalizedMusicList.value[0].source
+      if (normalizedMusicList.value.some(musicInfo => musicInfo.source != source)) return
+      void getEditablePlatformPlaylists(source).then(result => {
+        if (props.show) platformPlaylists.value = result
+      })
+    })
     return {
       keyModDown,
       lists,
+      normalizedMusicList,
+      platformPlaylists,
     }
   },
   data() {
@@ -110,7 +134,7 @@ export default {
           : width < 3840 ? 5 : 6
     },
     handleClick(index) {
-      const list = 'progress' in this.musicList[0] ? this.musicList.map(t => t.metadata.musicInfo) : this.musicList
+      const list = this.normalizedMusicList
 
       if (this.isMove) void moveListMusics(this.fromListId, this.lists[index].id, list)
       else void addListMusics(this.lists[index].id, list)
@@ -120,6 +144,15 @@ export default {
         this.handleClose()
         this.$emit('confirm')
       })
+    },
+    async handlePlatformClick(index) {
+      try {
+        await addToPlatformPlaylist(this.platformPlaylists[index], this.normalizedMusicList)
+        this.handleClose()
+        this.$emit('confirm')
+      } catch (err) {
+        await dialog({ message: window.i18n.t('account__playlist_add_failed', { message: err?.message ?? String(err) }) })
+      }
     },
     handleClose() {
       this.$emit('update:show', false)
@@ -173,6 +206,14 @@ export default {
   display: flex;
   flex-flow: row wrap;
   justify-content: space-evenly;
+}
+
+.sectionTitle {
+  width: 100%;
+  margin: 0 15px 10px;
+  color: var(--color-font-label);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 @item-width: (100% / 3);

@@ -65,7 +65,9 @@ export default () => {
     const wasPlaying = isPlay.value
     if (maxTime != null) setMaxplayTime(maxTime)
     console.log('setProgress', time, maxTime)
-    if (time > 0) restorePlayTime = time
+    // Audirvana 自己处理加载期 seek；保留这里的恢复位置会在 setPlay() 回报
+    // playing 时再次 seek 到同一位置，造成播放数秒后回跳。
+    if (time > 0 && appSetting['player.playEngine'] != 'audirvana') restorePlayTime = time
     if (mediaBuffer.playTime) {
       clearBufferTimeout()
       mediaBuffer.playTime = time

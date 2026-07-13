@@ -76,7 +76,7 @@ export const initGlobalData = () => {
   }
 
   global.staticPath =
-    process.env.NODE_ENV !== 'production'
+    process.env.NODE_ENV === 'development'
       ? webpackStaticPath
       : path.join(__dirname, 'static')
 }

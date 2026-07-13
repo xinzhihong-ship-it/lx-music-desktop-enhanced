@@ -5,6 +5,7 @@ const electron = require('electron')
 const path = require('path')
 // const { say } = require('cfonts')
 const { spawn } = require('child_process')
+const net = require('net')
 const webpack = require('webpack')
 const WebpackDevServer = require('webpack-dev-server')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
@@ -141,7 +142,7 @@ function startMain() {
   return new Promise((resolve, reject) => {
     // mainConfig.entry.main = [path.join(__dirname, '../src/main/index.dev.js')].concat(mainConfig.entry.main)
     // mainConfig.mode = 'development'
-    const runElectronDelay = debounce(startElectron, 200)
+    const restartElectronDelay = debounce(restartElectron, 200)
     const compiler = webpack(mainConfig)
 
     compiler.hooks.watchRun.tapAsync('watch-run', (compilation, done) => {
@@ -158,15 +159,53 @@ function startMain() {
       }
 
       // logStats('Main', stats)
-      if (electronProcess) {
-        electronProcess.removeAllListeners()
-        treeKill(electronProcess.pid)
-      }
       if (firstRun) {
         firstRun = false
         resolve()
-      } else runElectronDelay()
+      } else restartElectronDelay()
     })
+  })
+}
+
+function restartElectron() {
+  const currentProcess = electronProcess
+  if (!currentProcess) return startElectron()
+  electronProcess = null
+  currentProcess.removeAllListeners()
+
+  let forceKillTimeout
+  let restarted = false
+  const restart = async() => {
+    if (restarted) return
+    restarted = true
+    if (forceKillTimeout) clearTimeout(forceKillTimeout)
+    forceKillTimeout = null
+    await waitForPortRelease(5858)
+    startElectron()
+  }
+  currentProcess.once('close', restart)
+  treeKill(currentProcess.pid, 'SIGTERM', (err) => {
+    if (err && err.code === 'ESRCH') restart()
+  })
+  forceKillTimeout = setTimeout(() => {
+    treeKill(currentProcess.pid, 'SIGKILL', (err) => {
+      if (err && err.code === 'ESRCH') restart()
+    })
+  }, 1500)
+}
+
+function waitForPortRelease(port) {
+  return new Promise(resolve => {
+    const check = () => {
+      const server = net.createServer()
+      server.once('error', () => {
+        setTimeout(check, 100)
+      })
+      server.listen(port, '127.0.0.1', () => {
+        server.close(resolve)
+      })
+    }
+    check()
   })
 }
 
@@ -184,16 +223,23 @@ function startElectron() {
     args = args.concat(process.argv.slice(2))
   }
 
-  electronProcess = spawn(electron, args)
+  const childProcess = spawn(electron, args)
+  electronProcess = childProcess
 
-  electronProcess.stdout.on('data', data => {
+  childProcess.stdout.on('data', data => {
     electronLog(data, 'blue')
   })
-  electronProcess.stderr.on('data', data => {
+  childProcess.stderr.on('data', data => {
     electronLog(data, 'red')
   })
 
-  electronProcess.on('close', () => {
+  childProcess.on('close', (code) => {
+    if (electronProcess !== childProcess) return
+    electronProcess = null
+    if (code === 100) {
+      waitForPortRelease(5858).then(startElectron).catch(console.error)
+      return
+    }
     process.exit()
   })
 }

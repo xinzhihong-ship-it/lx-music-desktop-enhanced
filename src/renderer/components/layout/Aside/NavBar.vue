@@ -17,6 +17,7 @@ import { appSetting } from '@renderer/store/setting'
 import { useI18n } from '@root/lang'
 import { ref, computed } from '@common/utils/vueTools'
 import { useIconSize } from '@renderer/utils/compositions/useIconSize'
+import { isMac } from '@common/utils'
 
 export default {
   name: 'NavBar',
@@ -54,6 +55,24 @@ export default {
           size,
           name: 'Leaderboard',
           enable: true,
+        },
+        {
+          to: '/platformMusic',
+          tips: t('account__platform_music'),
+          icon: '#icon-music',
+          iconSize: '0 0 24 24',
+          size,
+          name: 'PlatformMusic',
+          enable: true,
+        },
+        {
+          to: '/musicRecognition',
+          tips: t('music_recognition'),
+          icon: '#icon-audio-wave',
+          iconSize: '0 0 24 24',
+          size,
+          name: 'MusicRecognition',
+          enable: isMac,
         },
         {
           to: '/list',

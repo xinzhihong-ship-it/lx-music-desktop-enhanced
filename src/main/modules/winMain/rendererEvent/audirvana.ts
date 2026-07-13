@@ -39,7 +39,7 @@ export default () => {
     return await audirvana.getDuration()
   })
 
-  mainHandle<number, void>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_set_position, async({ params }) => {
+  mainHandle<number>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_set_position, async({ params }) => {
     await audirvana.setPosition(params)
   })
 }

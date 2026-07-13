@@ -4,7 +4,7 @@ import { debugRequest } from './env'
 import { requestMsg } from './message'
 import { bHh } from './musicSdk/options'
 import { deflateRaw } from 'zlib'
-import { proxy } from '@renderer/store'
+import { proxy } from '@renderer/store/proxy'
 import { httpOverHttp, httpsOverHttp } from 'tunnel'
 // import fs from 'fs'
 

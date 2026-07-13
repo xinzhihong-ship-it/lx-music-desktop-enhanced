@@ -3,7 +3,7 @@ dt#play {{ $t('setting__play') }}
 dd
   div(:class="$style.engineSection")
     h3#basic_play_engine {{ $t('setting__play_engine') }}
-    base-selection(:class="$style.engineSelect" v-model="playEngine" :list="playEngineList" item-key="id" item-name="label" @change="handlePlayEngineChange")
+    base-selection(v-model="playEngine" :class="$style.engineSelect" :list="playEngineList" item-key="id" item-name="label" @change="handlePlayEngineChange")
     p(:class="$style.engineDesc")
       span(v-if="playEngine == 'mpv'") {{ $t('setting__play_engine_mpv_desc') }}
       span(v-else-if="playEngine == 'audirvana'") {{ $t('setting__play_engine_audirvana_desc') }}
@@ -13,11 +13,11 @@ dd(v-if="playEngine == 'mpv'")
   div(:class="$style.mpvSettings")
     div(:class="$style.formItem")
       h3#basic_mpv_path(:class="$style.formLabel") {{ $t('setting__play_mpv_path') }}
-      base-input(:class="$style.formInput" v-model="mpvPath" :placeholder="$t('setting__play_mpv_path_placeholder')" @update:model-value="updateSetting({'player.mpv.path': $event})")
+      base-input(v-model="mpvPath" :class="$style.formInput" :placeholder="$t('setting__play_mpv_path_placeholder')" @update:model-value="updateSetting({'player.mpv.path': $event})")
       p(:class="$style.formDesc") {{ $t('setting__play_mpv_path_order') }}
     div(:class="$style.formItem")
       h3#basic_mpv_extra_args(:class="$style.formLabel") {{ $t('setting__play_mpv_extra_args') }}
-      base-input(:class="$style.formInput" v-model="mpvExtraArgs" :placeholder="$t('setting__play_mpv_extra_args_placeholder')" @update:model-value="handleMpvExtraArgsChange")
+      base-input(v-model="mpvExtraArgs" :class="$style.formInput" :placeholder="$t('setting__play_mpv_extra_args_placeholder')" @update:model-value="handleMpvExtraArgsChange")
       p(:class="$style.formDesc") {{ $t('setting__play_mpv_extra_args_desc') }}
 //- Audirvana 专属提示
 dd(v-if="playEngine == 'audirvana'")
@@ -72,7 +72,7 @@ dd(:aria-label="$t('setting__play_mediaDevice_title')")
   div
     template(v-if="playEngine == 'mpv'")
       // MPV 模式下 base-selection 下拉框有渲染问题，先用原生 select 保证功能可用
-      select(:class="$style.mpvDeviceSelect" v-model="mediaDeviceId" @change="handleMediaDeviceIdChnage")
+      select(v-model="mediaDeviceId" :class="$style.mpvDeviceSelect" @change="handleMediaDeviceIdChnage")
         option(v-for="item in mediaDevices" :key="item.deviceId" :value="item.deviceId") {{ item.label }}
     template(v-else-if="playEngine == 'audirvana'")
       p(:class="$style.audirvanaDeviceTip") {{ $t('setting__play_audirvana_device_tip') }}
@@ -374,7 +374,6 @@ export default {
       handleMpvExtraArgsChange,
       handleMpvBitPerfectChange,
       isMac,
-      playEngineDebug,
     }
   },
 }

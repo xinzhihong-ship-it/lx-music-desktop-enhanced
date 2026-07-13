@@ -22,6 +22,7 @@ import { langList } from '@root/lang'
 import type { I18n } from '@root/lang/i18n'
 
 import { initSetting } from './store/setting'
+import { loadAccounts } from './store/account'
 // import { bubbleCursor } from './utils/cursor-effects/bubbleCursor'
 
 import './worker'
@@ -68,6 +69,7 @@ void getSetting().then(setting => {
 
   // store.commit('setSetting', setting)
   initSetting(setting)
+  void loadAccounts()
 
   const app = createApp(App)
   app

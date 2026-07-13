@@ -1,8 +1,7 @@
 // electron-log 在 Electron 主进程/渲染进程/Worker 要分别用对应入口，
 // 否则主进程日志不会写入文件，导致排查时拿不到 main.log。
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const resolveLog = (mod: any) => mod.default || mod
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+/* eslint-disable @typescript-eslint/no-var-requires */
 const log = typeof process == 'undefined'
   ? resolveLog(require('electron-log/main'))
   : process.type == 'renderer'
@@ -10,6 +9,7 @@ const log = typeof process == 'undefined'
     : process.type == 'worker'
       ? resolveLog(require('electron-log/node'))
       : resolveLog(require('electron-log/main'))
+/* eslint-enable @typescript-eslint/no-var-requires */
 
 
 export const isLinux = process.platform == 'linux'

@@ -39,6 +39,10 @@ export default () => {
     quitApp()
   })
   mainOn(WIN_MAIN_RENDERER_EVENT_NAME.restart_window, () => {
+    if (process.env.NODE_ENV === 'development') {
+      app.exit(100)
+      return
+    }
     app.relaunch()
     quitApp()
   })

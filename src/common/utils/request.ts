@@ -259,10 +259,15 @@ export const request = async <T = unknown>(url: string, options: Options = {}): 
       } satisfies Omit<Response<T>, 'body'> as Response<T>
     }
     // console.log(response)
-    let body = (await response.body.text()) as T
-    if (!headers['Content-Type'] || headers['Content-Type'].includes(CONTENT_TYPE.json)) {
+    const responseText = await response.body.text()
+    let body = responseText as T
+    const responseContentType = response.headers['content-type']
+    const trimmedBody = responseText.trim()
+    const looksLikeJson = (trimmedBody.startsWith('{') && trimmedBody.endsWith('}')) ||
+      (trimmedBody.startsWith('[') && trimmedBody.endsWith(']'))
+    if (!responseContentType || responseContentType.includes(CONTENT_TYPE.json) || responseContentType.includes('+json') || looksLikeJson) {
       try {
-        body = JSON.parse(body as string) as T
+        body = JSON.parse(responseText) as T
       } catch {}
     }
     return {

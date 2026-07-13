@@ -10,6 +10,14 @@
           </svg>
           <base-input :class="$style.newListInput" :value="newListName" :placeholder="$t('lists__new_list_input')" @keyup.enter="handleSaveList($event)" @blur="handleSaveList($event)" />
         </base-btn>
+        <h3 v-if="platformPlaylists.length" :class="$style.sectionTitle">{{ $t('account__playlist_platform_section') }}</h3>
+        <base-btn
+          v-for="(item, index) in platformPlaylists"
+          :key="`${item.account.id}:${item.playlist.id}`"
+          :class="$style.btn"
+          :aria-label="$t('account__playlist_add_to', { name: item.playlist.name })"
+          @click="handlePlatformClick(index)"
+        >{{ item.playlist.name }}</base-btn>
         <span v-for="i in spaceNum" :key="i" :class="$style.btn" />
       </div>
     </main>
@@ -24,6 +32,7 @@ import { addListMusics, moveListMusics, createUserList, getMusicExistListIds } f
 import useKeyDown from '@renderer/utils/compositions/useKeyDown'
 import { useI18n } from '@root/lang'
 import { dialog } from '@renderer/plugins/Dialog'
+import { addToPlatformPlaylist, getEditablePlatformPlaylists } from '@renderer/store/account'
 
 export default {
   props: {
@@ -67,6 +76,7 @@ export default {
     const keyModDown = useKeyDown('mod')
     const t = useI18n()
     const lists = ref([])
+    const platformPlaylists = ref([])
 
     const currentMusicInfo = ref({})
 
@@ -93,6 +103,7 @@ export default {
 
     watch(() => props.show, show => {
       if (!show) {
+        platformPlaylists.value = []
         if (stopWatchUserList) {
           stopWatchUserList()
           stopWatchUserList = null
@@ -104,6 +115,13 @@ export default {
       currentMusicInfo.value = 'progress' in props.musicInfo ? props.musicInfo.metadata.musicInfo : props.musicInfo
 
       getList()
+
+      if (!props.isMove) {
+        const musicId = currentMusicInfo.value.id
+        void getEditablePlatformPlaylists(currentMusicInfo.value.source).then(result => {
+          if (props.show && currentMusicInfo.value.id == musicId) platformPlaylists.value = result
+        })
+      }
 
       stopWatchUserList = watch(userLists, getList)
     })
@@ -118,6 +136,7 @@ export default {
     return {
       keyModDown,
       lists,
+      platformPlaylists,
       checkMusicExist,
       currentMusicInfo,
     }
@@ -159,6 +178,14 @@ export default {
       this.$nextTick(() => {
         this.handleClose()
       })
+    },
+    async handlePlatformClick(index) {
+      try {
+        await addToPlatformPlaylist(this.platformPlaylists[index], [this.currentMusicInfo])
+        this.handleClose()
+      } catch (err) {
+        await dialog({ message: window.i18n.t('account__playlist_add_failed', { message: err?.message ?? String(err) }) })
+      }
     },
     handleClose() {
       this.$emit('update:show', false)
@@ -216,6 +243,14 @@ export default {
   display: flex;
   flex-flow: row wrap;
   justify-content: space-evenly;
+}
+
+.sectionTitle {
+  width: 100%;
+  margin: 0 15px 10px;
+  color: var(--color-font-label);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 @item-width: (100% / 3);
