@@ -83,6 +83,21 @@
 
 > 提示：实际听感还取决于音源质量、DAC/耳机/音箱水平。如果使用普通设备听 128k/320k 在线音源，三者差异可能很小。
 
+## 引用与致谢
+
+本项目基于以下开源项目与服务构建，感谢其作者：
+
+| 项目 | 作者 | 许可 | 用途 |
+|------|------|------|------|
+| [LX Music（洛雪音乐助手）桌面版](https://github.com/lyswhut/lx-music-desktop) | lyswhut | Apache-2.0 | 上游原项目，本 fork 的全部基础功能来源 |
+| [mpv](https://mpv.io/) | mpv 团队 | GPL-2.0 / LGPL-2.1 | MPV 播放引擎二进制 |
+| [AudioTee.js](https://github.com/makeusabrew/audiotee-js) | Nick Payne | MIT | macOS 系统音频采集（听歌识曲） |
+| [ST-Shazam](https://github.com/sheikhtamimlover/ST-Shazam) | Sheikh Tamim | MIT | Shazam 音频指纹算法（听歌识曲） |
+| [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) | Binaryify | MIT | 网易云接口加解密实现参考 |
+| [ACRCloud](https://www.acrcloud.cn/) | ACRCloud | 商业服务（有免费额度） | 音乐/翻唱识别云服务（需自行申请密钥） |
+
+第三方许可原文见 [licenses/](licenses/) 目录。Audirvana 为其各自所有者的商标与产品，本项目仅通过其公开脚本接口调用，不捆绑其二进制。
+
 ## 安装说明
 
 ### 方式一：直接下载 Release（推荐）
