@@ -10,6 +10,19 @@ import { checkAndCreateDir, joinPath } from '@common/utils/nodejs'
 const isMac = process.platform == 'darwin'
 const defaultTmpDir = path.join(os.tmpdir(), 'lx-music-audirvana')
 
+// 控制节奏，避免 Audirvāna 的 CoreAudio IOProc 在 stop 后未释放完就立即 play，
+// 导致 HALC_ProxyIOContext::SetPropertyData: unknown IOProc 错误而无法出声。
+let lastStopAt = 0
+let lastStopPromise: Promise<void> | null = null
+let lastSetTrackAt = 0
+const STOP_SETTLE_MS = 1500
+const STOP_DEBOUNCE_MS = 300
+const SET_TRACK_COOLDOWN_MS = 500
+
+const markStopped = () => {
+  lastStopAt = Date.now()
+}
+
 const runAppleScript = async(script: string, timeout = 10000, logSuccess = true): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!isMac) {
@@ -192,6 +205,12 @@ end tell`
   await runAppleScript(script)
 }
 
+const shouldSettleAfterStop = (): { need: boolean, delaySec: number } => {
+  const elapsed = Date.now() - lastStopAt
+  if (elapsed >= STOP_SETTLE_MS) return { need: false, delaySec: 0 }
+  return { need: true, delaySec: Math.min(3, Math.ceil((STOP_SETTLE_MS - elapsed) / 100) / 10) }
+}
+
 const syncSleep = (ms: number) => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
@@ -294,6 +313,17 @@ export const setTrack = async(params: { url: string, musicInfo?: LX.Music.MusicI
   }
 
   log.info(`[Audirvana] setTrack called: ${url.substring(0, 120)}, isLocalFile: ${isLocalFile}`)
+
+  // 防止快速切歌导致 Audirvāna 音频引擎/AppleScript 队列堆积
+  const now = Date.now()
+  const prevSetTrackAt = lastSetTrackAt
+  lastSetTrackAt = now
+  if (now - prevSetTrackAt < SET_TRACK_COOLDOWN_MS) {
+    const waitMs = SET_TRACK_COOLDOWN_MS - (now - prevSetTrackAt)
+    log.info(`[Audirvana] setTrack too fast, throttling ${waitMs}ms`)
+    await delay(waitMs)
+  }
+
   await ensureAudirvanaRunning()
 
   // 确保目标目录存在（在线音乐需要）
@@ -313,12 +343,20 @@ export const setTrack = async(params: { url: string, musicInfo?: LX.Music.MusicI
 
   const fileUrl = `file://${encodeURI(filePath)}`
 
+  // 若刚刚 stop，让 Audirvāna 的 CoreAudio IOProc 多释放一会儿；
+  // 否则 Audirvāna 可能报 HALC_ProxyIOContext::SetPropertyData: unknown IOProc。
+  const settle = shouldSettleAfterStop()
+  const settleDelay = settle.need ? Math.max(1, Math.round(settle.delaySec * 10) / 10) : 1
+  if (settle.need) {
+    log.info(`[Audirvana] setTrack: extending settle delay to ${settleDelay}s after recent stop`)
+  }
+
   // Audirvana 原生 AppleScript 接口：设置曲目后立刻播放（不 activate，避免跳到前台）
   // 使用 resume 而不是 playpause，避免在 Audirvana 已经处于 playing 状态时把播放暂停。
-  const setTrackScript = () => `tell application "Audirvana"
+  const setTrackScript = (extraDelay = 1) => `tell application "Audirvana"
   set event types reported to TrackAndPosition
   set playing track type AudioFile URL "${toAppleScriptString(fileUrl)}"
-  delay 1
+  delay ${extraDelay}
   if player state is not playing then
     playpause
   else
@@ -328,7 +366,7 @@ end tell`
 
   let playing = false
   try {
-    await runAppleScript(setTrackScript(), 20000)
+    await runAppleScript(setTrackScript(settleDelay), 20000)
     log.info('[Audirvana] set playing track + play command sent')
     playing = await waitForRealPlaying(10000)
   } catch (err: any) {
@@ -339,7 +377,7 @@ end tell`
   if (!playing) {
     try {
       log.info('[Audirvana] retrying setTrack')
-      await runAppleScript(setTrackScript(), 20000)
+      await runAppleScript(setTrackScript(settleDelay), 20000)
       playing = await waitForRealPlaying(10000)
     } catch (err: any) {
       log.warn('[Audirvana] retry set track failed, trying open command', err.message)
@@ -355,6 +393,20 @@ end tell`
       playing = await waitForRealPlaying(10000)
     } catch (err: any) {
       log.warn('[Audirvana] open command failed', err.message)
+    }
+  }
+
+  // 终极备用：Audirvāna 的 CoreAudio 状态可能已经卡死，重启它再试一次
+  if (!playing) {
+    try {
+      log.warn('[Audirvana] all setTrack attempts failed, restarting Audirvana and trying once more')
+      quit()
+      await ensureAudirvanaRunning()
+      lastStopAt = 0
+      await runAppleScript(setTrackScript(1), 20000)
+      playing = await waitForRealPlaying(10000)
+    } catch (err: any) {
+      log.warn('[Audirvana] restart and setTrack failed', err.message)
     }
   }
 
@@ -386,6 +438,14 @@ const openWithAudirvana = async(filePath: string): Promise<void> => {
 
 export const play = async(): Promise<void> => {
   log.info('[Audirvana] play')
+
+  // 若刚刚 stop，先让 CoreAudio IOProc 释放完成，避免 resume 时设备状态冲突
+  const settle = shouldSettleAfterStop()
+  if (settle.need) {
+    log.info(`[Audirvana] play: waiting ${settle.delaySec}s for device settle after stop`)
+    await delay(settle.delaySec * 1000)
+  }
+
   // 避免把正在播放的歌暂停，只在 stopped/paused 时触发 playpause
   const script = `tell application "Audirvana"
   if player state is not playing then playpause
@@ -402,9 +462,27 @@ export const pause = async() => {
   await runAppleScript('tell application "Audirvana" to pause').catch(() => {})
 }
 
-export const stop = async() => {
+export const stop = async(): Promise<void> => {
   log.info('[Audirvana] stop')
-  await runAppleScript('tell application "Audirvana" to stop').catch(() => {})
+  // 合并连续 stop，避免重复触发加重设备状态抖动
+  if (lastStopPromise) return lastStopPromise
+
+  lastStopPromise = (async() => {
+    // 把 stop 时间记为调用时刻，让后续 play/setTrack 能正确 settle
+    const prevStopAt = lastStopAt
+    markStopped()
+    try {
+      // 如果距离上次 stop 很近，直接记为已 stop，减少多余 AppleScript 调用
+      if (Date.now() - prevStopAt > STOP_DEBOUNCE_MS) {
+        await runAppleScript('tell application "Audirvana" to stop').catch(() => {})
+      }
+    } finally {
+      // 稍微等一下再清标记，这样短时间内的重复 stop 都被吞掉
+      setTimeout(() => { lastStopPromise = null }, STOP_DEBOUNCE_MS)
+    }
+  })()
+
+  return lastStopPromise
 }
 
 export const next = async() => {

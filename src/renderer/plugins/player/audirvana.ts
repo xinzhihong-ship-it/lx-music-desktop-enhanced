@@ -40,28 +40,37 @@ const emit = (event: keyof typeof listeners) => {
   for (const cb of listeners[event]) cb()
 }
 
+const POLL_INTERVAL_MS = 1200
+
 const startStatePoll = () => {
   if (statePollTimer) return
   stoppedCount = 0
   lastPosition = 0
   positionStuckCount = 0
-  statePollTimer = setInterval(async() => {
+
+  const tick = async() => {
     try {
       const state = await invoke<'stopped' | 'playing' | 'paused'>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_get_state)
       const wasPlaying = isPlaying
+      const wasStopped = !wasPlaying
       isPlaying = state === 'playing'
 
       // 从 Audirvana 同步真实进度与时长
       let position = lastPosition
       if (state === 'playing' || state === 'paused') {
-        const [pos, dur] = await Promise.all([
-          invoke<number>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_get_position),
-          invoke<number>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_get_duration),
-        ])
+        const pos = await invoke<number>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_get_position)
         position = pos
-        if (dur > 0 && duration !== dur) {
-          duration = dur
-          emit('loadeddata')
+        // 时长在同一曲内不会变，只在切歌/重新获得时长时查一次，降低 AppleScript 压力
+        if (duration <= 0 || wasStopped) {
+          try {
+            const dur = await invoke<number>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_get_duration)
+            if (dur > 0 && duration !== dur) {
+              duration = dur
+              emit('loadeddata')
+            }
+          } catch (err) {
+            console.warn('audirvana get duration failed', err)
+          }
         }
         currentTime = position
       }
@@ -117,13 +126,19 @@ const startStatePoll = () => {
       emit('timeupdate')
     } catch (err) {
       console.error('audirvana state poll error', err)
+    } finally {
+      if (statePollTimer) {
+        statePollTimer = setTimeout(tick, POLL_INTERVAL_MS)
+      }
     }
-  }, 1000)
+  }
+
+  statePollTimer = setTimeout(tick, 0)
 }
 
 const stopStatePoll = () => {
   if (statePollTimer) {
-    clearInterval(statePollTimer)
+    clearTimeout(statePollTimer)
     statePollTimer = null
   }
   stoppedCount = 0
