@@ -101,10 +101,11 @@ export default {
     const t = useI18n()
     const playQualityList = [...TRY_QUALITYS_LIST, '128k'].reverse()
 
+    // Audirvana 仅 macOS 可用（主进程在非 mac 平台直接 reject），其他平台不展示该选项
     const playEngineList = [
       { id: 'electron', label: t('setting__play_engine_electron') },
       { id: 'mpv', label: t('setting__play_engine_mpv') },
-      { id: 'audirvana', label: t('setting__play_engine_audirvana') },
+      ...(isMac ? [{ id: 'audirvana', label: t('setting__play_engine_audirvana') }] : []),
     ]
     const playEngine = ref(appSetting['player.playEngine'])
     const handlePlayEngineChange = async() => {
