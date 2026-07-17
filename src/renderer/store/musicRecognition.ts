@@ -16,6 +16,13 @@ import {
   startMicCapture,
   type MicCaptureHandle,
 } from '@renderer/views/MusicRecognition/micCapture'
+import { isMac, isWin } from '@common/utils'
+import {
+  SystemAudioCancelledError,
+  SystemNoAudioError,
+  startSystemAudioCapture,
+  type SystemAudioCaptureHandle,
+} from '@renderer/views/MusicRecognition/systemAudioCapture'
 
 export const musicRecognition = reactive<LX.MusicRecognition.Snapshot>({
   status: 'idle',
@@ -45,6 +52,7 @@ const isBusyStatus = (status: LX.MusicRecognition.Status) => ['requestingPermiss
 
 let unsubscribeStatus: (() => void) | null = null
 let micCaptureHandle: MicCaptureHandle | null = null
+let systemCaptureHandle: SystemAudioCaptureHandle | null = null
 
 export const initMusicRecognition = async() => {
   unsubscribeStatus ??= onMusicRecognitionStatus(applySnapshot)
@@ -86,9 +94,47 @@ export const startMicRecognition = async() => {
   }
 }
 
+// 系统音频识别按平台分流：macOS 走主进程 audiotee，Windows 走渲染进程 loopback，
+// 其他平台（Linux）不支持系统音频采集，直接落到 unsupported 状态
+export const startSystemRecognition = async() => {
+  if (isMac) return startRecognition()
+  if (!isWin) {
+    Object.assign(musicRecognition, { status: 'unsupported' })
+    return
+  }
+  if (isBusyStatus(musicRecognition.status)) return
+  Object.assign(musicRecognition, { status: 'requestingPermission', error: undefined, result: undefined, alternatives: undefined, captureProgress: 0 })
+  const handle = startSystemAudioCapture(progress => {
+    Object.assign(musicRecognition, { status: 'capturing', captureProgress: progress })
+  })
+  systemCaptureHandle = handle
+  try {
+    const pcm = await handle.promise
+    applySnapshot(await recognizeMusicFromMic(pcm))
+  } catch (err) {
+    if (err instanceof SystemAudioCancelledError) {
+      Object.assign(musicRecognition, { status: 'idle', error: undefined, captureProgress: undefined })
+      return
+    }
+    if (err instanceof SystemNoAudioError) {
+      Object.assign(musicRecognition, { status: 'noAudio', error: err.message, captureProgress: undefined })
+      return
+    }
+    Object.assign(musicRecognition, {
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err),
+      captureProgress: undefined,
+    })
+  } finally {
+    systemCaptureHandle = null
+  }
+}
+
 export const stopRecognition = async() => {
   micCaptureHandle?.stop()
   micCaptureHandle = null
+  systemCaptureHandle?.stop()
+  systemCaptureHandle = null
   await stopMusicRecognition()
 }
 

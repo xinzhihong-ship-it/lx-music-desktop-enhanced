@@ -175,7 +175,7 @@ import {
   removeRecognitionHistoryItem,
   saveAcrcloudConfig,
   startMicRecognition,
-  startRecognition,
+  startSystemRecognition,
   stopRecognition,
 } from '@renderer/store/musicRecognition'
 
@@ -219,7 +219,7 @@ const handleStart = () => {
   if (source.value === 'mic') {
     void startMicRecognition()
   } else {
-    void startRecognition()
+    void startSystemRecognition()
   }
 }
 const handleStop = () => {
