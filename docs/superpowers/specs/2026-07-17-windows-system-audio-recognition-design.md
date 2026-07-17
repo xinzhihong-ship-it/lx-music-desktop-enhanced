@@ -46,7 +46,7 @@ view.handleStart (source='system')
 ### 1. 主进程：display media handler
 
 - 文件：`src/main/modules/musicRecognition/index.ts`
-- 仅 `process.platform === 'win32'` 时，对 defaultSession 注册 `setDisplayMediaRequestHandler`：用 `desktopCapturer.getSources({ types: ['screen'] })` 取第一个屏幕源，`callback({ video: source, audio: 'loopback' })`，无选择器弹窗。
+- 仅 `process.platform === 'win32'` 时，对主窗口实际使用的 session（`persist:win-main`，见 `src/main/modules/winMain/main.ts:69,91`）注册 `setDisplayMediaRequestHandler`：用 `desktopCapturer.getSources({ types: ['screen'] })` 取第一个屏幕源，`callback({ video: source, audio: 'loopback' })`，无选择器弹窗。注意 handler 按 session partition 隔离，注册到 `session.defaultSession` 不会对主窗口生效。
 - 已确认全项目无其他 `getDisplayMedia` / `desktopCapturer` 使用，handler 无冲突。
 
 ### 2. 渲染进程：`systemAudioCapture.ts`（新增）
