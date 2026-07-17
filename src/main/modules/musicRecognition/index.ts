@@ -9,7 +9,8 @@ let isInitialized = false
 // 不弹选择器。macOS 的 loopback 不被 Chrome 支持，仍走 audiotee，因此只在 win32 注册。
 const registerWindowsLoopbackHandler = () => {
   if (process.platform !== 'win32') return
-  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+  // 必须与主窗口同一 session（winMain/main.ts 的 persist:win-main），否则 handler 不会触发
+  session.fromPartition('persist:win-main').setDisplayMediaRequestHandler((_request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
       const primary = sources[0]
       if (primary) {
