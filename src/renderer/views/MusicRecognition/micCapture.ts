@@ -19,7 +19,7 @@ export interface MicCaptureHandle {
   stop: () => void
 }
 
-const resampleTo16kInt16 = (samples: Float32Array, sourceRate: number): Uint8Array => {
+export const resampleTo16kInt16 = (samples: Float32Array, sourceRate: number): Uint8Array => {
   const ratio = sourceRate / TARGET_SAMPLE_RATE
   const outLength = Math.max(Math.floor(samples.length / ratio), 1)
   const out = new Int16Array(outLength)
