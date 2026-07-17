@@ -1,13 +1,31 @@
-import { app } from 'electron'
+import { app, desktopCapturer, session } from 'electron'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { mainHandle } from '@common/mainIpc'
 import * as service from './service'
 
 let isInitialized = false
 
+// Windows 系统音频采集：渲染进程 getDisplayMedia 时自动授权主屏 + 系统混音（loopback），
+// 不弹选择器。macOS 的 loopback 不被 Chrome 支持，仍走 audiotee，因此只在 win32 注册。
+const registerWindowsLoopbackHandler = () => {
+  if (process.platform !== 'win32') return
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
+      const primary = sources[0]
+      if (primary) {
+        callback({ video: primary, audio: 'loopback' })
+      } else {
+        callback({})
+      }
+    }).catch(() => { callback({}) })
+  })
+}
+
 export default () => {
   if (isInitialized) return
   isInitialized = true
+
+  registerWindowsLoopbackHandler()
 
   mainHandle<never, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_start, async({ event }) => {
     const sender = event.sender
