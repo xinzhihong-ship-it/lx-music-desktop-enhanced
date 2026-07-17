@@ -12,8 +12,11 @@ const dedupeKey = (result: LX.MusicRecognition.Result): string => {
 }
 
 let recognitionController: AbortController | null = null
+// 「识曲功能是否可用」（决定 UI 初始状态）：macOS 14.2+ 走 audiotee，Windows 走渲染进程 loopback。
+// 注意与 isMusicRecognitionSupported 区分：后者是「主进程能否采集」，仅作 audiotee 路径的门。
+const canUseMusicRecognition = (): boolean => isMusicRecognitionSupported() || process.platform === 'win32'
 let snapshot: LX.MusicRecognition.Snapshot = {
-  status: isMusicRecognitionSupported() ? 'idle' : 'unsupported',
+  status: canUseMusicRecognition() ? 'idle' : 'unsupported',
   history: [],
 }
 
