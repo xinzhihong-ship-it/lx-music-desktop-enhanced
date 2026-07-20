@@ -88,7 +88,6 @@ import { dialog } from '@renderer/plugins/Dialog'
 import showTip from '@renderer/plugins/Tips/Tips'
 import { useI18n } from '@renderer/plugins/i18n'
 import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/setting'
-import { restartApp } from '@renderer/utils/ipc'
 import { setPowerSaveBlocker } from '@renderer/core/player/utils'
 import { isPlay, playMusicInfo } from '@renderer/store/player/state'
 import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
@@ -128,11 +127,9 @@ export default {
 
       updateSetting({ 'player.playEngine': newEngine })
 
-      // 切换到 Audirvana 需要重启应用，避免 renderer 状态混乱
-      if (newEngine == 'audirvana') {
-        restartApp()
-        return
-      }
+      // 切换到 Audirvana 无需重启应用：播放器事件订阅通过
+      // watch(player.playEngine) 自动切换到 audirvana 实现（usePlayerEvent / usePlayProgress），
+      // Audirvana 本身在首次播放时按需启动。
 
       // 切换到 electron 时强制刷新音频 URL，避免 gettingUrlId 缓存导致 play() 跳过获取
       if (newEngine == 'electron' && playMusicInfo.musicInfo) {
@@ -290,9 +287,11 @@ export default {
       if (isMpvEngine()) {
         log.info('[SettingPlay] mediaDeviceId changed to:', mediaDeviceId.value, 'isPlay:', isPlay.value)
         updateSetting({ 'player.mediaDeviceId': mediaDeviceId.value })
-        // 正在播放时才需要 restart 让新设备立即生效；未播放时只需保存，下次播放自动用新设备
-        if (isPlay.value) {
-          void mpvPlayer.restart(true).catch(err => {
+        // 正在播放或已有曲目加载（暂停中）时才需要 restart 让新设备立即生效；
+        // --audio-device 是 mpv 启动参数，不重启进程不会应用。
+        // mpv 进程未启动（无曲目）时只需保存，下次播放自动用新设备。
+        if (isPlay.value || !mpvPlayer.isEmpty()) {
+          void mpvPlayer.restart(isPlay.value).catch(err => {
             log.error('[SettingPlay] mpv restart failed:', err)
           })
         }

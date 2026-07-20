@@ -161,8 +161,21 @@ const fileExistsAndValid = (filePath: string): boolean => {
   }
 }
 
+// 用 pgrep 检查进程是否存活。不能用 AppleScript 查：
+// 对未运行的应用执行 tell application "Audirvana" 会把它重新启动，
+// 导致用户手动退出后被状态轮询反复拉起。
+const isAudirvanaProcessRunning = async(): Promise<boolean> => {
+  if (!isMac) return false
+  return new Promise(resolve => {
+    execFile('pgrep', ['-x', 'Audirvana'], { timeout: 3000 }, (err, stdout) => {
+      resolve(!err && stdout.trim().length > 0)
+    })
+  })
+}
+
 export const getState = async(): Promise<'stopped' | 'playing' | 'paused'> => {
   try {
+    if (!(await isAudirvanaProcessRunning())) return 'stopped'
     const result = await runAppleScript('tell application "Audirvana" to get player state', 10000, false)
     const state = result.toLowerCase()
     if (state.includes('play')) return 'playing'
@@ -175,6 +188,7 @@ export const getState = async(): Promise<'stopped' | 'playing' | 'paused'> => {
 
 export const getPosition = async(): Promise<number> => {
   try {
+    if (!(await isAudirvanaProcessRunning())) return 0
     const result = await runAppleScript('tell application "Audirvana" to get player position', 10000, false)
     const pos = parseFloat(result)
     return isNaN(pos) ? 0 : pos
@@ -185,6 +199,7 @@ export const getPosition = async(): Promise<number> => {
 
 export const getDuration = async(): Promise<number> => {
   try {
+    if (!(await isAudirvanaProcessRunning())) return 0
     const result = await runAppleScript('tell application "Audirvana" to get playing track duration', 10000, false)
     const dur = parseInt(result, 10)
     return isNaN(dur) ? 0 : dur

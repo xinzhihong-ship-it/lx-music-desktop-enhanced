@@ -1,6 +1,7 @@
 import { rendererInvoke } from '@common/rendererIpc'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { setAllStatus } from '@renderer/store/player/action'
+import { appSetting } from '@renderer/store/setting'
 
 const invoke = async<T = void>(name: string, params?: unknown): Promise<T> => {
   return params === undefined
@@ -49,6 +50,12 @@ const startStatePoll = () => {
   positionStuckCount = 0
 
   const tick = async() => {
+    // 引擎已切走（如暂停状态下切到 MPV/内置引擎）时自动停止轮询：
+    // 否则轮询会一直运行，主进程每次 getState 的 AppleScript 都会把已退出的 Audirvana 重新拉起。
+    if (appSetting['player.playEngine'] !== 'audirvana') {
+      stopStatePoll()
+      return
+    }
     try {
       const state = await invoke<'stopped' | 'playing' | 'paused'>(WIN_MAIN_RENDERER_EVENT_NAME.audirvana_get_state)
       const wasPlaying = isPlaying

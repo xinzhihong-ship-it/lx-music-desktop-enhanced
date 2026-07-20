@@ -440,6 +440,9 @@ export class MpvController {
   private fileLoadedPromise: Promise<void> | null = null
 
   private async waitForFileLoaded(): Promise<void> {
+    // 文件可能在注册等待前就已加载完成（file-loaded 与 loadfile 响应同块到达时被提前处理），
+    // 此时直接返回，避免干等 10 秒超时。
+    if (this.hasFileLoaded) return
     if (this.fileLoadedPromise) return this.fileLoadedPromise
     this.fileLoadedPromise = new Promise((resolve, reject) => {
       this.fileLoadedResolve = () => {
@@ -478,9 +481,16 @@ export class MpvController {
     await this.ensureStarted()
     this.loadedUrl = url
     log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
+    // 必须在发 loadfile 之前就注册 file-loaded 等待：两者在同一条 IPC 流上，
+    // 若 file-loaded 与命令响应在同一个数据块到达，事件会在 promise 注册前被处理并丢弃，
+    // 导致 waitForFileLoaded 干等 10 秒超时（表现为切换输出设备时卡住/失败）。
+    this.hasFileLoaded = false
+    const fileLoaded = this.waitForFileLoaded()
     try {
       await this.command(['loadfile', url, 'replace'])
     } catch (err: any) {
+      // loadfile 已失败，吞掉 file-loaded 等待后续的超时，避免未处理的 rejection
+      fileLoaded.catch(() => {})
       // 某些 MPV 启动状态下会把 replace 标志误解析为 index 参数，
       // 重试一次不带 flags（replace 是默认值）。
       const msg = err?.message ?? ''
@@ -492,7 +502,7 @@ export class MpvController {
         throw err
       }
     }
-    await this.waitForFileLoaded()
+    await fileLoaded
     // 文件加载完成后立即置为暂停，使 pause 属性从 false/undefined 变为 true，
     // 从而触发 property-change 事件；同时避免 MPV 在加载后进入 playback-restart
     // 并误报 playing 事件。
@@ -737,7 +747,7 @@ export interface MpvRestartState {
   playing?: boolean
 }
 
-export const restartMpvController = async(state: MpvRestartState): Promise<void> => {
+const doRestartMpvController = async(state: MpvRestartState): Promise<void> => {
   const oldController = activeMpvController
   const newController = new MpvController()
   // renderer 端的 currentUrl 可能因 HMR 等原因丢失，优先使用 main process 记录的 URL
@@ -803,6 +813,16 @@ export const restartMpvController = async(state: MpvRestartState): Promise<void>
     await oldController.destroy()
   }
   log.info('[restartMpvController] done')
+}
+
+// 串行化 restart：快速连续切换输出设备/参数时多个 restart 交错，
+// setActiveMpvController / destroy 顺序会错乱，导致 active 指向旧设备的实例或新实例被误销毁，
+// 表现为切换卡住、要切好几次才到目标设备。
+let restartQueue: Promise<void> = Promise.resolve()
+export const restartMpvController = async(state: MpvRestartState): Promise<void> => {
+  const run = restartQueue.then(async() => doRestartMpvController(state))
+  restartQueue = run.catch(() => {})
+  return run
 }
 
 app.on('before-quit', () => {
