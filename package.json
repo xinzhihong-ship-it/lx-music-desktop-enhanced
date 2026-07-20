@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "2.13.0-enhanced.5",
+  "version": "2.13.0-enhanced.6",
   "description": "基于 LX Music（洛雪音乐助手）桌面版的二次开发/增强版本，一个免费的音乐查找助手",
   "main": "./dist/main.js",
   "scripts": {
