@@ -136,6 +136,18 @@ const findBinary = (dir, name) => {
   return null
 }
 
+const findDir = (dir, name) => {
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const fullPath = path.join(dir, entry.name)
+    if (entry.name === name) return fullPath
+    const found = findDir(fullPath, name)
+    if (found) return found
+  }
+  return null
+}
+
 const downloadDarwin = async (arch) => {
   const source = SOURCES.darwin
   const targetDir = path.join(RESOURCES_DIR, `darwin-${arch}`)
@@ -152,14 +164,13 @@ const downloadDarwin = async (arch) => {
   const extractDir = path.join(TEMP_DIR, `extract-darwin-${arch}`)
   await extractTarGz(archivePath, extractDir)
 
-  const appBundle = findBinary(extractDir, 'mpv.app')
-  if (!appBundle) {
+  const appBundleDir = findDir(extractDir, 'mpv.app')
+  if (!appBundleDir) {
     throw new Error(`[darwin-${arch}] mpv.app not found in extracted archive.`)
   }
-  const appBundleDir = path.dirname(appBundle)
 
   ensureDir(targetDir)
-  fs.rmSync(targetDir, { recursive: true, force: true })
+  fs.rmSync(path.join(targetDir, 'mpv.app'), { recursive: true, force: true })
   fs.renameSync(appBundleDir, path.join(targetDir, 'mpv.app'))
   console.log(`[darwin-${arch}] Installed mpv to ${path.join(targetDir, 'mpv.app')}`)
 }
