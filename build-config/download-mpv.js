@@ -25,8 +25,14 @@ const TEMP_DIR = path.join(__dirname, '..', 'build', 'mpv-downloads')
 const SOURCES = {
   darwin: {
     // stolendata 的 macOS 构建通常是通用二进制（x64 + arm64），放在同一个 mpv.app 里。
+    // 该构建用于兼容旧版 macOS，是默认的 mpv.app。
     url: 'https://laboratory.stolendata.net/~djinn/mpv_osx/mpv-0.39.0.tar.gz',
     archiveType: 'tar.gz',
+    // 可选：为 macOS 26+ 编译的 mpv 变体（依赖新版系统 libc++，旧系统无法启动）。
+    // 没有固定公开源，默认留空；填入 tar.gz 地址后会自动下载为 mpv-macos26.app，
+    // 也可以手动把 mpv.app 放到 resources/mpv/darwin-<arch>/mpv-macos26.app。
+    // 运行时仅当系统为 macOS 26+ 时才优先使用该变体。
+    macos26Url: '',
   },
   win32: {
     // 使用 GitHub latest release API 动态获取 shinchiro 构建的下载地址。
@@ -154,25 +160,49 @@ const downloadDarwin = async (arch) => {
   const binaryPath = path.join(targetDir, 'mpv.app', 'Contents', 'MacOS', 'mpv')
   if (fs.existsSync(binaryPath)) {
     console.log(`[darwin-${arch}] mpv already exists, skipping.`)
-    return
+  } else {
+    ensureDir(TEMP_DIR)
+    const archivePath = path.join(TEMP_DIR, `mpv-darwin-${arch}.tar.gz`)
+    await download(source.url, archivePath)
+
+    const extractDir = path.join(TEMP_DIR, `extract-darwin-${arch}`)
+    await extractTarGz(archivePath, extractDir)
+
+    const appBundleDir = findDir(extractDir, 'mpv.app')
+    if (!appBundleDir) {
+      throw new Error(`[darwin-${arch}] mpv.app not found in extracted archive.`)
+    }
+
+    ensureDir(targetDir)
+    fs.rmSync(path.join(targetDir, 'mpv.app'), { recursive: true, force: true })
+    fs.renameSync(appBundleDir, path.join(targetDir, 'mpv.app'))
+    console.log(`[darwin-${arch}] Installed mpv to ${path.join(targetDir, 'mpv.app')}`)
   }
 
-  ensureDir(TEMP_DIR)
-  const archivePath = path.join(TEMP_DIR, `mpv-darwin-${arch}.tar.gz`)
-  await download(source.url, archivePath)
+  // 可选的 macOS 26+ 变体
+  if (source.macos26Url) {
+    const variantBinaryPath = path.join(targetDir, 'mpv-macos26.app', 'Contents', 'MacOS', 'mpv')
+    if (fs.existsSync(variantBinaryPath)) {
+      console.log(`[darwin-${arch}] macOS 26+ variant already exists, skipping.`)
+      return
+    }
+    ensureDir(TEMP_DIR)
+    const archivePath = path.join(TEMP_DIR, `mpv-macos26-darwin-${arch}.tar.gz`)
+    await download(source.macos26Url, archivePath)
 
-  const extractDir = path.join(TEMP_DIR, `extract-darwin-${arch}`)
-  await extractTarGz(archivePath, extractDir)
+    const extractDir = path.join(TEMP_DIR, `extract-macos26-darwin-${arch}`)
+    await extractTarGz(archivePath, extractDir)
 
-  const appBundleDir = findDir(extractDir, 'mpv.app')
-  if (!appBundleDir) {
-    throw new Error(`[darwin-${arch}] mpv.app not found in extracted archive.`)
+    const appBundleDir = findDir(extractDir, 'mpv.app')
+    if (!appBundleDir) {
+      throw new Error(`[darwin-${arch}] mpv.app not found in macOS 26+ variant archive.`)
+    }
+
+    ensureDir(targetDir)
+    fs.rmSync(path.join(targetDir, 'mpv-macos26.app'), { recursive: true, force: true })
+    fs.renameSync(appBundleDir, path.join(targetDir, 'mpv-macos26.app'))
+    console.log(`[darwin-${arch}] Installed macOS 26+ variant to ${path.join(targetDir, 'mpv-macos26.app')}`)
   }
-
-  ensureDir(targetDir)
-  fs.rmSync(path.join(targetDir, 'mpv.app'), { recursive: true, force: true })
-  fs.renameSync(appBundleDir, path.join(targetDir, 'mpv.app'))
-  console.log(`[darwin-${arch}] Installed mpv to ${path.join(targetDir, 'mpv.app')}`)
 }
 
 const downloadWin32 = async (arch) => {

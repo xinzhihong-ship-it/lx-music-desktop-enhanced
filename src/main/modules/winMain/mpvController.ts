@@ -8,7 +8,7 @@ import { log } from '@common/utils'
 import { sendEvent } from '@main/modules/winMain/main'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 
-export type MpvPathSource = 'custom' | 'bundled' | 'dev-bundled' | 'dev-bundled-app' | 'dev-bundled-x64-fallback' | 'system' | 'common-path'
+export type MpvPathSource = 'custom' | 'bundled' | 'bundled-macos26' | 'dev-bundled' | 'dev-bundled-app' | 'dev-bundled-macos26' | 'dev-bundled-x64-fallback' | 'system' | 'common-path'
 
 export interface MpvPathInfo {
   path: string
@@ -79,6 +79,10 @@ const getCommonPaths = () => {
   ]
 }
 
+// macOS 26 (Tahoe) 对应 Darwin 25。mpv-macos26.app 变体是为 macOS 26+ 编译的
+// （依赖新版 libc++），旧系统无法启动；mpv.app 是兼容旧系统的版本。
+const isMacOS26OrLater = isMac && Number.parseInt(os.release(), 10) >= 25
+
 export const resolveMpvPath = (): MpvPathInfo => {
   const customPath = global.lx.appSetting['player.mpv.path']
   log.info(`resolveMpvPath - player.mpv.path: ${customPath}`)
@@ -90,6 +94,11 @@ export const resolveMpvPath = (): MpvPathInfo => {
 
   // Production macOS: check for mpv.app bundle inside bin/
   if (isMac && process.env.NODE_ENV == 'production') {
+    // macOS 26+ 优先使用为新系统编译的变体
+    if (isMacOS26OrLater) {
+      const variantProdPath = path.join(process.resourcesPath, 'bin', 'mpv-macos26.app', 'Contents', 'MacOS', exeName)
+      if (existsFile(variantProdPath)) return { path: variantProdPath, source: 'bundled-macos26' }
+    }
     const appBundledProdPath = path.join(process.resourcesPath, 'bin', 'mpv.app', 'Contents', 'MacOS', exeName)
     if (existsFile(appBundledProdPath)) return { path: appBundledProdPath, source: 'bundled' }
   }
@@ -99,6 +108,11 @@ export const resolveMpvPath = (): MpvPathInfo => {
 
   // Dev fallback: check for mpv.app bundle (macOS)
   if (isMac) {
+    // macOS 26+ 优先使用为新系统编译的变体
+    if (isMacOS26OrLater) {
+      const variantDevPath = path.join(process.cwd(), 'resources', 'mpv', resolvePlatformArch(), 'mpv-macos26.app', 'Contents', 'MacOS', exeName)
+      if (existsFile(variantDevPath)) return { path: variantDevPath, source: 'dev-bundled-macos26' }
+    }
     const appBundlePath = path.join(process.cwd(), 'resources', 'mpv', resolvePlatformArch(), 'mpv.app', 'Contents', 'MacOS', exeName)
     if (existsFile(appBundlePath)) return { path: appBundlePath, source: 'dev-bundled-app' }
   }

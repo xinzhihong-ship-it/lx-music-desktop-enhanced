@@ -5,6 +5,7 @@ This directory defines the optional mpv sidecar layout for the high-fidelity ext
 Place platform mpv binaries here when preparing a distributable build:
 
 - macOS: `resources/mpv/darwin-arm64/mpv.app/Contents/MacOS/mpv` (or `resources/mpv/darwin-x64/mpv.app/Contents/MacOS/mpv`)
+- macOS 26+ variant (optional): `resources/mpv/darwin-arm64/mpv-macos26.app/Contents/MacOS/mpv` — a build compiled for macOS 26 or later (depends on the newer system libc++ and cannot launch on older macOS). At runtime it is preferred only when the system is macOS 26+ (Darwin 25+); older systems always use the compatible `mpv.app`.
 - Windows: `resources/mpv/win32-x64/mpv.exe` (or `resources/mpv/win32-arm64/mpv.exe`)
 - Linux: `resources/mpv/linux-x64/mpv` (or `resources/mpv/linux-arm64/mpv`, `resources/mpv/linux-armv7l/mpv`)
 
@@ -32,9 +33,11 @@ Runtime lookup order:
 
 1. User configured `player.mpv.path`
 2. Production bundled binary under `process.resourcesPath/bin/mpv` or `process.resourcesPath/bin/mpv.exe`
-3. Development bundled binary under this `resources/mpv/<platform>-<arch>/` directory
-4. `mpv` / `mpv.exe` from system `PATH`
-5. Common install paths for macOS, Windows, and Linux
+3. Production macOS: `bin/mpv-macos26.app` (macOS 26+ only) → `bin/mpv.app`
+4. Development bundled binary under this `resources/mpv/<platform>-<arch>/` directory
+5. Development macOS: `mpv-macos26.app` (macOS 26+ only) → `mpv.app`
+6. `mpv` / `mpv.exe` from system `PATH`
+7. Common install paths for macOS, Windows, and Linux
 
 Packaging convention:
 
