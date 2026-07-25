@@ -6,6 +6,7 @@ import musicSearch from './musicSearch'
 import songList from './songList'
 import hotSearch from './hotSearch'
 import comment from './comment'
+import { getMusicQualityInfo } from './quality_detail'
 // import tipSearch from './tipSearch'
 
 const wy = {
@@ -15,6 +16,9 @@ const wy = {
   songList,
   hotSearch,
   comment,
+  getMusicQualityInfo(songInfo) {
+    return getMusicQualityInfo(songInfo.songmid)
+  },
   getMusicUrl(songInfo, type) {
     return apis('wy').getMusicUrl(songInfo, type)
   },

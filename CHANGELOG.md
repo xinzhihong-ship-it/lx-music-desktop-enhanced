@@ -6,6 +6,26 @@ Project versioning adheres to [Semantic Versioning](http://semver.org/).
 Commit convention is based on [Conventional Commits](http://conventionalcommits.org).
 Change log format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [2.13.0-enhanced.9](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.8...v2.13.0-enhanced.9) - 2026-07-25
+
+### 新增
+
+- 网易云、QQ 音乐、酷狗新增歌曲高音质详情查询，支持 `Hires`、`Atmos`、`Atmos Plus`、`Master` 等档位。
+- 新增播放失败处理策略，可选择自动换源并降低音质、仅换源、仅降低音质或直接播放下一曲。
+- 播放栏显示实际使用的音质，下载弹窗支持新增高音质档位。
+
+### 修复
+
+- 修复网易云歌单中的空标题占位曲目触发空关键词换源，导致错误匹配热门歌曲的问题（#2）。
+- 修复 `flac24bit` 降级时可能重复选择同一音质档位的问题。
+- 修复 MPV 音频设备枚举重复执行，以及枚举成功后仍误报超时的问题。
+- 修复发布流程由多个平台任务重复创建同一个 GitHub Release 的问题。
+
+### 优化
+
+- 音质设置改为响应式四列网格，改善选项换行和对齐。
+- 高音质不可用时按 `Master → Atmos Plus → Atmos → Hires → FLAC → 320K → 128K` 顺序回退。
+
 ## [2.12.2](https://github.com/lyswhut/lx-music-desktop/compare/v2.12.1...v2.12.2) - 2026-05-01
 
 我们很高兴地宣布新项目 Any Listen 的桌面版已发布，目前已支持列表跟随本地文件自动更新、加载并播放WebDAV上的歌曲等功能，更多功能仍在积极开发中，桌面版与Web版将同步更新。

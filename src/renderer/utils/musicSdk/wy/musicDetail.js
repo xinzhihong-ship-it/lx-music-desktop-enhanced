@@ -15,6 +15,7 @@ export default {
     // console.log(songs, privileges)
     const list = []
     songs.forEach((item, index) => {
+      if (!item || !item.id || !String(item.name ?? '').trim()) return
       const types = []
       const _types = {}
       let size

@@ -50,6 +50,7 @@ const defaultSetting: LX.AppSetting = {
   'player.waitPlayEndStop': true,
   'player.waitPlayEndStopTime': '',
   'player.autoSkipOnError': true,
+  'player.playErrorStrategy': 'auto',
   'player.isAutoCleanPlayedList': false,
   'player.soundEffect.convolution.fileName': '',
   'player.soundEffect.convolution.mainGain': 10,
@@ -172,4 +173,3 @@ if (new Date().getMonth() < 2) {
 
 
 export default defaultSetting
-

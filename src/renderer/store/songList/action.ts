@@ -1,5 +1,5 @@
 // import { getSongListSetting } from '@renderer/utils/data'
-import { deduplicationList, toNewMusicInfo } from '@renderer/utils'
+import { deduplicationList, filterMusicList, toNewMusicInfo } from '@renderer/utils'
 import musicSdk from '@renderer/utils/musicSdk'
 import { markRaw, markRawList } from '@common/utils/vueTools'
 import {
@@ -133,7 +133,9 @@ export const getListDetail = async(id: string, source: LX.OnlineSource, page: nu
   if (!isRefresh && cache.has(key)) return cache.get(key)
 
   return musicSdk[source]?.songList.getListDetail(id, page).then((result: ListDetailInfo) => {
-    result.list = markRawList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[]))
+    // 网易云歌单会用只有时长的占位条目表示灰名/已下架歌曲。
+    // 这些条目没有可用于换源匹配的标题，必须在进入临时列表前丢弃。
+    result.list = markRawList(filterMusicList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[])))
     cache.set(key, result)
     return result
   })
@@ -155,7 +157,7 @@ export const getListDetailAll = async(id: string, source: LX.OnlineSource, isRef
     return cache.has(key)
       ? Promise.resolve(cache.get(key))
       : musicSdk[source]?.songList.getListDetail(id, page).then((result: ListDetailInfo) => {
-        result.list = markRawList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[]))
+        result.list = markRawList(filterMusicList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[])))
         cache.set(key, result)
         return result
       }) ?? Promise.reject(new Error('source not found' + source))
@@ -173,7 +175,7 @@ export const getListDetailAll = async(id: string, source: LX.OnlineSource, isRef
         : loadData(id, loadPage).then((result1: ListDetailInfo) => loadDetail(++loadPage).then((result2: ListDetailInfo['list']) => [...result1.list, ...result2]))
     }
     return loadDetail().then(result2 => [...result.list, ...result2])
-  }).then((list: ListDetailInfo['list']) => deduplicationList(list))
+  }).then((list: ListDetailInfo['list']) => filterMusicList(deduplicationList(list)))
 }
 
 

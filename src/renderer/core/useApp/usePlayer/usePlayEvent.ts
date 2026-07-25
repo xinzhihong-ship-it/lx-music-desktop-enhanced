@@ -1,15 +1,19 @@
 import { onBeforeUnmount } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
-import { musicInfo, playMusicInfo, isPlay } from '@renderer/store/player/state'
+import { musicInfo, playMusicInfo, isPlay, playQuality } from '@renderer/store/player/state'
 import { setStop, isEmpty } from '@renderer/plugins/player'
 import { playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
+import { isPlayErrorHandlingEnabled, shouldLowerQualityOnError, shouldSkipOnError, shouldToggleSourceOnError } from '@renderer/core/player/errorStrategy'
+import { getLowerPlayQuality, getPlayQuality, QUALITY_RANK } from '@renderer/core/music/utils'
 
 export default () => {
   const t = useI18n()
   let retryNum = 0
   let prevTimeoutId: string | null = null
+  let sourceAttempted = false
+  let qualityAttempted = false
 
   let loadingTimeout: NodeJS.Timeout | null = null
   let delayNextTimeout: NodeJS.Timeout | null = null
@@ -26,7 +30,7 @@ export default () => {
       // 如果加载超时，则尝试刷新URL
       if (prevTimeoutId == musicInfo.id) {
         prevTimeoutId = null
-        void playNext(true)
+        recoverPlayback(false, isPlay.value)
       } else {
         prevTimeoutId = musicInfo.id
         if (playMusicInfo.musicInfo) {
@@ -65,7 +69,7 @@ export default () => {
   const handleLoadstart = () => {
     if (window.lx.isPlayedStop) return
     if (appSetting['player.playEngine'] === 'audirvana') return
-    if (appSetting['player.autoSkipOnError']) startLoadingTimeout()
+    if (isPlayErrorHandlingEnabled()) startLoadingTimeout()
     setAllStatus(t('player__loading'))
   }
 
@@ -90,22 +94,8 @@ export default () => {
     setAllStatus(t('player__buffering'))
   }
 
-  const handleError = (errCode?: number) => {
-    if (!musicInfo.id) return
-    clearLoadingTimeout()
-    if (window.lx.isPlayedStop) return
-    if (!isEmpty()) setStop()
-    if (playMusicInfo.musicInfo && errCode !== 1 && retryNum < 2) { // 若音频URL无效则尝试刷新2次URL
-      // console.log(this.retryNum)
-      retryNum++
-      // 仅在当前正在播放时才恢复自动播放，避免启动恢复时刷新 URL 后误播。
-      if (isPlay.value) setShouldPlayAfterLoad(true)
-      setMusicUrl(playMusicInfo.musicInfo, true)
-      setAllStatus(t('player__refresh_url'))
-      return
-    }
-
-    if (appSetting['player.autoSkipOnError']) {
+  const finishPlaybackFailure = () => {
+    if (shouldSkipOnError()) {
       if (document.hidden) {
         console.warn('error skip to next')
         void playNext(true)
@@ -113,12 +103,75 @@ export default () => {
         setAllStatus(t('player__error'))
         setTimeout(addDelayNextTimeout)
       }
+    } else {
+      setAllStatus(t('player__error_stopped'))
     }
+  }
+
+  const recoverPlayback = (allowRefresh: boolean, shouldResume: boolean, errCode?: number) => {
+    const currentMusicInfo = playMusicInfo.musicInfo
+    if (!currentMusicInfo) {
+      finishPlaybackFailure()
+      return
+    }
+
+    // A direct-next strategy should not spend time retrying the same URL.
+    if (appSetting['player.playErrorStrategy'] == 'next') {
+      finishPlaybackFailure()
+      return
+    }
+
+    const onlineMusicInfo = !('progress' in currentMusicInfo) && currentMusicInfo.source != 'local'
+      ? currentMusicInfo
+      : null
+
+    if (allowRefresh && errCode !== 1 && retryNum < 1) {
+      retryNum++
+      if (shouldResume) setShouldPlayAfterLoad(true)
+      setMusicUrl(currentMusicInfo, true)
+      setAllStatus(t('player__refresh_url'))
+      return
+    }
+
+    if (!sourceAttempted && shouldToggleSourceOnError() && onlineMusicInfo) {
+      sourceAttempted = true
+      if (shouldResume) setShouldPlayAfterLoad(true)
+      setMusicUrl(currentMusicInfo, true, { forceToggleSource: true })
+      setAllStatus(t('toggle_source_try'))
+      return
+    }
+
+    if (!qualityAttempted && shouldLowerQualityOnError() && onlineMusicInfo) {
+      qualityAttempted = true
+      const currentQuality = QUALITY_RANK.includes(playQuality.value as LX.Quality)
+        ? playQuality.value as LX.Quality
+        : getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo)
+      const lowerQuality = getLowerPlayQuality(currentQuality, onlineMusicInfo)
+      if (lowerQuality) {
+        if (shouldResume) setShouldPlayAfterLoad(true)
+        setMusicUrl(currentMusicInfo, true, { quality: lowerQuality, hasLoweredQuality: true })
+        setAllStatus(t('player__lower_quality', { quality: lowerQuality }))
+        return
+      }
+    }
+
+    finishPlaybackFailure()
+  }
+
+  const handleError = (errCode?: number) => {
+    if (!musicInfo.id) return
+    clearLoadingTimeout()
+    if (window.lx.isPlayedStop) return
+    const shouldResume = isPlay.value
+    if (!isEmpty()) setStop()
+    recoverPlayback(true, shouldResume, errCode)
   }
 
   const handleSetPlayInfo = () => {
     retryNum = 0
     prevTimeoutId = null
+    sourceAttempted = false
+    qualityAttempted = false
     clearDelayNextTimeout()
     clearLoadingTimeout()
   }

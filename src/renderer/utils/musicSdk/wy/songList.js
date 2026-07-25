@@ -127,6 +127,7 @@ export default {
     // console.log(tracks, privileges)
     const list = []
     tracks.forEach((item, index) => {
+      if (!item || !item.id || !String(item.name ?? '').trim()) return
       const types = []
       const _types = {}
       let size

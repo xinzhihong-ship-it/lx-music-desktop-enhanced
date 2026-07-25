@@ -305,6 +305,11 @@ declare global {
       'player.autoSkipOnError': boolean
 
       /**
+       * 音频播放失败后的处理策略
+       */
+      'player.playErrorStrategy': 'auto' | 'source' | 'quality' | 'next'
+
+      /**
        * 点击相同列表内的歌曲切歌时是否清空已播放列表（随机模式下列表内所有歌曲会重新参与随机）
        */
       'player.isAutoCleanPlayedList': boolean

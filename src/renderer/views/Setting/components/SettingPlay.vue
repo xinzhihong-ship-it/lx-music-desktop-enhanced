@@ -44,6 +44,12 @@ dd
     base-checkbox(id="setting_player_awap_lyric_trans_roma" :model-value="appSetting['player.isSwapLyricTranslationAndRoma']" :label="$t('setting__player_swap_lyric_trans_roma')" @update:model-value="updateSetting({'player.isSwapLyricTranslationAndRoma': $event})")
   .gap-top
     base-checkbox(id="setting_player_auto_skip_on_error" :model-value="appSetting['player.autoSkipOnError']" :label="$t('setting__play_auto_skip_on_error')" @update:model-value="updateSetting({'player.autoSkipOnError': $event})")
+  .gap-top(v-if="appSetting['player.autoSkipOnError']")
+    span {{ $t('setting__play_error_strategy') }}
+    base-selection.gap-left(
+      :model-value="appSetting['player.playErrorStrategy']" :list="errorStrategyList"
+      item-key="id" item-name="label"
+      @update:model-value="updateSetting({'player.playErrorStrategy': $event})")
   .gap-top
     base-checkbox(id="setting_player_lyric_s2t" :model-value="appSetting['player.isS2t']" :label="$t('setting__play_lyric_s2t')" @update:model-value="updateSetting({'player.isS2t': $event})")
   .gap-top
@@ -61,10 +67,10 @@ dd
 
 dd
   h3#basic_play_quality {{ $t('setting__play_playQuality') }}
-  div
-    base-checkbox.gap-left(
+  div(:class="$style.qualityGrid")
+    base-checkbox(
       v-for="item in playQualityList" :id="`setting_play_quality_${item}`" :key="item"
-      name="setting_play_quality" need :model-value="appSetting['player.playQuality']" :value="item" :label="item"
+      name="setting_play_quality" need :model-value="appSetting['player.playQuality']" :value="item" :label="$t(`setting__play_quality_${item}`)"
       @update:model-value="updateSetting({'player.playQuality': $event})")
 
 dd(:aria-label="$t('setting__play_mediaDevice_title')")
@@ -99,6 +105,12 @@ export default {
   setup() {
     const t = useI18n()
     const playQualityList = [...TRY_QUALITYS_LIST, '128k'].reverse()
+    const errorStrategyList = [
+      { id: 'auto', label: t('setting__play_error_strategy_auto') },
+      { id: 'source', label: t('setting__play_error_strategy_source') },
+      { id: 'quality', label: t('setting__play_error_strategy_quality') },
+      { id: 'next', label: t('setting__play_error_strategy_next') },
+    ]
 
     // Audirvana 仅 macOS 可用（主进程在非 mac 平台直接 reject），其他平台不展示该选项
     const playEngineList = [
@@ -270,9 +282,7 @@ export default {
         }
       }
     })
-    // 设置页打开时若已是 MPV 模式，主动加载一次设备列表
-    if (isMpvEngine()) void loadMpvAudioDevices()
-    // 有时设置项在组件 setup 之后才合并完成，再兜底一次
+    // 设置项可能在组件 setup 之后才合并完成，因此在挂载后统一加载一次。
     onMounted(() => {
       if (isMpvEngine()) void loadMpvAudioDevices()
       // 清理旧配置里被错误拆分的 --audio-device 参数
@@ -366,6 +376,7 @@ export default {
       isMaxOutputChannelCount,
       handleUpdateMaxOutputChannelCount,
       playQualityList,
+      errorStrategyList,
       playEngineList,
       playEngine,
       handlePlayEngineChange,
@@ -441,6 +452,17 @@ export default {
   color: var(--color-font-label);
   line-height: 1.6;
   margin: 0;
+}
+.qualityGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(135px, 1fr));
+  gap: 10px 18px;
+  max-width: 860px;
+  margin-top: 8px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: repeat(2, minmax(135px, 1fr));
+  }
 }
 .mpvDeviceSelect {
   width: 100%;

@@ -124,7 +124,7 @@ export const fixNewMusicInfoQuality = (musicInfo: LX.Music.MusicInfo) => {
 export const filterMusicList = <T extends LX.Music.MusicInfo>(list: T[]): T[] => {
   const ids = new Set<string>()
   return list.filter(s => {
-    if (!s.id || ids.has(s.id) || !s.name) return false
+    if (!s.id || ids.has(s.id) || !s.name?.trim()) return false
     if (s.singer == null) s.singer = ''
     ids.add(s.id)
     return true

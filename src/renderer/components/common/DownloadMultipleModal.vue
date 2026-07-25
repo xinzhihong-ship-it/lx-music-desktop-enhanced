@@ -6,6 +6,10 @@
       <base-btn :class="$style.btn" @click="handleClick('320k')">{{ $t('download__high_quality') }} - 320K</base-btn>
       <base-btn :class="$style.btn" @click="handleClick('flac')">{{ $t('download__lossless') }} - FLAC</base-btn>
       <base-btn :class="$style.btn" @click="handleClick('flac24bit')">{{ $t('download__lossless') }} - FLAC Hires</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('hires')">{{ $t('download__lossless') }} - Hires</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('atmos')">{{ $t('download__lossless') }} - Atmos</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('atmos_plus')">{{ $t('download__lossless') }} - Atmos Plus</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('master')">{{ $t('download__lossless') }} - Master</base-btn>
     </main>
   </material-modal>
 </template>
@@ -63,6 +67,8 @@ export default {
   display: flex;
   flex-flow: column nowrap;
   justify-content: center;
+  max-height: 70vh;
+  overflow-y: auto;
   h2 {
     font-size: 13px;
     color: var(--color-font);

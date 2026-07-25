@@ -11,6 +11,7 @@ import { musicInfo, playMusicInfo, playInfo, isPlay } from '@renderer/store/play
 import { appSetting } from '@renderer/store/setting'
 import { playNext, setShouldPlayAfterSeek } from '@renderer/core/player'
 import { updateListMusics } from '@renderer/store/list/action'
+import { shouldSkipOnError } from '@renderer/core/player/errorStrategy'
 
 const delaySavePlayInfo = throttle(savePlayInfo, 2000)
 
@@ -39,7 +40,7 @@ export default () => {
       if (skipTime > playProgress.maxPlayTime) skipTime = (playProgress.maxPlayTime - currentTime) / 2
       if (skipTime - mediaBuffer.playTime < 1 || playProgress.maxPlayTime - skipTime < 1) {
         mediaBuffer.playTime = 0
-        if (appSetting['player.autoSkipOnError']) {
+        if (shouldSkipOnError()) {
           console.warn('buffering end')
           void playNext(true)
         }

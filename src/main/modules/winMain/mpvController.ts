@@ -711,9 +711,18 @@ export class MpvController {
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       let output = ''
+      let settled = false
+      let timeout: ReturnType<typeof setTimeout> | null = null
+      const finish = (devices: Array<{ id: string, name: string }>) => {
+        if (settled) return
+        settled = true
+        if (timeout != null) clearTimeout(timeout)
+        resolve(devices)
+      }
       proc.stdout?.on('data', (data) => { output += String(data) })
       proc.stderr?.on('data', (data) => { output += String(data) })
       proc.on('close', (code) => {
+        if (settled) return
         log.info(`[listAudioDevices] mpv exited code=${code ?? 'null'} output length=${output.length}`)
         const devices: Array<{ id: string, name: string }> = [{ id: 'auto', name: '默认设备' }]
         // macOS 上 mpv 会同时列出 coreaudio 与 avfoundation 两套驱动，
@@ -735,15 +744,18 @@ export class MpvController {
           devices.push({ id, name })
         }
         log.info(`[listAudioDevices] parsed devices: ${JSON.stringify(devices)}`)
-        resolve(devices)
+        finish(devices)
       })
       proc.on('error', (err) => {
+        if (settled) return
         log.warn(`[listAudioDevices] mpv spawn error: ${err.message}`)
-        resolve([])
+        finish([])
       })
-      setTimeout(() => {
+      timeout = setTimeout(() => {
+        if (settled) return
         log.warn('[listAudioDevices] mpv timeout')
-        resolve([])
+        proc.kill()
+        finish([])
       }, 5000)
     })
   }
