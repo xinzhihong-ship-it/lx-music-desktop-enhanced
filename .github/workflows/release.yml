@@ -11,6 +11,10 @@ permissions:
 env:
   IS_CI: 'true'
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # CheckCode:
   #   name: Lint Code
@@ -43,10 +47,63 @@ jobs:
   #     - name: Lint src code
   #       run: npm run lint
 
+  Create_Release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v6
+
+      - name: Read package version
+        id: meta
+        shell: bash
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Create release once
+        uses: actions/github-script@v8
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        with:
+          script: |
+            const fs = require('fs')
+            const tag = `v${process.env.VERSION}`
+            const name = `LX Music 增强版 ${process.env.VERSION}`
+            const body = fs.readFileSync('RELEASE_NOTES.md', 'utf8')
+            try {
+              const { data: release } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              })
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                name,
+                body,
+              })
+              core.info(`已更新版本 ${tag} 的中文发布说明`)
+            } catch (error) {
+              if (error.status !== 404) throw error
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                target_commitish: context.sha,
+                name,
+                body,
+                draft: false,
+                prerelease: false,
+              })
+              core.info(`已创建版本 ${tag}`)
+            }
+
   Windows:
     name: Windows
     runs-on: windows-latest
-    # needs: CheckCode
+    needs: Create_Release
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
@@ -87,7 +144,7 @@ jobs:
   Windows_7:
     name: Windows_7
     runs-on: windows-latest
-    # needs: CheckCode
+    needs: Create_Release
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
@@ -135,7 +192,7 @@ jobs:
   Mac:
     name: Mac
     runs-on: macos-latest
-    # needs: CheckCode
+    needs: Create_Release
     env:
       HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
     steps:
@@ -177,7 +234,7 @@ jobs:
   Linux:
     name: Linux
     runs-on: ubuntu-latest
-    # needs: CheckCode
+    needs: Create_Release
     steps:
       - name: Install package
         run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
