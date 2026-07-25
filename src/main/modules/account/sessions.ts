@@ -35,6 +35,11 @@ export const getSession = (id: string): LX.Account.LoginSession | null => {
   return session
 }
 
+export const getSessionBySource = (source: LX.Account.Source): LX.Account.LoginSession | null => {
+  const account = accountStore.listAccounts().find(account => account.source === source)
+  return account ? getSession(account.id) : null
+}
+
 export const updateSession = (id: string, session: LX.Account.LoginSession) => {
   const accounts = accountStore.listAccounts()
   if (!accounts.some(a => a.id === id)) return

@@ -11,6 +11,7 @@ export default ({
   handlePlayMusic,
   handlePlayMusicLater,
   handleSearch,
+  handleSimilarSongs,
   handleShowMusicToggleModal,
   handleShowMusicAddModal,
   handleShowMusicMoveModal,
@@ -91,6 +92,10 @@ export default ({
         disabled: !itemMenuControl.search,
       },
       {
+        name: t('list__similar_songs'),
+        action: 'similarSongs',
+      },
+      {
         name: t('list__dislike'),
         action: 'dislike',
         disabled: !itemMenuControl.dislike,
@@ -157,6 +162,9 @@ export default ({
         break
       case 'search':
         handleSearch(index)
+        break
+      case 'similarSongs':
+        handleSimilarSongs(index)
         break
       case 'dislike':
         handleDislikeMusic(index)

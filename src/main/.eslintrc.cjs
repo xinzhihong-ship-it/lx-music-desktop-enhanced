@@ -14,5 +14,6 @@ module.exports = {
   ],
   ignorePatterns: [
     'vendors',
+    'modules/musicRecognition/afp/**',
   ],
 }

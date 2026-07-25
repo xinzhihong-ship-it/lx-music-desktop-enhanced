@@ -1,5 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { fetch } from 'undici'
+import { RecognitionNetworkError } from './recognizer'
+import { createRequestSignal, throwIfAborted } from './abort'
 
 const REQUEST_TIMEOUT_MS = 10000
 const MAX_RESULTS = 5
@@ -29,7 +31,6 @@ const buildSignature = (accessKey: string, timestamp: string, accessSecret: stri
   return createHmac('sha1', accessSecret).update(stringToSign, 'utf8').digest('base64')
 }
 
-// ACRCloud 识别失败（网络/配额/密钥错误）不应影响 Shazam 主流程，出错一律返回空列表
 export const recognizeAcrcloud = async(
   pcm: Buffer,
   config: LX.MusicRecognition.AcrcloudConfig,
@@ -55,23 +56,37 @@ export const recognizeAcrcloud = async(
   parts.push(wav)
   parts.push(Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'))
 
-  let body: any
+  const request = createRequestSignal(signal, REQUEST_TIMEOUT_MS)
+  let response
   try {
-    const response = await fetch(`https://${config.host}/v1/identify`, {
+    response = await fetch(`https://${config.host}/v1/identify`, {
       method: 'POST',
       headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
       body: new Uint8Array(Buffer.concat(parts)),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: request.signal,
     })
+  } catch (err) {
+    if (signal?.aborted) throw err
+    throw new RecognitionNetworkError('ACRCloud 网络请求失败，请检查网络后重试')
+  } finally {
+    request.cleanup()
+  }
+  throwIfAborted(signal)
+  if (!response.ok) throw new RecognitionNetworkError(`ACRCloud 服务请求失败（${response.status}）`)
+
+  let body: any
+  try {
     body = await response.json()
   } catch (err) {
-    console.warn('[musicRecognition] acrcloud request failed:', err)
-    return []
+    if (signal?.aborted) throw err
+    throw new Error('ACRCloud 返回了无效的 JSON 响应')
   }
+  throwIfAborted(signal)
 
-  if (body?.status?.code !== 0) {
-    console.warn(`[musicRecognition] acrcloud returned code ${body?.status?.code}: ${body?.status?.msg}`)
-    return []
+  const statusCode = body?.status?.code
+  if (statusCode === 1001) return [] // ACRCloud Identification API 公认的 No Result 状态码。
+  if (statusCode !== 0) {
+    throw new Error(`ACRCloud 识别失败（${String(statusCode)}）：${String(body?.status?.msg ?? 'Unknown error')}`)
   }
   // music 是精确录音匹配，humming 是 Cover Song（翻唱/现场版）匹配，两者都解析
   const sources: Array<{ items: any, prefix: string }> = [

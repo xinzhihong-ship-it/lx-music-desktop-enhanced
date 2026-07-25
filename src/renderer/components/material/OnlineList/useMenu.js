@@ -13,6 +13,7 @@ export default ({
   handlePlayMusic,
   handlePlayMusicLater,
   handleSearch,
+  handleSimilarSongs,
   handleShowMusicAddModal,
   handleOpenMusicDetail,
   handleDislikeMusic,
@@ -51,6 +52,10 @@ export default ({
         name: t('list__search'),
         action: 'search',
         disabled: !itemMenuControl.search,
+      },
+      {
+        name: t('list__similar_songs'),
+        action: 'similarSongs',
       },
       {
         name: t('list__add_to'),
@@ -119,6 +124,9 @@ export default ({
         break
       case 'search':
         handleSearch(index)
+        break
+      case 'similarSongs':
+        handleSimilarSongs(index)
         break
       case 'addTo':
         handleShowMusicAddModal(index)

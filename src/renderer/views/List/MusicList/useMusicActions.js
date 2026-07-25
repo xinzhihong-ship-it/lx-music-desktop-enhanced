@@ -25,6 +25,24 @@ export default ({ props, list, selectedList, removeAllSelect }) => {
     })
   }
 
+  const handleSimilarSongs = index => {
+    const info = list.value[index]
+    const isPlatformSource = ['wy', 'tx', 'kg'].includes(info.source)
+    router.push({
+      path: '/similar',
+      query: {
+        source: info.source,
+        ...(isPlatformSource ? { songId: String(info.meta.songId) } : {}),
+        platformId: info.source === 'tx' ? String(info.meta.id ?? '') : '',
+        hash: info.source === 'kg' ? String(info.meta.hash ?? '') : '',
+        name: info.name,
+        singer: info.singer,
+        interval: info.interval || '',
+        albumName: info.meta.albumName || '',
+      },
+    })
+  }
+
   const handleOpenMusicDetail = index => {
     const minfo = list.value[index]
     const url = musicSdk[minfo.source]?.getMusicDetailPageUrl(toOldMusicInfo(minfo))
@@ -70,6 +88,7 @@ export default ({ props, list, selectedList, removeAllSelect }) => {
 
   return {
     handleSearch,
+    handleSimilarSongs,
     handleOpenMusicDetail,
     handleCopyName,
     handleDislikeMusic,

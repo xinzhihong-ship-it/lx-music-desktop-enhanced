@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { fetch } from 'undici'
 import { SignatureGenerator } from 'st-shazam/src/algorithm'
+import { createRequestSignal } from './abort'
 
 const REQUEST_TIMEOUT_MS = 10000
-const SECOND_SEGMENT_MIN_SECONDS = 10
-const SECOND_SEGMENT_SECONDS = 6
-const MAX_ALTERNATIVES = 5
+const VERIFICATION_MIN_SECONDS = 10
+const VERIFICATION_SEGMENT_SECONDS = 6
 
 export class RecognitionNetworkError extends Error {}
 
@@ -41,7 +41,7 @@ const mapTrack = (track: any, timestamp: number): LX.MusicRecognition.Result => 
 const tagSamples = async(samples: Int16Array, signal?: AbortSignal): Promise<any | null> => {
   const signature = new SignatureGenerator().getSignature(samples)
   const timestamp = Date.now()
-  const url = new URL(`https://amp.shazam.com/discovery/v5/en/US/android/-/tag/${randomUUID().toUpperCase()}/${randomUUID()}`)
+  const url = new URL(`https://amp.shazam.com/discovery/v5/zh/CN/android/-/tag/${randomUUID().toUpperCase()}/${randomUUID()}`)
   url.search = new URLSearchParams({
     sync: 'true',
     webv3: 'true',
@@ -52,13 +52,12 @@ const tagSamples = async(samples: Int16Array, signal?: AbortSignal): Promise<any
     video: 'v3',
   }).toString()
 
-  const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
+  const request = createRequestSignal(signal, REQUEST_TIMEOUT_MS)
   let response
   try {
     response = await fetch(url, {
       method: 'POST',
-      signal: requestSignal,
+      signal: request.signal,
       headers: {
         'Content-Type': 'application/json',
         'Content-Language': 'zh_CN',
@@ -78,6 +77,8 @@ const tagSamples = async(samples: Int16Array, signal?: AbortSignal): Promise<any
   } catch (err) {
     if (signal?.aborted) throw err
     throw new RecognitionNetworkError('听歌识曲网络请求失败，请检查网络后重试')
+  } finally {
+    request.cleanup()
   }
 
   if (response.status === 429) throw new RecognitionNetworkError('听歌识曲请求过于频繁，请稍后重试')
@@ -88,39 +89,22 @@ const tagSamples = async(samples: Int16Array, signal?: AbortSignal): Promise<any
   return body
 }
 
-const fetchSimilarTracks = async(track: any, signal?: AbortSignal): Promise<LX.MusicRecognition.Result[]> => {
-  if (typeof track?.relatedtracksurl !== 'string') return []
-  try {
-    const response = await fetch(track.relatedtracksurl, {
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      headers: { 'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 10; K)' },
-    })
-    if (!response.ok) return []
-    const body: any = await response.json()
-    if (!Array.isArray(body.tracks)) return []
-    const timestamp = Date.now()
-    return body.tracks
-      .filter((item: any) => item?.key && item.key !== track.key && item.title)
-      .slice(0, MAX_ALTERNATIVES)
-      .map((item: any) => mapTrack(item, timestamp))
-  } catch {
-    return []
-  }
-}
-
-// 对采集音频的后段再做一次识别：前奏/混音场景下不同片段可能匹配到不同歌曲
-const tagSecondSegment = async(pcm: Buffer, signal?: AbortSignal): Promise<LX.MusicRecognition.Result | null> => {
+const verifyTrack = async(pcm: Buffer, expectedTrackKey: string, signal?: AbortSignal): Promise<boolean> => {
   const totalSamples = Math.floor(pcm.length / 2)
-  if (totalSamples < SECOND_SEGMENT_MIN_SECONDS * 16000) return null
-  const offset = Math.max(totalSamples - SECOND_SEGMENT_SECONDS * 16000, 0)
-  const samples = new Int16Array(pcm.buffer, pcm.byteOffset + offset * 2, totalSamples - offset)
-  try {
+  if (totalSamples < VERIFICATION_MIN_SECONDS * 16000) return false
+
+  const segmentSamples = VERIFICATION_SEGMENT_SECONDS * 16000
+  const segments = [
+    new Int16Array(pcm.buffer, pcm.byteOffset + (totalSamples - segmentSamples) * 2, segmentSamples),
+    new Int16Array(pcm.buffer, pcm.byteOffset, segmentSamples),
+  ]
+
+  for (const samples of segments) {
     const body = await tagSamples(samples, signal)
-    if (!body?.track) return null
-    return mapTrack(body.track, Date.now())
-  } catch {
-    return null
+    if (!body?.track) continue
+    return String(body.track.key) === expectedTrackKey
   }
+  return false
 }
 
 export const recognizePcm = async(pcm: Buffer, signal?: AbortSignal): Promise<RecognitionOutput> => {
@@ -129,22 +113,12 @@ export const recognizePcm = async(pcm: Buffer, signal?: AbortSignal): Promise<Re
   const body = await tagSamples(samples, signal)
   if (!body?.track) return { match: null, alternatives: [] }
 
-  const match = mapTrack(body.track, Date.now())
-  const [segmentMatch, similarTracks] = await Promise.all([
-    tagSecondSegment(pcm, signal),
-    fetchSimilarTracks(body.track, signal),
-  ])
+  const trackKey = String(body.track.key)
+  if (!await verifyTrack(pcm, trackKey, signal)) {
+    console.warn(`[music recognition] rejected unverified Shazam match: ${trackKey}`)
+    return { match: null, alternatives: [] }
+  }
 
-  const seen = new Set([match.providerTrackId])
-  const alternatives: LX.MusicRecognition.Result[] = []
-  if (segmentMatch && !seen.has(segmentMatch.providerTrackId)) {
-    seen.add(segmentMatch.providerTrackId)
-    alternatives.push(segmentMatch)
-  }
-  for (const track of similarTracks) {
-    if (seen.has(track.providerTrackId)) continue
-    seen.add(track.providerTrackId)
-    alternatives.push(track)
-  }
-  return { match, alternatives }
+  const match = mapTrack(body.track, Date.now())
+  return { match, alternatives: [] }
 }

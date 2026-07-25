@@ -32,9 +32,9 @@ const buildUrl = (baseUrl: string, params: Record<string, unknown>, key: string,
   return `${baseUrl}?${query.toString()}`
 }
 
-const commonParams = (session?: LX.Account.LoginSession) => ({
+const commonParams = (session?: LX.Account.LoginSession, mid?: string) => ({
   dfid: session?.cookies.dfid ?? '-',
-  mid: session?.cookies.KUGOU_API_MID ?? session?.cookies.mid ?? randomHex(32),
+  mid: mid ?? session?.cookies.KUGOU_API_MID ?? session?.cookies.mid ?? randomHex(32),
   uuid: '-',
   appid: APP_ID,
   clientver: CLIENT_VERSION,
@@ -324,4 +324,168 @@ export const getDailyTrackIds = async(sessionValue: LX.Account.LoginSession | nu
   if (response.statusCode !== 200 || response.body?.status !== 1) throw new Error(response.body?.error || response.body?.msg || '获取酷狗每日推荐失败')
   const songs = response.body.data?.song_list ?? response.body.data?.info ?? response.body.info ?? response.body.data?.list ?? []
   return songs.map((song: any) => String(song.hash ?? '')).filter(Boolean)
+}
+
+const signParamsKey = (data: string | number) => createHash('md5').update(`${APP_ID}${ANDROID_KEY}${CLIENT_VERSION}${data}`).digest('hex')
+
+const formatInterval = (seconds: number) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
+
+const fmSongToMusicInfo = (item: any): LX.Music.MusicInfoOnline | null => {
+  const hash = String(item.hash ?? item.FileHash ?? '')
+  const audioId = String(item.mixsongid ?? item.audio_id ?? item.Audioid ?? item.album_audio_id ?? item.songid ?? '')
+  const name = String(item.songname ?? item.official_songname ?? item.SongName ?? item.name ?? '').trim()
+  if (!hash || !name) return null
+  const singers = item.Singers ?? item.singers ?? item.authors ?? []
+  const singer = Array.isArray(singers) && singers.length
+    ? singers.map((singer: any) => singer.name ?? singer.author_name).filter(Boolean).join('、')
+    : String(item.author_name ?? item.SingerName ?? item.singer ?? '')
+  const timelength = Number(item.timelength)
+  const duration = Number(item.Duration)
+  const durationSeconds = Number.isFinite(timelength) && timelength > 0
+    ? timelength / 1000
+    : Number.isFinite(duration) && duration > 0
+      ? duration
+      : null
+  const qualitys: LX.Music.MusicQualityTypeKg[] = []
+  const _qualitys: LX.Music._MusicQualityTypeKg = {}
+  const addQuality = (type: LX.Quality, qualityHash: unknown, qualitySize: unknown) => {
+    const value = String(qualityHash ?? '')
+    if (!value) return
+    const bytes = Number(qualitySize ?? 0)
+    const size = bytes > 0 ? `${Math.round(bytes / 1024 / 1024 * 100) / 100}M` : null
+    qualitys.push({ type, size, hash: value })
+    _qualitys[type] = { size, hash: value }
+  }
+  addQuality('128k', item.hash_128 ?? hash, item.filesize_128 ?? item.file_size)
+  addQuality('320k', item.hash_320 ?? item.HQFileHash, item.filesize_320)
+  addQuality('flac', item.hash_flac ?? item.sqhash ?? item.SQFileHash, item.filesize_flac)
+  addQuality('ape', item.hash_ape, item.filesize_ape)
+  addQuality('flac24bit', item.hash_high ?? item.ResFileHash, item.filesize_high ?? item.ResFileSize)
+  return {
+    id: `${audioId || hash}_${hash}`,
+    name,
+    singer,
+    source: 'kg',
+    interval: durationSeconds == null ? null : formatInterval(durationSeconds),
+    meta: {
+      songId: audioId || hash,
+      hash,
+      albumId: String(item.album_id ?? item.AlbumID ?? ''),
+      albumName: String(item.album_name ?? item.AlbumName ?? ''),
+      picUrl: null,
+      qualitys,
+      _qualitys,
+    },
+  }
+}
+
+export const getSimilarSongs = async(
+  sessionValue: LX.Account.LoginSession | null,
+  seedHash: string,
+  seedSongId: string,
+  limit = 50,
+): Promise<LX.Music.MusicInfoOnline[]> => {
+  // 两个推荐接口均支持匿名请求，未登录时使用游客身份（结果仅缺少个性化权重）
+  const session = sessionValue?.source === 'kg' ? sessionValue : null
+  const recommendationMid = session?.cookies.KUGOU_API_MID ?? session?.cookies.mid ?? randomHex(32)
+
+  // 首选官方 AI 相似推荐（songlistairec）：以 mixsongid 为种子，匿名可用
+  const requestAiRecommend = async() => {
+    const dateTime = Date.now()
+    const body = JSON.stringify({
+      platform: 'ios',
+      clientver: CLIENT_VERSION,
+      clienttime: dateTime,
+      userid: session?.tokens.userId ?? 0,
+      client_playlist: [],
+      source_type: 2,
+      playlist_ver: 2,
+      area_code: 1,
+      appid: APP_ID,
+      key: signParamsKey(dateTime),
+      mid: recommendationMid,
+      recommend_source: [{ ID: Number(seedSongId) }],
+    })
+    const url = buildUrl('https://gateway.kugou.com/recommend', {}, ANDROID_KEY, body)
+    const response = await httpFetch<any>(url, {
+      method: 'POST',
+      headers: { ...commonHeaders({ dfid: session?.cookies.dfid ?? '-', mid: recommendationMid, clienttime: Math.floor(dateTime / 1000) }), 'Content-Type': 'application/json', 'x-router': 'songlistairec.kugou.com' },
+      text: body,
+    })
+    if (response.statusCode !== 200 || response.body?.status !== 1) {
+      throw new Error(response.body?.error || response.body?.msg || `酷狗 AI 相似推荐请求失败（HTTP ${response.statusCode ?? 0}，status ${response.body?.status ?? 'unknown'}）`)
+    }
+    return response.body.data?.song_list ?? []
+  }
+
+  // 备选私人 FM（按风格推荐）：以 hash/songid 为种子，需登录态
+  const requestFmBatch = async() => {
+    const dateTime = Date.now()
+    const bodyObj: Record<string, unknown> = {
+      appid: APP_ID,
+      clienttime: dateTime,
+      mid: recommendationMid,
+      action: 'play',
+      recommend_source_locked: 0,
+      song_pool_id: 1,
+      callerid: 0,
+      m_type: 1,
+      platform: 'ios',
+      area_code: 1,
+      remain_songcnt: 0,
+      clientver: CLIENT_VERSION,
+      is_overplay: 0,
+      mode: 'normal',
+      fakem: 'ca981cfc583a4c37f28d2d49000013c16a0a',
+      key: signParamsKey(dateTime),
+      hash: seedHash,
+      songid: seedSongId,
+      playtime: 0,
+    }
+    if (session) {
+      bodyObj.userid = session.tokens.userId
+      bodyObj.kguid = session.tokens.userId
+      bodyObj.token = session.tokens.token
+    }
+    const body = JSON.stringify(bodyObj)
+    const params = {
+      ...commonParams(session ?? undefined, recommendationMid),
+      ...(session ? { token: session.tokens.token, userid: session.tokens.userId } : {}),
+    }
+    const response = await httpFetch<any>(buildUrl('https://gateway.kugou.com/v2/personal_recommend', params, ANDROID_KEY, body), {
+      method: 'POST',
+      headers: { ...commonHeaders(params), 'Content-Type': 'application/json', 'x-router': 'persnfm.service.kugou.com' },
+      text: body,
+    })
+    if (response.statusCode !== 200 || response.body?.status !== 1) {
+      throw new Error(response.body?.error || response.body?.msg || `酷狗相似歌曲请求失败（HTTP ${response.statusCode ?? 0}，status ${response.body?.status ?? 'unknown'}）`)
+    }
+    return response.body.data?.songs ?? response.body.data?.song_list ?? response.body.data?.info ?? response.body.songs ?? []
+  }
+
+  const result: LX.Music.MusicInfoOnline[] = []
+  const seen = new Set<string>()
+  const collect = (songs: any[]) => {
+    for (const item of songs) {
+      const info = fmSongToMusicInfo(item)
+      if (!info || seen.has(info.id)) continue
+      seen.add(info.id)
+      result.push(info)
+    }
+  }
+
+  const aiSongs = await requestAiRecommend().catch((error) => {
+    console.warn('[KG similar] AI recommend failed, fallback to personal FM:', error)
+    return null
+  })
+  if (aiSongs?.length) collect(aiSongs)
+  if (result.length) return result.slice(0, limit)
+
+  // 私人 FM 每批返回数量较少（通常 5 首），循环拉取多批直到凑满上限
+  for (let batch = 0; batch < 6 && result.length < limit; batch++) {
+    const songs = await requestFmBatch()
+    collect(songs)
+    if (!songs.length) break
+  }
+  return result.slice(0, limit)
 }

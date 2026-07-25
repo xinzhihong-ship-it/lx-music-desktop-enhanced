@@ -2,6 +2,8 @@ declare namespace LX {
   namespace MusicRecognition {
     type Source = 'system' | 'mic'
     type Status = 'idle' | 'requestingPermission' | 'capturing' | 'recognizing' | 'matched' | 'notMatched' | 'permissionDenied' | 'noAudio' | 'networkError' | 'error' | 'unsupported'
+    type Engine = 'kg' | 'wy' | 'shazam' | 'acrcloud'
+    type EngineStatus = 'matched' | 'notMatched' | 'error'
 
     interface Result {
       id: string
@@ -10,9 +12,23 @@ declare namespace LX {
       album?: string
       coverUrl?: string
       shazamUrl?: string
-      provider: 'shazam' | 'acrcloud'
+      provider: 'shazam' | 'acrcloud' | 'wy' | 'tx' | 'kg'
       providerTrackId: string
       recognizedAt: number
+    }
+
+    interface RecognitionHint {
+      title: string
+      artist: string
+      album?: string
+      coverUrl?: string
+      provider?: 'wy' | 'tx' | 'kg'
+      providerTrackId?: string
+    }
+
+    interface RecognizePcmRequest {
+      pcm: Uint8Array
+      hint?: RecognitionHint
     }
 
     interface AcrcloudConfig {
@@ -22,6 +38,12 @@ declare namespace LX {
       accessSecret: string
     }
 
+    interface EngineReport {
+      engine: Engine
+      status: EngineStatus
+      error?: string
+    }
+
     interface Snapshot {
       status: Status
       history: Result[]
@@ -29,6 +51,7 @@ declare namespace LX {
       alternatives?: Result[]
       error?: string
       captureProgress?: number
+      engineReports?: EngineReport[]
     }
   }
 }

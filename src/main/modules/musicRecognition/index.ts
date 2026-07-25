@@ -28,7 +28,7 @@ export default () => {
 
   registerWindowsLoopbackHandler()
 
-  mainHandle<never, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_start, async({ event }) => {
+  mainHandle<LX.MusicRecognition.RecognitionHint | undefined, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_start, async({ event, params }) => {
     const sender = event.sender
     const handleDestroyed = () => {
       service.stopRecognition()
@@ -37,7 +37,7 @@ export default () => {
     try {
       return await service.startRecognition(snapshot => {
         if (!sender.isDestroyed()) sender.send(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_status, snapshot)
-      })
+      }, params)
     } finally {
       sender.removeListener('destroyed', handleDestroyed)
     }
@@ -47,16 +47,16 @@ export default () => {
     service.stopRecognition()
   })
 
-  mainHandle<Uint8Array, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_recognize_mic, async({ event, params }) => {
+  mainHandle<LX.MusicRecognition.RecognizePcmRequest, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_recognize_mic, async({ event, params }) => {
     const sender = event.sender
     const handleDestroyed = () => {
       service.stopRecognition()
     }
     sender.once('destroyed', handleDestroyed)
     try {
-      return await service.recognizeMicPcm(Buffer.from(params), snapshot => {
+      return await service.recognizeMicPcm(Buffer.from(params.pcm), snapshot => {
         if (!sender.isDestroyed()) sender.send(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_status, snapshot)
-      })
+      }, params.hint)
     } finally {
       sender.removeListener('destroyed', handleDestroyed)
     }

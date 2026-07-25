@@ -278,3 +278,78 @@ export const getDailyTrackIds = async(sessionValue: LX.Account.LoginSession | nu
   }
   return (response.body.data?.dailySongs ?? []).map(item => String(item.id))
 }
+
+interface SimilarSongRaw {
+  id: number | string
+  name?: string
+  artists?: Array<{ name?: string }>
+  ar?: Array<{ name?: string }>
+  album?: { id?: number | string, name?: string, picUrl?: string }
+  al?: { id?: number | string, name?: string, picUrl?: string }
+  duration?: number
+  dt?: number
+  bMusic?: { size?: number }
+  lMusic?: { size?: number }
+  mMusic?: { size?: number }
+  hMusic?: { size?: number }
+  sqMusic?: { size?: number }
+  hrMusic?: { size?: number }
+}
+
+const formatInterval = (duration: number) => {
+  const seconds = Math.max(0, Math.floor(duration / 1000))
+  return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
+}
+
+const buildQualitys = (item: SimilarSongRaw) => {
+  const qualitys: LX.Music.MusicQualityType[] = []
+  const _qualitys: LX.Music._MusicQualityType = {}
+  const addQuality = (type: LX.Quality, size?: number) => {
+    if (!size) return
+    const formattedSize = `${Math.round(size / 1024 / 1024 * 100) / 100}M`
+    qualitys.push({ type, size: formattedSize })
+    _qualitys[type] = { size: formattedSize }
+  }
+  addQuality('128k', (item.lMusic ?? item.mMusic ?? item.bMusic)?.size)
+  addQuality('320k', item.hMusic?.size)
+  addQuality('flac', item.sqMusic?.size)
+  addQuality('flac24bit', item.hrMusic?.size)
+  return { qualitys, _qualitys }
+}
+
+export const getSimilarSongs = async(
+  sessionValue: LX.Account.LoginSession | null,
+  songId: string | number,
+  limit = 50,
+): Promise<LX.Music.MusicInfoOnline[]> => {
+  const cookies = sessionValue?.source === 'wy' ? sessionValue.cookies : createAnonymousCookies()
+  const response = await httpFetch<{ code: number, message?: string, songs?: SimilarSongRaw[] }>(`${BASE_URL}/weapi/v1/discovery/simiSong`, {
+    method: 'POST',
+    headers: commonHeaders(cookies),
+    form: weapi({ songid: songId, limit, offset: 0 }),
+  })
+  if (response.statusCode !== 200 || response.body.code !== 200) {
+    throw new Error(getRequestError(response.body.message, '获取相似歌曲失败', response.statusCode, response.body.code))
+  }
+  return (response.body.songs ?? []).map((item): LX.Music.MusicInfoOnline => {
+    const artists = item.artists ?? item.ar ?? []
+    const album = item.album ?? item.al ?? {}
+    const id = String(item.id)
+    const { qualitys, _qualitys } = buildQualitys(item)
+    return {
+      id: `wy_${id}`,
+      name: item.name ?? '',
+      singer: artists.map(artist => artist.name).filter(Boolean).join('、'),
+      source: 'wy',
+      interval: formatInterval(item.duration ?? item.dt ?? 0),
+      meta: {
+        songId: id,
+        albumId: album.id,
+        albumName: album.name ?? '',
+        picUrl: album.picUrl ?? null,
+        qualitys,
+        _qualitys,
+      },
+    }
+  }).filter(item => item.name)
+}

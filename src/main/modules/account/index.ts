@@ -76,4 +76,29 @@ export default () => {
     if (!session) throw new Error('账号登录状态不存在或已失效')
     return providers[session.source].getDailyTrackIds(session)
   })
+
+  mainHandle<LX.Music.SimilarSongsRequest, LX.Music.SimilarSongsResult>(WIN_MAIN_RENDERER_EVENT_NAME.music_similar_tracks, async({ params }) => {
+    const limit = params.limit ?? 50
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error('相似歌曲数量限制必须是 1 到 50 的安全整数')
+    let list: LX.Music.MusicInfoOnline[]
+    switch (params.source) {
+      case 'wy':
+        list = await wyProvider.getSimilarSongs(sessions.getSessionBySource('wy'), params.songId, limit)
+        break
+      case 'tx':
+        list = await txProvider.getSimilarSongs(sessions.getSessionBySource('tx'), String(params.songId), params.platformId, limit)
+        break
+      case 'kg':
+        list = await kgProvider.getSimilarSongs(sessions.getSessionBySource('kg'), params.hash ?? '', String(params.songId), limit)
+        break
+      default:
+        throw new Error('当前平台暂不支持真实相似歌曲推荐')
+    }
+    return {
+      list,
+      mode: 'platform',
+      seedSource: params.source,
+      platform: params.source,
+    }
+  })
 }

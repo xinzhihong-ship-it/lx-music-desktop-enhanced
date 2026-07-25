@@ -210,6 +210,7 @@ export default {
 
     const {
       handleSearch,
+      handleSimilarSongs,
       handleOpenMusicDetail,
       handleCopyName,
       handleDislikeMusic,
@@ -231,6 +232,7 @@ export default {
       handlePlayMusicLater,
       handleShowMusicToggleModal,
       handleSearch,
+      handleSimilarSongs,
       handleShowMusicAddModal,
       handleShowMusicMoveModal,
       handleShowSortModal,

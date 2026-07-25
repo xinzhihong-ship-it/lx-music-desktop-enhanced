@@ -15,6 +15,14 @@ const router = createRouter({
       },
     },
     {
+      path: '/similar',
+      name: 'Similar',
+      component: require('./views/Similar/index.vue').default,
+      meta: {
+        name: 'Similar',
+      },
+    },
+    {
       path: '/songList/list',
       name: 'SongList',
       component: require('./views/songList/List/index.vue').default,

@@ -186,6 +186,7 @@ const modules = {
     account_playlist_add_tracks: 'winMain_account_playlist_add_tracks',
     account_playlist_remove_tracks: 'winMain_account_playlist_remove_tracks',
     account_daily_tracks: 'winMain_account_daily_tracks',
+    music_similar_tracks: 'winMain_music_similar_tracks',
   },
   winLyric: {
     close: 'winLyric_close',

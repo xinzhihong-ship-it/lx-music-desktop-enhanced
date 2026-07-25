@@ -120,5 +120,26 @@ declare namespace LX {
       list: MusicInfoOnline[]
     }
 
+    interface SimilarSongsRequest {
+      source: LX.Source
+      songId: string | number
+      platformId?: string | number
+      hash?: string
+      limit?: number
+    }
+
+    interface SimilarSongsPartialError {
+      source: LX.OnlineSource
+      message: string
+    }
+
+    interface SimilarSongsResult {
+      list: MusicInfoOnline[]
+      mode: 'platform' | 'unavailable'
+      seedSource: LX.Source
+      platform?: LX.OnlineSource
+      partialErrors?: SimilarSongsPartialError[]
+    }
+
   }
 }

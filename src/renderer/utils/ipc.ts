@@ -318,8 +318,8 @@ export const getAccounts = async() => {
   return rendererInvoke<LX.Account.PlatformAccount[]>(WIN_MAIN_RENDERER_EVENT_NAME.account_list)
 }
 
-export const startMusicRecognition = async(): Promise<LX.MusicRecognition.Snapshot> => {
-  return rendererInvoke<LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_start)
+export const startMusicRecognition = async(hint?: LX.MusicRecognition.RecognitionHint): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<LX.MusicRecognition.RecognitionHint | undefined, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_start, hint)
 }
 
 export const stopMusicRecognition = async(): Promise<void> => {
@@ -338,8 +338,8 @@ export const removeMusicRecognitionHistory = async(id: string): Promise<LX.Music
   return rendererInvoke<string, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_remove_history, id)
 }
 
-export const recognizeMusicFromMic = async(pcm: Uint8Array): Promise<LX.MusicRecognition.Snapshot> => {
-  return rendererInvoke<Uint8Array, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_recognize_mic, pcm)
+export const recognizeMusicFromMic = async(pcm: Uint8Array, hint?: LX.MusicRecognition.RecognitionHint): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<LX.MusicRecognition.RecognizePcmRequest, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_recognize_mic, { pcm, hint })
 }
 
 export const getMusicRecognitionConfig = async(): Promise<LX.MusicRecognition.AcrcloudConfig> => {
@@ -400,6 +400,10 @@ export const removeAccountPlaylistTracks = async(params: LX.Account.PlaylistMuta
 
 export const getAccountDailyTrackIds = async(accountId: string) => {
   return rendererInvoke<string, string[]>(WIN_MAIN_RENDERER_EVENT_NAME.account_daily_tracks, accountId)
+}
+
+export const getSimilarSongs = async(params: LX.Music.SimilarSongsRequest) => {
+  return rendererInvoke<LX.Music.SimilarSongsRequest, LX.Music.SimilarSongsResult>(WIN_MAIN_RENDERER_EVENT_NAME.music_similar_tracks, params)
 }
 
 export const getUserSoundEffectEQPresetList = async() => {

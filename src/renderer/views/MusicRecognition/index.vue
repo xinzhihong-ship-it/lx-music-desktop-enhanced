@@ -17,6 +17,7 @@
     </header>
 
     <section v-if="showEngineSettings" :class="$style.enginePanel">
+      <p :class="$style.nativeEngineTip">{{ $t('music_recognition__native_engine_tip') }}</p>
       <base-checkbox id="music_recognition_acrcloud_enable" v-model="engineForm.enabled" :label="$t('music_recognition__acrcloud_enable')" />
       <div :class="$style.formRow">
         <span>{{ $t('music_recognition__acrcloud_host') }}</span>
@@ -48,6 +49,16 @@
       </div>
       <div v-if="musicRecognition.status === 'capturing'" :class="$style.progress">
         <i :style="{ width: `${Math.round((musicRecognition.captureProgress ?? 0) * 100)}%` }" />
+      </div>
+      <div v-if="engineReports.length && !isBusy" :class="$style.engineReports">
+        <span
+          v-for="report in engineReports"
+          :key="report.engine"
+          :class="$style[`engine_${report.status}`]"
+          :title="report.error"
+        >
+          <i />{{ providerName(report.engine) }} · {{ engineStatusName(report.status) }}
+        </span>
       </div>
       <div v-if="!isBusy" :class="$style.sourceSwitch" role="tablist" :aria-label="$t('music_recognition__source')">
         <button
@@ -85,7 +96,7 @@
           <svg viewBox="0 0 24 24"><use xlink:href="#icon-music" /></svg>
         </div>
         <div :class="$style.trackInfo">
-          <strong>{{ item.title }}<em :class="$style.providerTag">{{ item.provider === 'acrcloud' ? 'ACRCloud' : 'Shazam' }}</em></strong>
+          <strong>{{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em></strong>
           <span>{{ item.artist }}<template v-if="item.album"> · {{ item.album }}</template></span>
         </div>
         <div :class="$style.rowActions">
@@ -109,7 +120,7 @@
               <svg viewBox="0 0 24 24"><use xlink:href="#icon-music" /></svg>
             </div>
             <div :class="$style.trackInfo">
-              <strong>{{ item.title }}<em :class="$style.providerTag">{{ item.provider === 'acrcloud' ? 'ACRCloud' : 'Shazam' }}</em></strong>
+              <strong>{{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em></strong>
               <span>{{ item.artist }}<template v-if="item.album"> · {{ item.album }}</template></span>
             </div>
             <div :class="$style.rowActions">
@@ -137,7 +148,7 @@
             <svg viewBox="0 0 24 24"><use xlink:href="#icon-music" /></svg>
           </div>
           <div :class="$style.trackInfo">
-            <strong>{{ item.title }}<em v-if="item.provider === 'acrcloud'" :class="$style.providerTag">ACRCloud</em></strong>
+            <strong>{{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em></strong>
             <span>{{ item.artist }}<template v-if="item.album"> · {{ item.album }}</template></span>
           </div>
           <time>{{ formatTime(item.recognizedAt) }}</time>
@@ -180,10 +191,22 @@ import {
 } from '@renderer/store/musicRecognition'
 
 const router = useRouter()
+const providerName = (provider: LX.MusicRecognition.Result['provider']) => {
+  if (provider === 'shazam') return 'Shazam'
+  if (provider === 'acrcloud') return 'ACRCloud'
+  if (provider === 'wy') return window.i18n.t('account__source_wy' as any)
+  if (provider === 'tx') return window.i18n.t('account__source_tx' as any)
+  if (provider === 'kg') return window.i18n.t('account__source_kg' as any)
+  return provider
+}
+const engineStatusName = (status: LX.MusicRecognition.EngineStatus) => {
+  return window.i18n.t(`music_recognition__engine_${status}` as any)
+}
 const source = ref<LX.MusicRecognition.Source>('system')
 const isBusy = computed(() => ['requestingPermission', 'capturing', 'recognizing'].includes(musicRecognition.status))
 const resultRows = computed(() => musicRecognition.result ? [musicRecognition.result] : [])
 const alternatives = computed(() => musicRecognition.alternatives ?? [])
+const engineReports = computed(() => musicRecognition.engineReports ?? [])
 
 const showEngineSettings = ref(false)
 const engineForm = reactive<LX.MusicRecognition.AcrcloudConfig>({
@@ -293,6 +316,12 @@ onMounted(() => {
   gap: 10px;
   border-bottom: 1px solid var(--color-primary-light-600-alpha-700);
 }
+.nativeEngineTip {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: .7;
+}
 .formRow {
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr);
@@ -377,6 +406,30 @@ onMounted(() => {
   strong { font-size: 15px; font-weight: 600; }
   span { font-size: 12px; opacity: .72; }
 }
+.engineReports {
+  min-height: 24px;
+  margin: 6px 0 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 10px;
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    opacity: .78;
+  }
+  i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+}
+.engine_matched { color: var(--color-success, #2c9a62); }
+.engine_notMatched { color: var(--color-font); }
+.engine_error { color: var(--color-danger, #d34d4d); }
 .progress {
   width: min(320px, 70%);
   height: 3px;

@@ -92,7 +92,7 @@ const requestMusicU = async(session: LX.Account.LoginSession, module: string, me
   })
   const result = response.body?.req_0
   if (response.statusCode !== 200 || response.body?.code !== 0 || result?.code !== 0) {
-    throw new Error(result?.message || result?.data?.msg || `QQ 音乐请求失败（${method}）`)
+    throw new Error(result?.message || result?.data?.msg || `QQ 音乐请求失败（${method}，HTTP ${response.statusCode ?? 0}，code ${response.body?.code ?? 'unknown'}，reqCode ${result?.code ?? 'unknown'}）`)
   }
   return result.data ?? {}
 }
@@ -436,4 +436,130 @@ export const getDailyTrackIds = async(sessionValue: LX.Account.LoginSession | nu
     if (!data.HasMore || !songs.length) break
   }
   return [...new Set(ids)]
+}
+
+const formatInterval = (seconds: number) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
+
+const formatSize = (size: number) => size > 0 ? `${Math.round(size / 1024 / 1024 * 100) / 100}M` : null
+
+const radarTrackToMusicInfo = (item: any): LX.Music.MusicInfoOnline | null => {
+  const track = item.Track ?? item.track ?? item
+  const mid = String(track.mid ?? '')
+  const name = String(track.title ?? track.name ?? '')
+  if (!mid || !name) return null
+  const file = track.file ?? {}
+  const qualitys: LX.Music.MusicQualityType[] = []
+  const _qualitys: LX.Music._MusicQualityType = {}
+  const addQuality = (type: LX.Quality, size: number) => {
+    const value = formatSize(size)
+    if (!value) return
+    qualitys.push({ type, size: value })
+    _qualitys[type] = { size: value }
+  }
+  addQuality('128k', Number(file.size_128mp3 ?? 0))
+  addQuality('320k', Number(file.size_320mp3 ?? 0))
+  addQuality('flac', Number(file.size_flac ?? 0))
+  addQuality('flac24bit', Number(file.size_hires ?? 0))
+  const albumMid = String(track.album?.mid ?? '')
+  return {
+    id: `tx_${mid}`,
+    name,
+    singer: (track.singer ?? []).map((singer: any) => singer.name).filter(Boolean).join('、'),
+    source: 'tx',
+    interval: formatInterval(Number(track.interval ?? 0)),
+    meta: {
+      songId: mid,
+      id: Number(track.id) || undefined,
+      strMediaMid: String(file.media_mid ?? mid),
+      albumId: albumMid,
+      albumMid,
+      albumName: String(track.album?.name ?? ''),
+      picUrl: albumMid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg` : null,
+      qualitys,
+      _qualitys,
+    },
+  }
+}
+
+const getNumericSongId = async(session: LX.Account.LoginSession, seedMid: string) => {
+  const data = await requestMusicU(session, 'music.trackInfo.UniformRuleCtrl', 'GetTrackInfo', { songMid: [seedMid] })
+  return Number(data.tracks?.[0]?.id ?? data.track_info?.id ?? 0)
+}
+
+const createGuestSession = (): LX.Account.LoginSession => ({
+  source: 'tx',
+  cookies: {},
+  // 电台接口只校验 uid 为合法数字，匿名时给一个固定的游客 uid 即可，无需真实账号凭证
+  tokens: { uin: '12345678', musicKey: '' },
+})
+
+export const getSimilarSongs = async(
+  sessionValue: LX.Account.LoginSession | null,
+  seedMid: string,
+  seedSongId: string | number | undefined,
+  limit = 50,
+): Promise<LX.Music.MusicInfoOnline[]> => {
+  // 推荐接口支持匿名请求，未登录时使用游客身份（结果仅缺少个性化权重）
+  const session = sessionValue?.source === 'tx' ? sessionValue : createGuestSession()
+  const resolvedSongId = await getNumericSongId(session, seedMid).catch(() => 0)
+  const songId = resolvedSongId || Number(seedSongId)
+  if (!Number.isInteger(songId) || songId <= 0) throw new Error('QQ 音乐歌曲缺少数字 ID')
+  const body = {
+    comm: {
+      g_tk: 5381,
+      format: 'json',
+      inCharset: 'utf-8',
+      outCharset: 'utf-8',
+      notice: 0,
+      platform: 'h5',
+      needNewCode: 1,
+    },
+    simsongs: {
+      module: 'rcmusic.similarSongRadioServer',
+      method: 'get_simsongs',
+      param: { songid: songId },
+    },
+  }
+  let legacySongs: any[] | null = null
+  try {
+    const response = await httpFetch<any>('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+      method: 'POST',
+      json: body,
+      headers: { 'User-Agent': USER_AGENT, Referer: 'https://y.qq.com/', 'Content-Type': 'application/json' },
+    })
+    const responseResult = response.body?.simsongs
+    if (response.statusCode !== 200 || response.body?.code !== 0 || responseResult?.code !== 0) {
+      throw new Error(responseResult?.message || `QQ 音乐相似歌曲请求失败（HTTP ${response.statusCode ?? 0}，code ${responseResult?.code ?? 'unknown'}）`)
+    }
+    const data = responseResult.data ?? {}
+    const songs = data.songInfoList ?? data.vecSong ?? data.tracks ?? data.songlist ?? []
+    if (!songs.length) throw new Error('QQ 音乐旧相似歌曲接口返回空列表')
+    legacySongs = songs
+  } catch {
+    console.warn('[QQ similar] legacy request unavailable, fallback to radio')
+  }
+  const mappedLegacySongs = legacySongs
+    ?.map(radarTrackToMusicInfo)
+    .filter((item: LX.Music.MusicInfoOnline | null): item is LX.Music.MusicInfoOnline => item != null) ?? []
+  if (mappedLegacySongs.length) return mappedLegacySongs.slice(0, limit)
+
+  const radioData = await requestMusicU(session, 'music.radioProxy.MbTrackRadioSvr', 'get_radio_track', {
+    id: 99,
+    num: limit,
+    from: 0,
+    scene: 0,
+    song_ids: [songId],
+    ext: { bluetooth: '' },
+    should_count_down: 1,
+  })
+  const radioSongs = radioData.tracks ?? radioData.songlist ?? []
+  const result: LX.Music.MusicInfoOnline[] = []
+  const seen = new Set<string>()
+  for (const item of radioSongs) {
+    const info = radarTrackToMusicInfo(item)
+    if (!info || seen.has(info.id)) continue
+    seen.add(info.id)
+    result.push(info)
+  }
+  return result.slice(0, limit)
 }
