@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { fetch } from 'undici'
 import { SignatureGenerator } from 'st-shazam/src/algorithm'
 import { createRequestSignal } from './abort'
+import { selectConsensusKey } from './decision'
 
 const REQUEST_TIMEOUT_MS = 10000
 const VERIFICATION_MIN_SECONDS = 10
@@ -89,36 +90,35 @@ const tagSamples = async(samples: Int16Array, signal?: AbortSignal): Promise<any
   return body
 }
 
-const verifyTrack = async(pcm: Buffer, expectedTrackKey: string, signal?: AbortSignal): Promise<boolean> => {
+const getRecognitionSegments = (pcm: Buffer): Int16Array[] => {
   const totalSamples = Math.floor(pcm.length / 2)
-  if (totalSamples < VERIFICATION_MIN_SECONDS * 16000) return false
+  const full = new Int16Array(pcm.buffer, pcm.byteOffset, totalSamples)
+  if (totalSamples < VERIFICATION_MIN_SECONDS * 16000) return [full]
 
   const segmentSamples = VERIFICATION_SEGMENT_SECONDS * 16000
-  const segments = [
-    new Int16Array(pcm.buffer, pcm.byteOffset + (totalSamples - segmentSamples) * 2, segmentSamples),
+  return [
+    full,
     new Int16Array(pcm.buffer, pcm.byteOffset, segmentSamples),
+    new Int16Array(pcm.buffer, pcm.byteOffset + (totalSamples - segmentSamples) * 2, segmentSamples),
   ]
-
-  for (const samples of segments) {
-    const body = await tagSamples(samples, signal)
-    if (!body?.track) continue
-    return String(body.track.key) === expectedTrackKey
-  }
-  return false
 }
 
 export const recognizePcm = async(pcm: Buffer, signal?: AbortSignal): Promise<RecognitionOutput> => {
-  const sampleCount = Math.floor(pcm.length / 2)
-  const samples = new Int16Array(pcm.buffer, pcm.byteOffset, sampleCount)
-  const body = await tagSamples(samples, signal)
-  if (!body?.track) return { match: null, alternatives: [] }
-
-  const trackKey = String(body.track.key)
-  if (!await verifyTrack(pcm, trackKey, signal)) {
-    console.warn(`[music recognition] rejected unverified Shazam match: ${trackKey}`)
-    return { match: null, alternatives: [] }
+  const bodies = new Map<string, any>()
+  const keys: string[] = []
+  for (const samples of getRecognitionSegments(pcm)) {
+    const body = await tagSamples(samples, signal)
+    if (!body?.track) continue
+    const key = String(body.track.key)
+    bodies.set(key, body)
+    keys.push(key)
+    const consensusKey = selectConsensusKey(keys)
+    if (consensusKey) {
+      const match = mapTrack(bodies.get(consensusKey).track, Date.now())
+      return { match, alternatives: [] }
+    }
   }
 
-  const match = mapTrack(body.track, Date.now())
-  return { match, alternatives: [] }
+  if (keys.length) console.warn(`[music recognition] rejected unverified Shazam matches: ${keys.join(', ')}`)
+  return { match: null, alternatives: [] }
 }

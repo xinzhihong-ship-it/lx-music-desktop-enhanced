@@ -118,7 +118,6 @@ export default {
       await overwriteListFull({ defaultList, loveList, userList: allLists })
     }
     const importOldSettingData = (setting) => {
-      console.log(setting)
       setting = migrateSetting(setting)
       setting['common.isAgreePact'] = false
       updateSetting(setting)
@@ -172,10 +171,14 @@ export default {
       })
     }
 
+    const getExportSetting = () => ({
+      ...appSetting,
+      'network.gitcodeMusicAccessToken': '',
+    })
     const exportAllData = async(path) => {
       let allData = {
         type: 'allData_v2',
-        setting: { ...appSetting },
+        setting: getExportSetting(),
         playList: await getAllLists(),
       }
       void window.lx.worker.main.saveLxConfigFile(path, allData)
@@ -193,7 +196,7 @@ export default {
     const exportSetting = (path) => {
       const data = {
         type: 'setting_v2',
-        data: { ...appSetting },
+        data: getExportSetting(),
       }
       void window.lx.worker.main.saveLxConfigFile(path, data)
     }

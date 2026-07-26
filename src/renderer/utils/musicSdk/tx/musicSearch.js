@@ -111,8 +111,29 @@ export default {
       }
       if (file.size_hires !== 0) {
         let size = sizeFormate(file.size_hires)
-        types.push({ type: 'flac24bit', size })
-        _types.flac24bit = {
+        types.push({ type: 'hires', size })
+        _types.hires = {
+          size,
+        }
+      }
+      if (file.size_new?.[1]) {
+        let size = sizeFormate(file.size_new[1])
+        types.push({ type: 'atmos', size })
+        _types.atmos = {
+          size,
+        }
+      }
+      if (file.size_new?.[2]) {
+        let size = sizeFormate(file.size_new[2])
+        types.push({ type: 'atmos_plus', size })
+        _types.atmos_plus = {
+          size,
+        }
+      }
+      if (file.size_new?.[0]) {
+        let size = sizeFormate(file.size_new[0])
+        types.push({ type: 'master', size })
+        _types.master = {
           size,
         }
       }

@@ -4,8 +4,9 @@ import { recognizeAcrcloud } from './acrcloud'
 import { recognizeKugou } from './kgRecognizer'
 import { recognizeNetease } from './wyRecognizer'
 import { getAcrcloudConfig, setAcrcloudConfig } from './configStore'
-import { addHistory, clearHistory, getHistory, removeHistory } from './historyStore'
+import { addHistory, clearHistory, getHistory, removeHistory, replaceHistory } from './historyStore'
 import { throwIfAborted } from './abort'
+import { isAmbiguousRecognition, promoteRecognitionCandidate, selectAlternativeCandidates } from './decision'
 
 const MAX_ALTERNATIVES = 8
 
@@ -203,6 +204,13 @@ const runRecognition = async(
     ...output.alternatives,
   ])
   const match = selectMatch(defaultMatch, candidates, hint)
+  const hintSupportsMatch = !!hint &&
+    normalizeTitle(match.title) === normalizeTitle(hint.title) &&
+    hasSameArtist(match.artist, hint.artist)
+  const matchedEngines = fulfilled
+    .filter(({ output }) => output.match)
+    .map(({ name }) => name)
+  const ambiguous = isAmbiguousRecognition(matchedEngines, hintSupportsMatch)
   if (match !== defaultMatch) {
     console.info('[music recognition] current LX track metadata resolved ambiguous audio match:', {
       audio: `${defaultMatch.artist} - ${defaultMatch.title}`,
@@ -210,18 +218,27 @@ const runRecognition = async(
       providerTrackId: match.providerTrackId,
     })
   }
-  const seen = new Set([resultKey(match)])
-  const alternatives: LX.MusicRecognition.Result[] = []
-  for (const item of candidates) {
-    const key = resultKey(item)
-    if (seen.has(key) || !isSameTrack(match, item)) continue
-    seen.add(key)
-    alternatives.push(item)
-    if (alternatives.length >= MAX_ALTERNATIVES) break
-  }
+  const alternatives = selectAlternativeCandidates(
+    match,
+    candidates,
+    resultKey,
+    (selected, candidate) => {
+      if (isSameTrack(selected, candidate)) return 0
+      if (normalizeTitle(selected.title) === normalizeTitle(candidate.title)) return 1
+      return 2
+    },
+    MAX_ALTERNATIVES,
+  )
 
-  addHistory(match)
-  return updateSnapshot({ status: 'matched', result: match, alternatives, engineReports }, onStatus)
+  const result = ambiguous ? { ...match, confidence: 'possible' as const } : match
+  const resolvedAlternatives = alternatives.map(item => ({ ...item, confidence: 'possible' as const }))
+  addHistory(result)
+  return updateSnapshot({
+    status: ambiguous ? 'ambiguous' : 'matched',
+    result,
+    alternatives: resolvedAlternatives,
+    engineReports,
+  }, onStatus)
 }
 
 export const startRecognition = async(
@@ -271,12 +288,39 @@ export const stopRecognition = () => {
 
 export const clearRecognitionHistory = (): LX.MusicRecognition.Snapshot => {
   clearHistory()
-  return updateSnapshot({ result: undefined })
+  if (snapshot.status !== 'matched' && snapshot.status !== 'ambiguous') return updateSnapshot({})
+  return updateSnapshot({
+    status: 'idle',
+    error: undefined,
+    result: undefined,
+    alternatives: undefined,
+    captureProgress: undefined,
+    engineReports: undefined,
+  })
 }
 
 export const removeRecognitionHistoryItem = (id: string): LX.MusicRecognition.Snapshot => {
   removeHistory(id)
   return updateSnapshot({})
+}
+
+export const confirmRecognitionResult = (
+  request: LX.MusicRecognition.ConfirmResultRequest,
+): LX.MusicRecognition.Snapshot => {
+  const current = snapshot.result
+  if (!current || current.id !== request.originalId) throw new Error('当前识别结果已发生变化')
+
+  const result = promoteRecognitionCandidate(current, request.result)
+  const alternatives = selectAlternativeCandidates(
+    result,
+    [current, ...(snapshot.alternatives ?? [])],
+    resultKey,
+    () => 0,
+    MAX_ALTERNATIVES,
+  ).map(item => ({ ...item, confidence: 'possible' as const }))
+
+  replaceHistory(current.id, result)
+  return updateSnapshot({ status: 'matched', result, alternatives, error: undefined })
 }
 
 export const getRecognitionConfig = (): LX.MusicRecognition.AcrcloudConfig => {

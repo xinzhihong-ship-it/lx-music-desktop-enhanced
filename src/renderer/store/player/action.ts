@@ -238,7 +238,13 @@ export const addTempPlayList = (list: LX.Player.TempPlayListItem[]) => {
     }
     return true
   })
-  if (topList.length) arrUnshift(tempPlayList, topList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
+  if (topList.length) {
+    const topIds = new Set(topList.map(({ musicInfo }) => musicInfo.id))
+    for (let i = tempPlayList.length - 1; i >= 0; i--) {
+      if (topIds.has(tempPlayList[i].musicInfo.id)) tempPlayList.splice(i, 1)
+    }
+    arrUnshift(tempPlayList, topList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
+  }
   if (bottomList.length) arrPush(tempPlayList, bottomList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
 
   if (!playMusicInfo.musicInfo) void playNext()

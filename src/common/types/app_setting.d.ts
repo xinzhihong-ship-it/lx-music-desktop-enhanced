@@ -651,6 +651,16 @@ declare global {
       'network.proxy.port': string
 
       /**
+       * GitCode 音乐索引 JSON 地址。不得包含访问令牌。
+       */
+      'network.gitcodeMusicDatabaseUrl': string
+
+      /**
+       * GitCode 音乐仓库访问令牌。只保存在本地设置中。
+       */
+      'network.gitcodeMusicAccessToken': string
+
+      /**
        * 是否启用托盘
        */
       'tray.enable': boolean

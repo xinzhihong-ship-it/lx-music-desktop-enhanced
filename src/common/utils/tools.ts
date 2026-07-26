@@ -22,6 +22,7 @@ export const toNewMusicInfo = (oldMusicInfo: any): LX.Music.MusicInfo => {
     meta.qualitys = oldMusicInfo.types
     meta._qualitys = oldMusicInfo._types
     meta.albumId = oldMusicInfo.albumId
+    if (oldMusicInfo.platformData) meta.platformData = oldMusicInfo.platformData
     if (meta._qualitys.flac32bit && !meta._qualitys.flac24bit) {
       meta._qualitys.flac24bit = meta._qualitys.flac32bit
       delete meta._qualitys.flac32bit
@@ -75,6 +76,7 @@ export const toOldMusicInfo = (minfo: LX.Music.MusicInfo) => {
     oInfo.albumId = minfo.meta.albumId
     oInfo.types = minfo.meta.qualitys
     oInfo._types = minfo.meta._qualitys
+    if (minfo.meta.platformData) oInfo.platformData = minfo.meta.platformData
 
     switch (minfo.source) {
       case 'kg':

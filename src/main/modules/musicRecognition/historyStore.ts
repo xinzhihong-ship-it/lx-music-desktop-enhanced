@@ -28,6 +28,16 @@ export const removeHistory = (id: string): LX.MusicRecognition.Result[] => {
   return history
 }
 
+export const replaceHistory = (id: string, result: LX.MusicRecognition.Result): LX.MusicRecognition.Result[] => {
+  const history = getHistory()
+  const index = history.findIndex(item => item.id === id)
+  if (index < 0) return history
+  const nextHistory = history.filter((item, itemIndex) => itemIndex === index || item.providerTrackId !== result.providerTrackId)
+  nextHistory[nextHistory.findIndex(item => item.id === id)] = result
+  getHistoryStore().set(HISTORY_KEY, nextHistory)
+  return nextHistory
+}
+
 export const clearHistory = () => {
   getHistoryStore().set(HISTORY_KEY, [])
 }

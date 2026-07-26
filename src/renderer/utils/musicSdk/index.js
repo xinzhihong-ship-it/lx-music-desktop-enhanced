@@ -5,9 +5,11 @@ import wy from './wy/index'
 import mg from './mg/index'
 import bd from './bd/index'
 import xm from './xm'
+import git from './git'
 import { supportQuality } from './api-source'
 
 
+/** @type {any} */
 const sources = {
   sources: [
     {
@@ -34,6 +36,10 @@ const sources = {
       name: '虾米音乐',
       id: 'xm',
     },
+    {
+      name: 'GitCode',
+      id: 'git',
+    },
     // {
     //   name: '百度音乐',
     //   id: 'bd',
@@ -46,6 +52,7 @@ const sources = {
   mg,
   bd,
   xm,
+  git,
 }
 export default {
   ...sources,

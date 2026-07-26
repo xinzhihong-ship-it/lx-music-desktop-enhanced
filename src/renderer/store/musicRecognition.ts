@@ -1,6 +1,7 @@
 import { reactive } from '@common/utils/vueTools'
 import {
   clearMusicRecognitionHistory,
+  confirmMusicRecognitionResult,
   getMusicRecognitionConfig,
   getMusicRecognitionSnapshot,
   onMusicRecognitionStatus,
@@ -61,7 +62,9 @@ const beginRecognitionAttempt = () => {
 }
 
 const applySnapshot = (snapshot: LX.MusicRecognition.Snapshot) => {
-  const result = snapshot.status === 'matched' ? snapshot.result : undefined
+  const result = snapshot.status === 'matched' || snapshot.status === 'ambiguous'
+    ? snapshot.result
+    : undefined
   if (!result) {
     enrichmentKey = null
     Object.assign(musicRecognition, snapshot)
@@ -69,7 +72,7 @@ const applySnapshot = (snapshot: LX.MusicRecognition.Snapshot) => {
   }
 
   const key = resultKey(result)
-  const currentKey = musicRecognition.status === 'matched' && musicRecognition.result
+  const currentKey = (musicRecognition.status === 'matched' || musicRecognition.status === 'ambiguous') && musicRecognition.result
     ? resultKey(musicRecognition.result)
     : null
   const alternatives = mergeCandidates(
@@ -90,12 +93,13 @@ const applySnapshot = (snapshot: LX.MusicRecognition.Snapshot) => {
       if (
         recognitionGeneration !== generation ||
         enrichmentKey !== key ||
-        musicRecognition.status !== 'matched' ||
+        (musicRecognition.status !== 'matched' && musicRecognition.status !== 'ambiguous') ||
         musicRecognition.result?.id !== resultId ||
         resultKey(musicRecognition.result) !== key
       ) return
 
-      const mergedAlternatives = mergeCandidates(result, musicRecognition.alternatives, platformMatches)
+      const possiblePlatformMatches = platformMatches.map(match => ({ ...match, confidence: 'possible' as const }))
+      const mergedAlternatives = mergeCandidates(result, musicRecognition.alternatives, possiblePlatformMatches)
       completedEnrichments.set(key, mergedAlternatives)
       musicRecognition.alternatives = mergedAlternatives
     })
@@ -197,6 +201,8 @@ export const startMicRecognition = async() => {
       error: err instanceof Error ? err.message : String(err),
       captureProgress: undefined,
     })
+  } finally {
+    if (micCaptureHandle === handle) micCaptureHandle = null
   }
 }
 
@@ -249,15 +255,35 @@ export const stopRecognition = async() => {
   micCaptureHandle = null
   systemCaptureHandle?.stop()
   systemCaptureHandle = null
+  Object.assign(musicRecognition, {
+    status: 'idle',
+    error: undefined,
+    result: undefined,
+    alternatives: undefined,
+    captureProgress: undefined,
+    engineReports: undefined,
+  })
   await stopMusicRecognition()
 }
 
 export const clearRecognitionHistory = async() => {
-  const generation = beginRecognitionAttempt()
+  const generation = isBusyStatus(musicRecognition.status)
+    ? recognitionGeneration
+    : beginRecognitionAttempt()
   const snapshot = await clearMusicRecognitionHistory()
   if (recognitionGeneration === generation) applySnapshot(snapshot)
 }
 
 export const removeRecognitionHistoryItem = async(id: string) => {
   applySnapshot(await removeMusicRecognitionHistory(id))
+}
+
+export const confirmRecognitionCandidate = async(result: LX.MusicRecognition.Result) => {
+  const originalId = musicRecognition.result?.id
+  if (!originalId) return
+  try {
+    applySnapshot(await confirmMusicRecognitionResult({ originalId, result: { ...result } }))
+  } catch (error) {
+    console.warn('[music recognition] unable to confirm candidate:', error)
+  }
 }

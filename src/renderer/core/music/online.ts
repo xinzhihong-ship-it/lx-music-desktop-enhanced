@@ -1,5 +1,6 @@
 import { updateListMusics } from '@renderer/store/list/action'
 import { appSetting } from '@renderer/store/setting'
+import { qualityList } from '@renderer/store'
 import {
   saveLyric,
   saveMusicUrl,
@@ -18,8 +19,12 @@ import {
 import musicSdk from '@renderer/utils/musicSdk'
 import { toOldMusicInfo } from '@renderer/utils'
 
-const detailQualitys = new Set<LX.Quality>(['master', 'atmos_plus', 'atmos', 'hires'])
-const qualityDetailRequests = new Map<string, Promise<void>>()
+const detailQualitys = new Set<LX.Quality>(['master', 'atmos_plus', 'atmos', 'hires', '192k'])
+interface QualityDetail {
+  types: LX.Music.MusicInfoOnline['meta']['qualitys']
+  _types: LX.Music.MusicInfoOnline['meta']['_qualitys']
+}
+const qualityDetailRequests = new Map<string, Promise<QualityDetail | null>>()
 
 const hasPreferredQuality = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality) => {
   if (quality == 'hires') return !!(musicInfo.meta._qualitys.hires ?? musicInfo.meta._qualitys.flac24bit)
@@ -36,59 +41,32 @@ const loadDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline) => {
   let request = qualityDetailRequests.get(requestKey)
   if (!request) {
     request = Promise.resolve(getMusicQualityInfo(toOldMusicInfo(musicInfo)).promise).then(({ types, _types }) => {
-      if (!types?.length) return
-      const qualitys = new Map(musicInfo.meta.qualitys.map(item => [item.type, item]))
-      for (const item of types) qualitys.set(item.type, item)
-      musicInfo.meta.qualitys = [...qualitys.values()]
-      musicInfo.meta._qualitys = { ...musicInfo.meta._qualitys, ..._types }
+      return types?.length ? { types, _types } : null
     }).catch(err => {
       console.warn('[music quality] detailed quality request failed:', err)
+      return null
     }).finally(() => {
       qualityDetailRequests.delete(requestKey)
     })
     qualityDetailRequests.set(requestKey, request)
   }
-  await request
+  const detail = await request
+  if (!detail) return
+  const qualitys = new Map(musicInfo.meta.qualitys.map(item => [item.type, item]))
+  for (const item of detail.types) qualitys.set(item.type, item)
+  musicInfo.meta.qualitys = [...qualitys.values()]
+  musicInfo.meta._qualitys = { ...musicInfo.meta._qualitys, ...detail._types }
 }
 
-/* export const setMusicUrl = ({ musicInfo, type, url }: {
-  musicInfo: LX.Music.MusicInfo
-  type: LX.Quality
-  url: string
-}) => {
-  saveMusicUrl(musicInfo, type, url)
-}
-
-export const setPic = (datas: {
-  listId: string
-  musicInfo: LX.Music.MusicInfo
-  url: string
-}) => {
-  datas.musicInfo.img = datas.url
-  updateMusicInfo({
-    listId: datas.listId,
-    id: datas.musicInfo.songmid,
-    data: { img: datas.url },
-    musicInfo: datas.musicInfo,
-  })
-}
- */
-
-
-export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, forceToggleSource = false, onToggleSource = () => {} }: {
+export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, forceToggleSource = false, onToggleSource = () => {}, onResolvedQuality = () => {} }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
   allowToggleSource?: boolean
   forceToggleSource?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  onResolvedQuality?: (quality: LX.Quality) => void
 }): Promise<string> => {
-  // if (!musicInfo._types[type]) {
-  //   // 兼容旧版酷我源搜索列表过滤128k音质的bug
-  //   if (!(musicInfo.source == 'kw' && type == '128k')) throw new Error('该歌曲没有可播放的音频')
-
-  //   // return Promise.reject(new Error('该歌曲没有可播放的音频'))
-  // }
   if (!quality) await loadDetailedQuality(musicInfo)
   if (forceToggleSource) {
     const otherSource = await getOtherSource(musicInfo, true)
@@ -101,15 +79,22 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
     })
     if (!result.isFromCache) void saveMusicUrl(result.musicInfo, result.quality, result.url)
     void saveMusicUrl(musicInfo, result.quality, result.url)
+    onResolvedQuality(result.quality)
     return result.url
   }
   const targetQuality = quality ?? getPlayQuality(appSetting['player.playQuality'], musicInfo)
-  const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality)
-  if (cachedUrl && !isRefresh) return cachedUrl
+  const cachedUrl = qualityList.value[musicInfo.source] == null
+    ? null
+    : await getStoreMusicUrl(musicInfo, targetQuality)
+  if (cachedUrl && !isRefresh) {
+    onResolvedQuality(targetQuality)
+    return cachedUrl
+  }
 
-  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
-    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, targetQuality, url)
-    void saveMusicUrl(musicInfo, targetQuality, url)
+  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource }).then(({ url, quality: resolvedQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, resolvedQuality, url)
+    void saveMusicUrl(musicInfo, resolvedQuality, url)
+    onResolvedQuality(resolvedQuality)
     return url
   })
 }

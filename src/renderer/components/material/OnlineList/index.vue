@@ -169,6 +169,8 @@ export default {
 
     const {
       handlePlayMusic,
+      handleAddToPlayList,
+      handlePlayMusicNext,
       handlePlayMusicLater,
       doubleClickPlay,
     } = usePlay({ selectedList, props, removeAllSelect, emit })
@@ -208,6 +210,8 @@ export default {
 
       handleShowDownloadModal,
       handlePlayMusic,
+      handleAddToPlayList,
+      handlePlayMusicNext,
       handlePlayMusicLater,
       handleSearch,
       handleSimilarSongs,

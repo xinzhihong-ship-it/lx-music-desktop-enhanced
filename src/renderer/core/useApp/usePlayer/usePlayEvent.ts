@@ -176,12 +176,6 @@ export default () => {
     clearLoadingTimeout()
   }
 
-  // const handlePlayedStop = () => {
-  //   clearDelayNextTimeout()
-  //   clearLoadingTimeout()
-  // }
-
-
   window.app_event.on('playerLoadstart', handleLoadstart)
   window.app_event.on('playerLoadeddata', handleLoadeddata)
   window.app_event.on('playerPlaying', handlePlaying)

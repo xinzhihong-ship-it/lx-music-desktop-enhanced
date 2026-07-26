@@ -118,7 +118,6 @@ export default {
 
     const createList = (startIndex, endIndex) => {
       if (startIndex == endIndex) return []
-      console.log(startIndex, endIndex)
       const cache = cachedList.slice(startIndex, endIndex)
       const list = props.list.slice(startIndex, endIndex).map((item, i) => {
         if (cache[i]) return cache[i]
@@ -137,7 +136,6 @@ export default {
 
     const renderListItem = (list, type) => {
       if (!list.length) return
-      console.log(list)
       // const dom = document.createDocumentFragment()
       switch (type) {
         case 'up':
@@ -165,7 +163,6 @@ export default {
         // if (Math.abs(currentScrollTop - this.scrollTop) < this.itemHeight * 0.6) return
         // console.log('update')
         if (currentScrollTop > scrollTop) { // scroll down
-          console.log('scroll down')
           renderListItem(createList(endIndex + 1, currentEndRenderIndex))
         //   // views.value.push(...list.slice(list.indexOf(views.value[views.value.length - 1]) + 1))
         //   // // if (this.views.length > 100) {
@@ -174,7 +171,6 @@ export default {
         //   // })
         //   // }
         } else if (currentScrollTop < scrollTop) { // scroll up
-          console.log('scroll up')
           renderListItem(createList(currentStartRenderIndex, startIndex))
           // views.value = createList(currentStartRenderIndex, currentEndRenderIndex)
         } else return

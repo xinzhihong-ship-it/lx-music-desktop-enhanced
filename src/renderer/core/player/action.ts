@@ -132,6 +132,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
 
   const onlineMusicInfo = getOnlineMusicInfo(musicInfo)
   const targetQuality = quality
+  let resolvedQuality = targetQuality
   let toggleMusicInfo = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
 
   return (!forceToggleSource && toggleMusicInfo ? getMusicUrl({
@@ -139,6 +140,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     quality: targetQuality,
     isRefresh,
     allowToggleSource: false,
+    onResolvedQuality: quality => { resolvedQuality = quality },
   }) : Promise.reject(new Error('not found'))).catch(async() => {
     return getMusicUrl({
       musicInfo,
@@ -146,6 +148,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
       isRefresh,
       allowToggleSource: shouldToggleSourceOnError(),
       forceToggleSource,
+      onResolvedQuality: quality => { resolvedQuality = quality },
       onToggleSource(mInfo) {
         if (diffCurrentMusicInfo(musicInfo)) return
         setAllStatus(window.i18n.t('toggle_source_try'))
@@ -154,10 +157,10 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   }).then(url => {
     if (window.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) return null
 
-    const resolvedQuality = onlineMusicInfo
-      ? (targetQuality ?? getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo))
+    const quality = onlineMusicInfo
+      ? (resolvedQuality ?? getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo))
       : appSetting['player.playQuality']
-    return { url, quality: resolvedQuality }
+    return { url, quality }
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   }).catch(err => {
     // console.log('err', err.message)

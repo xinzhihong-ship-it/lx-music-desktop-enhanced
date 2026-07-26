@@ -32,7 +32,7 @@ export default () => {
           if (listRef.value) listRef.value.scrollToTop()
         })
       }
-    })
+    }).catch(() => {})
   }
 
   const handlePlayList = async(index: number) => {
@@ -40,10 +40,9 @@ export default () => {
 
     if (!assertApiSupport(targetSong.source)) return
 
-    const defaultListMusics = await getListMusics(LIST_IDS.DEFAULT)
-
     await addListMusics(LIST_IDS.DEFAULT, [targetSong])
 
+    const defaultListMusics = await getListMusics(LIST_IDS.DEFAULT)
     let targetIndex = defaultListMusics.findIndex(s => s.id === targetSong.id)
     if (targetIndex > -1) playList(LIST_IDS.DEFAULT, targetIndex)
   }

@@ -1,20 +1,31 @@
 import { type Ref, onBeforeUnmount, onMounted, ref } from '@common/utils/vueTools'
 
 const onDomSizeChanged = (dom: HTMLElement, onChanged: (width: number, height: number) => void) => {
-  // 使用 ResizeObserver 监听大小变化
+  let frameId: number | null = null
+  let lastWidth = -1
+  const notify = (width: number, height: number) => {
+    const nextWidth = Math.trunc(width)
+    if (nextWidth === lastWidth) return
+    lastWidth = nextWidth
+    if (frameId != null) window.cancelAnimationFrame(frameId)
+    frameId = window.requestAnimationFrame(() => {
+      frameId = null
+      onChanged(nextWidth, Math.trunc(height))
+    })
+  }
+
   const resizeObserver = new ResizeObserver(entries => {
     for (let entry of entries) {
       const { width, height } = entry.contentRect
-      // console.log(dom.offsetLeft, dom.offsetTop, left, top, width, height)
-      onChanged(Math.trunc(width), Math.trunc(height))
+      notify(width, height)
     }
   })
 
   resizeObserver.observe(dom)
-
-  onChanged(dom.clientWidth, dom.clientHeight)
+  notify(dom.clientWidth, dom.clientHeight)
 
   return () => {
+    if (frameId != null) window.cancelAnimationFrame(frameId)
     resizeObserver.disconnect()
   }
 }

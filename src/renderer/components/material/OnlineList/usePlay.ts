@@ -20,25 +20,50 @@ export default ({ selectedList, props, removeAllSelect, emit }: {
 
   const handlePlayMusic = async(index: number, single: boolean) => {
     let targetSong = props.list[index]
-    const defaultListMusics = await getListMusics(defaultList.id)
+    if (!targetSong) return
     if (selectedList.value.length && !single) {
       await addListMusics(defaultList.id, [...selectedList.value])
       removeAllSelect()
     } else {
       await addListMusics(defaultList.id, [targetSong])
     }
+    const defaultListMusics = await getListMusics(defaultList.id)
     let targetIndex = defaultListMusics.findIndex(s => s.id === targetSong.id)
     if (targetIndex > -1) {
       playList(defaultList.id, targetIndex)
     }
   }
 
+  const handleAddToPlayList = async(index: number, single: boolean) => {
+    const targetSong = props.list[index]
+    if (!targetSong) return
+    if (selectedList.value.length && !single) {
+      await addListMusics(defaultList.id, [...selectedList.value])
+      removeAllSelect()
+    } else {
+      await addListMusics(defaultList.id, [targetSong])
+    }
+  }
+
+  const handlePlayMusicNext = (index: number, single: boolean) => {
+    const targetSong = props.list[index]
+    if (!targetSong) return
+    if (selectedList.value.length && !single) {
+      addTempPlayList(selectedList.value.map(s => ({ listId: LIST_IDS.PLAY_LATER, musicInfo: s, isTop: true })))
+      removeAllSelect()
+    } else {
+      addTempPlayList([{ listId: LIST_IDS.PLAY_LATER, musicInfo: targetSong, isTop: true }])
+    }
+  }
+
   const handlePlayMusicLater = (index: number, single: boolean) => {
+    const targetSong = props.list[index]
+    if (!targetSong) return
     if (selectedList.value.length && !single) {
       addTempPlayList(selectedList.value.map(s => ({ listId: LIST_IDS.PLAY_LATER, musicInfo: s })))
       removeAllSelect()
     } else {
-      addTempPlayList([{ listId: LIST_IDS.PLAY_LATER, musicInfo: props.list[index] }])
+      addTempPlayList([{ listId: LIST_IDS.PLAY_LATER, musicInfo: targetSong }])
     }
   }
 
@@ -62,6 +87,8 @@ export default ({ selectedList, props, removeAllSelect, emit }: {
 
   return {
     handlePlayMusic,
+    handleAddToPlayList,
+    handlePlayMusicNext,
     handlePlayMusicLater,
     doubleClickPlay,
   }

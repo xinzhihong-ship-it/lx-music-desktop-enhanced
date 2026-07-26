@@ -30,6 +30,7 @@ declare namespace LX {
       _qualitys: _MusicQualityType
       albumId?: string | number // 歌曲专辑ID
       accountTrackId?: string // 平台歌单条目ID，仅用于云端歌单删除
+      platformData?: Record<string, unknown>
     }
 
     interface MusicInfoMeta_local extends MusicInfoMetaBase {
@@ -51,7 +52,7 @@ declare namespace LX {
       meta: MusicInfoMeta_local
     }
 
-    interface MusicInfo_online_common extends MusicInfoBase<'kw' | 'wy'> {
+    interface MusicInfo_online_common extends MusicInfoBase<'kw' | 'wy' | 'git'> {
       meta: MusicInfoMeta_online
     }
 

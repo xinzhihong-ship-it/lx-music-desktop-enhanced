@@ -66,6 +66,10 @@ export default () => {
     return service.getSnapshot()
   })
 
+  mainHandle<LX.MusicRecognition.ConfirmResultRequest, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_confirm_result, async({ params }) => {
+    return service.confirmRecognitionResult(params)
+  })
+
   mainHandle<LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_clear_history, async() => {
     return service.clearRecognitionHistory()
   })

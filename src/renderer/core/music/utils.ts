@@ -41,12 +41,15 @@ export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.
       interval: musicInfo.metadata.musicInfo.interval ?? '',
     }
   } else {
+    const lyricSearch = musicInfo.source == 'local'
+      ? undefined
+      : musicInfo.meta.platformData?.lyricSearch as { name?: string, singer?: string } | undefined
     key = `${musicInfo.source}_${musicInfo.id}`
     searchMusicInfo = {
-      name: musicInfo.name,
-      singer: musicInfo.singer,
+      name: lyricSearch?.name ?? musicInfo.name,
+      singer: lyricSearch?.singer ?? musicInfo.singer,
       source: musicInfo.source,
-      albumName: musicInfo.meta.albumName,
+      albumName: lyricSearch ? '' : musicInfo.meta.albumName,
       interval: musicInfo.interval ?? '',
     }
   }
@@ -64,9 +67,9 @@ export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.
       timeout = null
       reject(new Error('find music timeout'))
     }, 15_000)
-    musicSdk.findMusic(searchMusicInfo).then((otherSource) => {
+    musicSdk.findMusic(searchMusicInfo).then((otherSource: any[]) => {
       if (otherSourceCache.size > 10) otherSourceCache.clear()
-      const source = otherSource.map(toNewMusicInfo) as LX.Music.MusicInfoOnline[]
+      const source = otherSource.map(item => toNewMusicInfo(item) as LX.Music.MusicInfoOnline)
       otherSourceCache.set(musicInfo, source)
       resolve(source)
     }).catch(reject).finally(() => {
@@ -225,8 +228,8 @@ export const getOnlineOtherSourcePicByLocal = async(musicInfo: LX.Music.MusicInf
   })
 }
 
-export const TRY_QUALITYS_LIST = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k'] as const
-export const QUALITY_RANK: readonly LX.Quality[] = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '128k']
+export const TRY_QUALITYS_LIST = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k'] as const
+export const QUALITY_RANK: readonly LX.Quality[] = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k']
 
 // Older sources and saved lists call 24-bit FLAC `flac24bit`; newer custom
 // sources use `hires`. They are one fallback tier, not two successive tiers.
@@ -237,6 +240,7 @@ const QUALITY_LEVELS: ReadonlyArray<readonly LX.Quality[]> = [
   ['hires', 'flac24bit'],
   ['flac'],
   ['320k'],
+  ['192k'],
   ['128k'],
 ]
 

@@ -88,7 +88,8 @@
       </base-btn>
     </section>
 
-    <section v-if="resultRows.length" :class="$style.result">
+    <div :class="$style.content">
+      <section v-if="resultRows.length" :class="$style.result">
       <h2>{{ $t('music_recognition__current_result') }}</h2>
       <article v-for="item in resultRows" :key="item.id" :class="[$style.row, $style.resultRow, $style.topMatch]">
         <img v-if="item.coverUrl" :src="item.coverUrl" :alt="item.title">
@@ -96,7 +97,10 @@
           <svg viewBox="0 0 24 24"><use xlink:href="#icon-music" /></svg>
         </div>
         <div :class="$style.trackInfo">
-          <strong>{{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em></strong>
+          <strong>
+            {{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em>
+            <em v-if="item.confidence === 'possible'" :class="$style.possibleTag">{{ $t('music_recognition__possible') }}</em>
+          </strong>
           <span>{{ item.artist }}<template v-if="item.album"> · {{ item.album }}</template></span>
         </div>
         <div :class="$style.rowActions">
@@ -120,10 +124,16 @@
               <svg viewBox="0 0 24 24"><use xlink:href="#icon-music" /></svg>
             </div>
             <div :class="$style.trackInfo">
-              <strong>{{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em></strong>
+              <strong>
+                {{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em>
+                <em v-if="item.confidence === 'possible'" :class="$style.possibleTag">{{ $t('music_recognition__candidate') }}</em>
+              </strong>
               <span>{{ item.artist }}<template v-if="item.album"> · {{ item.album }}</template></span>
             </div>
             <div :class="$style.rowActions">
+              <button :aria-label="$t('music_recognition__confirm')" @click="handleConfirm(item)">
+                <svg viewBox="0 32 448 448"><use xlink:href="#icon-check-true" /></svg>
+              </button>
               <button :aria-label="$t('music_recognition__search')" @click="handleSearch(item)">
                 <svg viewBox="0 0 425.2 425.2"><use xlink:href="#icon-search-2" /></svg>
               </button>
@@ -137,9 +147,9 @@
           </article>
         </div>
       </template>
-    </section>
+      </section>
 
-    <section :class="$style.history">
+      <section :class="$style.history">
       <h2>{{ $t('music_recognition__history') }}</h2>
       <div v-if="musicRecognition.history.length" class="scroll" :class="$style.list">
         <article v-for="item in musicRecognition.history" :key="item.id" :class="$style.row">
@@ -148,7 +158,10 @@
             <svg viewBox="0 0 24 24"><use xlink:href="#icon-music" /></svg>
           </div>
           <div :class="$style.trackInfo">
-            <strong>{{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em></strong>
+            <strong>
+              {{ item.title }}<em :class="$style.providerTag">{{ providerName(item.provider) }}</em>
+              <em v-if="item.confidence === 'possible'" :class="$style.possibleTag">{{ $t('music_recognition__possible') }}</em>
+            </strong>
             <span>{{ item.artist }}<template v-if="item.album"> · {{ item.album }}</template></span>
           </div>
           <time>{{ formatTime(item.recognizedAt) }}</time>
@@ -169,7 +182,8 @@
         </article>
       </div>
       <div v-else :class="$style.empty">{{ $t('music_recognition__empty') }}</div>
-    </section>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -180,6 +194,7 @@ import { clipboardWriteText, openUrl } from '@common/utils/electron'
 import {
   acrcloudConfig,
   clearRecognitionHistory,
+  confirmRecognitionCandidate,
   initMusicRecognition,
   loadAcrcloudConfig,
   musicRecognition,
@@ -230,6 +245,7 @@ const statusTitle = computed(() => {
 })
 const statusDetail = computed(() => {
   if (['permissionDenied', 'noAudio', 'networkError', 'error'].includes(musicRecognition.status)) return musicRecognition.error ?? ''
+  if (musicRecognition.status === 'ambiguous') return window.i18n.t('music_recognition__ambiguous_detail' as any)
   if (musicRecognition.status === 'capturing') {
     return window.i18n.t('music_recognition__capture_progress' as any, {
       progress: Math.round((musicRecognition.captureProgress ?? 0) * 100),
@@ -262,6 +278,9 @@ const handleSearch = (item: LX.MusicRecognition.Result) => {
 }
 const handleCopy = (item: LX.MusicRecognition.Result) => {
   clipboardWriteText(`${item.title} - ${item.artist}`)
+}
+const handleConfirm = (item: LX.MusicRecognition.Result) => {
+  void confirmRecognitionCandidate(item)
 }
 const handleOpen = (item: LX.MusicRecognition.Result) => {
   if (item.shazamUrl) void openUrl(item.shazamUrl)
@@ -476,12 +495,17 @@ onMounted(() => {
   opacity: 1;
   font-weight: 600;
 }
+.content {
+  flex: auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
+}
 .result {
-  flex: none;
   display: flex;
   flex-flow: column nowrap;
   min-height: 0;
-  border-bottom: 1px solid var(--color-primary-light-600-alpha-700);
+  border-right: 1px solid var(--color-primary-light-600-alpha-700);
   h2 {
     flex: none;
     padding: 12px 22px 8px;
@@ -496,10 +520,15 @@ onMounted(() => {
     opacity: .7;
   }
 }
-.altList { flex: none; max-height: 200px; padding: 0 14px 8px; }
+.altList {
+  flex: auto;
+  min-height: 0;
+  padding: 0 14px 12px;
+  scroll-padding-bottom: 12px;
+}
 .resultRow {
   min-height: 56px;
-  grid-template-columns: 44px minmax(0, 1fr) 108px;
+  grid-template-columns: 44px minmax(0, 1fr) 140px;
   img,
   .coverFallback {
     width: 44px;
@@ -517,7 +546,6 @@ onMounted(() => {
   }
 }
 .history {
-  flex: auto;
   min-height: 0;
   display: flex;
   flex-flow: column nowrap;
@@ -526,6 +554,32 @@ onMounted(() => {
     padding: 12px 22px 8px;
     font-size: 14px;
     font-weight: 600;
+  }
+}
+.content > .history:first-child {
+  grid-column: 1 / -1;
+}
+.history .row {
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  img,
+  .coverFallback {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (max-width: 900px) {
+  .content {
+    display: flex;
+    flex-flow: column nowrap;
+  }
+  .result {
+    flex: 1 1 auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-primary-light-600-alpha-700);
+  }
+  .history {
+    flex: 0 1 140px;
   }
 }
 .list { flex: auto; min-height: 0; padding: 0 14px 14px; }
@@ -572,6 +626,11 @@ onMounted(() => {
   white-space: nowrap;
   background: var(--color-primary-light-400-alpha-700);
   vertical-align: 1px;
+}
+.possibleTag {
+  .providerTag();
+  color: var(--color-warning, #b97800);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 .rowActions { display: flex; justify-content: flex-end; }
 .empty {

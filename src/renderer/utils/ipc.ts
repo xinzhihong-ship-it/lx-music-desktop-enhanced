@@ -330,6 +330,10 @@ export const getMusicRecognitionSnapshot = async(): Promise<LX.MusicRecognition.
   return rendererInvoke<LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_snapshot)
 }
 
+export const confirmMusicRecognitionResult = async(request: LX.MusicRecognition.ConfirmResultRequest): Promise<LX.MusicRecognition.Snapshot> => {
+  return rendererInvoke<LX.MusicRecognition.ConfirmResultRequest, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_confirm_result, request)
+}
+
 export const clearMusicRecognitionHistory = async(): Promise<LX.MusicRecognition.Snapshot> => {
   return rendererInvoke<LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_clear_history)
 }

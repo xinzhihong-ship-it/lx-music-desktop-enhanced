@@ -32,12 +32,20 @@ const verifyQueryParams = async(to, from, next) => {
   let _source = to.query.source
   let _type = to.query.type
   let _page = to.query.page
+  let shouldRedirect = _source == null || _type == null
 
-  if (_source == null || _type == null) {
+  if (shouldRedirect) {
     const setting = await getSearchSetting()
     _source ??= setting.source
     _type ??= setting.type
+  }
 
+  if (!_sources.includes(_source)) {
+    _source = _sources[0] ?? 'all'
+    shouldRedirect = true
+  }
+
+  if (shouldRedirect) {
     next({
       path: to.path,
       query: { ...to.query, source: _source, type: _type, page: _page },

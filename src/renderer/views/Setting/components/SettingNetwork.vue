@@ -9,6 +9,12 @@ dd
       base-input(:model-value="appSetting['network.proxy.host']" :placeholder="proxy.envProxy ? proxy.envProxy.host : $t('setting__network_proxy_host')" @update:model-value="setHost")
     .p
       base-input(:model-value="appSetting['network.proxy.port']" :placeholder="proxy.envProxy ? proxy.envProxy.port : $t('setting__network_proxy_port')" @update:model-value="setPort")
+  h3 {{ $t('setting__network_gitcode_database') }}
+  div
+    .p
+      base-input(:model-value="appSetting['network.gitcodeMusicDatabaseUrl']" :placeholder="$t('setting__network_gitcode_database_tip')" @update:model-value="setGitcodeDatabaseUrl")
+    .p
+      base-input(type="password" :model-value="appSetting['network.gitcodeMusicAccessToken']" :placeholder="$t('setting__network_gitcode_token_tip')" @update:model-value="setGitcodeAccessToken")
 
 </template>
 
@@ -28,6 +34,12 @@ export default {
     const setPort = debounce(port => {
       updateSetting({ 'network.proxy.port': port.trim() })
     }, 500)
+    const setGitcodeDatabaseUrl = debounce(url => {
+      updateSetting({ 'network.gitcodeMusicDatabaseUrl': url.trim() })
+    }, 500)
+    const setGitcodeAccessToken = debounce(token => {
+      updateSetting({ 'network.gitcodeMusicAccessToken': token.trim() })
+    }, 500)
 
     onBeforeUnmount(() => {
       if (appSetting['network.proxy.enable'] && !appSetting['network.proxy.host']) proxy.enable = false
@@ -38,6 +50,8 @@ export default {
       updateSetting,
       setHost,
       setPort,
+      setGitcodeDatabaseUrl,
+      setGitcodeAccessToken,
       proxy,
     }
   },

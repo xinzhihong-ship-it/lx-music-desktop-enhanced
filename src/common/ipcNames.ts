@@ -131,6 +131,7 @@ const modules = {
     music_recognition_recognize_mic: 'winMain_music_recognition_recognize_mic',
     music_recognition_status: 'winMain_music_recognition_status',
     music_recognition_snapshot: 'winMain_music_recognition_snapshot',
+    music_recognition_confirm_result: 'winMain_music_recognition_confirm_result',
     music_recognition_clear_history: 'winMain_music_recognition_clear_history',
     music_recognition_remove_history: 'winMain_music_recognition_remove_history',
     music_recognition_get_config: 'winMain_music_recognition_get_config',

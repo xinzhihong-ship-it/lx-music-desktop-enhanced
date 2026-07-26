@@ -11,6 +11,8 @@ export default ({
 
   handleShowDownloadModal,
   handlePlayMusic,
+  handleAddToPlayList,
+  handlePlayMusicNext,
   handlePlayMusicLater,
   handleSearch,
   handleSimilarSongs,
@@ -20,6 +22,8 @@ export default ({
 }) => {
   const itemMenuControl = reactive({
     play: true,
+    addToPlayList: true,
+    playNext: true,
     addTo: true,
     playLater: true,
     download: true,
@@ -39,14 +43,24 @@ export default ({
         disabled: !itemMenuControl.play,
       },
       {
-        name: t('list__download'),
-        action: 'download',
-        disabled: !itemMenuControl.download,
+        name: t('list__play_next'),
+        action: 'playNext',
+        disabled: !itemMenuControl.playNext,
       },
       {
         name: t('list__play_later'),
         action: 'playLater',
         disabled: !itemMenuControl.playLater,
+      },
+      {
+        name: t('list__add_to_play_list'),
+        action: 'addToPlayList',
+        disabled: !itemMenuControl.addToPlayList,
+      },
+      {
+        name: t('list__download'),
+        action: 'download',
+        disabled: !itemMenuControl.download,
       },
       {
         name: t('list__search'),
@@ -118,6 +132,12 @@ export default ({
         break
       case 'play':
         handlePlayMusic(index)
+        break
+      case 'addToPlayList':
+        handleAddToPlayList(index)
+        break
+      case 'playNext':
+        handlePlayMusicNext(index)
         break
       case 'playLater':
         handlePlayMusicLater(index)

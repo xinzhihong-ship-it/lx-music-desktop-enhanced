@@ -16,7 +16,13 @@
     </button>
     <common-volume-btn />
     <common-toggle-play-mode-btn />
+    <button :class="[$style.titleBtn, $style.queueBtn, { [$style.active]: isShowQueue }]" :aria-label="$t('player__queue')" @click="isShowQueue = !isShowQueue">
+      <svg :class="$style.queueIcon" version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" viewBox="2 3 21 19" space="preserve">
+        <use xlink:href="#icon-play-queue" />
+      </svg>
+    </button>
     <common-list-add-modal v-model:show="isShowAddMusicTo" :music-info="playMusicInfo.musicInfo" />
+    <play-queue :show="isShowQueue" @close="isShowQueue = false" />
   </div>
 </template>
 
@@ -25,10 +31,15 @@ import { ref } from '@common/utils/vueTools'
 import useToggleDesktopLyric from '@renderer/utils/compositions/useToggleDesktopLyric'
 import { musicInfo, playMusicInfo } from '@renderer/store/player/state'
 import { appSetting } from '@renderer/store/setting'
+import PlayQueue from './PlayQueue.vue'
 
 export default {
+  components: {
+    PlayQueue,
+  },
   setup() {
     const isShowAddMusicTo = ref(false)
+    const isShowQueue = ref(false)
     const {
       toggleDesktopLyricBtnTitle,
       toggleDesktopLyric,
@@ -41,6 +52,7 @@ export default {
     return {
       appSetting,
       isShowAddMusicTo,
+      isShowQueue,
       toggleDesktopLyricBtnTitle,
       toggleDesktopLyric,
       toggleLockDesktopLyric,
@@ -95,6 +107,20 @@ export default {
   &:active {
     opacity: 1;
   }
+  &.active {
+    color: var(--color-primary);
+    opacity: 1;
+  }
+}
+
+.queueIcon {
+  width: 90%;
+  height: 100%;
+}
+
+.queueBtn {
+  height: auto;
+  align-self: stretch;
 }
 
 

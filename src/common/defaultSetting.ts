@@ -139,6 +139,8 @@ const defaultSetting: LX.AppSetting = {
   'network.proxy.enable': false,
   'network.proxy.host': '',
   'network.proxy.port': '',
+  'network.gitcodeMusicDatabaseUrl': 'https://api.gitcode.com/api/v5/repos/ikun_0014/music/raw/audio_database.json',
+  'network.gitcodeMusicAccessToken': '',
 
   'tray.enable': false,
   // 'tray.isToTray': false,

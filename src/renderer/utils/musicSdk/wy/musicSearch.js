@@ -3,6 +3,7 @@
 import { sizeFormate, formatPlayTime } from '../../index'
 // import musicDetailApi from './musicDetail'
 import { eapiRequest } from './utils/index'
+import { getBatchMusicQualityInfo } from './quality_detail'
 
 export default {
   limit: 30,
@@ -35,10 +36,10 @@ export default {
     })
     return arr.join('、')
   },
-  handleResult(rawList) {
+  async handleResult(rawList) {
     // console.log(rawList)
     if (!rawList) return []
-    return rawList.map(item => {
+    const list = rawList.map(item => {
       item = item.baseInfo.simpleSongData
       const types = []
       const _types = {}
@@ -90,14 +91,26 @@ export default {
         typeUrl: {},
       }
     })
+    try {
+      const qualityInfoMap = await getBatchMusicQualityInfo(list.map(item => item.songmid))
+      list.forEach(item => {
+        const qualityInfo = qualityInfoMap[item.songmid]
+        if (!qualityInfo) return
+        item.types = qualityInfo.types
+        item._types = qualityInfo._types
+      })
+    } catch (err) {
+      console.warn('Failed to fetch NetEase quality info:', err)
+    }
+    return list
   },
   search(str, page = 1, limit, retryNum = 0) {
     if (++retryNum > 3) return Promise.reject(new Error('try max num'))
     if (limit == null) limit = this.limit
-    return this.musicSearch(str, page, limit).then(result => {
+    return this.musicSearch(str, page, limit).then(async result => {
       // console.log(result)
       if (!result || result.code !== 200) return this.search(str, page, limit, retryNum)
-      let list = this.handleResult(result.data.resources || [])
+      let list = await this.handleResult(result.data.resources || [])
       // console.log(list)
 
       if (list == null) return this.search(str, page, limit, retryNum)

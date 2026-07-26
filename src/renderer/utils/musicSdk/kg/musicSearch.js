@@ -1,6 +1,7 @@
 import { httpFetch } from '../../request'
 import { decodeName, formatPlayTime, sizeFormate } from '../../index'
 import { formatSingerName } from '../utils'
+import { getBatchMusicQualityInfo } from './quality_detail'
 
 
 export default {
@@ -12,9 +13,9 @@ export default {
     const searchRequest = httpFetch(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(str)}&page=${page}&pagesize=${limit}&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`)
     return searchRequest.promise.then(({ body }) => body)
   },
-  filterData(rawData) {
-    const types = []
-    const _types = {}
+  filterData(rawData, qualityInfo) {
+    let types = []
+    let _types = {}
     if (rawData.FileSize !== 0) {
       let size = sizeFormate(rawData.FileSize)
       types.push({ type: '128k', size, hash: rawData.FileHash })
@@ -41,11 +42,15 @@ export default {
     }
     if (rawData.ResFileSize !== 0) {
       let size = sizeFormate(rawData.ResFileSize)
-      types.push({ type: 'flac24bit', size, hash: rawData.ResFileHash })
-      _types.flac24bit = {
+      types.push({ type: 'hires', size, hash: rawData.ResFileHash })
+      _types.hires = {
         size,
         hash: rawData.ResFileHash,
       }
+    }
+    if (qualityInfo?.types.length) {
+      types = qualityInfo.types
+      _types = qualityInfo._types
     }
     return {
       singer: decodeName(formatSingerName(rawData.Singers, 'name')),
@@ -65,30 +70,41 @@ export default {
       typeUrl: {},
     }
   },
-  handleResult(rawData) {
+  async handleResult(rawData) {
     let ids = new Set()
-    const list = []
+    const items = []
     rawData.forEach(item => {
       const key = item.Audioid + item.FileHash
-      if (ids.has(key)) return
-      ids.add(key)
-      list.push(this.filterData(item))
-      for (const childItem of item.Grp) {
-        const key = item.Audioid + item.FileHash
-        if (ids.has(key)) continue
+      if (!ids.has(key)) {
         ids.add(key)
-        list.push(this.filterData(childItem))
+        items.push(item)
+      }
+      for (const childItem of item.Grp || []) {
+        const childKey = childItem.Audioid + childItem.FileHash
+        if (ids.has(childKey)) continue
+        ids.add(childKey)
+        items.push(childItem)
       }
     })
-    return list
+
+    let qualityInfoMap = {}
+    const hashList = items.map(item => item.FileHash).filter(Boolean)
+    if (hashList.length) {
+      try {
+        qualityInfoMap = await getBatchMusicQualityInfo(hashList).promise
+      } catch (err) {
+        console.warn('Failed to fetch Kugou quality info:', err)
+      }
+    }
+    return items.map(item => this.filterData(item, qualityInfoMap[item.FileHash]))
   },
   search(str, page = 1, limit, retryNum = 0) {
     if (++retryNum > 3) return Promise.reject(new Error('try max num'))
     if (limit == null) limit = this.limit
     // http://newlyric.kuwo.cn/newlyric.lrc?62355680
-    return this.musicSearch(str, page, limit).then(result => {
+    return this.musicSearch(str, page, limit).then(async result => {
       if (!result || result.error_code !== 0) return this.search(str, page, limit, retryNum)
-      let list = this.handleResult(result.data.lists)
+      let list = await this.handleResult(result.data.lists)
 
       if (list == null) return this.search(str, page, limit, retryNum)
 
