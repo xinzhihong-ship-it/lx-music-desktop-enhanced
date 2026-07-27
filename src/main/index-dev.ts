@@ -31,11 +31,12 @@ const installVueDevtools = async(session: Electron.Session) => {
 
 // Install `vue-devtools`
 app.on('ready', () => {
-  global.lx.event_app.on('main_window_created', (win) => {
+  // global.lx 由下方 require('./index') 初始化，存在时序竞争，防御性处理
+  global.lx?.event_app?.on('main_window_created', (win) => {
     openDevTools(win.webContents)
     void installVueDevtools(win.webContents.session)
   })
-  global.lx.event_app.on('desktop_lyric_window_created', (win) => {
+  global.lx?.event_app?.on('desktop_lyric_window_created', (win) => {
     openDevTools(win.webContents)
     void installVueDevtools(win.webContents.session)
   })

@@ -118,10 +118,11 @@ export const search = async(text: string, page: number, sourceId: LX.OnlineSourc
       return setList(data, page, text)
     }).catch((error: any) => {
       resetListInfo(sourceId)
-      listInfo!.noItemLabel = window.i18n.t('list__load_failed')
+      // 附加真实失败原因（如索引地址失效、风控），便于定位问题
+      const reason = String(error?.message ?? '').slice(0, 80)
+      listInfo!.noItemLabel = window.i18n.t('list__load_failed') + (reason ? `：${reason}` : '')
       console.log(error)
       throw error
     })
   }
 }
-

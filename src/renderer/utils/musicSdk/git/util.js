@@ -1,6 +1,8 @@
 import { appSetting } from '@renderer/store/setting'
 import { httpFetch } from '../../request'
 
+const DEFAULT_DATABASE_URL = 'https://api.gitcode.com/api/v5/repos/ikun_0014/music/raw/audio_database.json'
+
 let database
 let databasePromise
 let loadedUrl = ''
@@ -8,7 +10,8 @@ const CACHE_DURATION = 60 * 60 * 1000
 let loadedAt = 0
 
 const getConfiguredUrl = () => {
-  const configuredUrl = appSetting['network.gitcodeMusicDatabaseUrl'].trim()
+  // 空配置回退到默认索引（部分旧配置的值为空字符串）
+  const configuredUrl = appSetting['network.gitcodeMusicDatabaseUrl'].trim() || DEFAULT_DATABASE_URL
   if (!configuredUrl) throw new Error('GitCode music database URL is not configured')
   if (/[?&](?:access_token|private_token|token)=/i.test(configuredUrl)) {
     throw new Error('Configure the GitCode access token in the separate token field')

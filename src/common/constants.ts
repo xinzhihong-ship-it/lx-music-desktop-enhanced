@@ -86,11 +86,12 @@ export const QUALITYS = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 
 // 始终视为受支持的来源：
 // - bili：自解析平台，模块自身即可提供播放地址，不依赖自定义源
 // - git：自定义源优先，本地索引自解析兜底（用户配置任意 GitCode 索引均可播放）
-// - mg：取流依赖自定义源，但自定义源未声明时仍可经现有换源链路播放（与双击播放行为一致），不应禁用菜单操作
+// - mg：取流依赖自定义源，未声明时经现有换源链路播放（与双击播放行为一致），不应禁用菜单操作；
+//   兜底音质只声明 128k，避免按用户高音质偏好换源时候选被全部过滤导致加载失败（自定义源声明 mg 后会被其覆盖）
 export const ALWAYS_SUPPORTED_SOURCE_QUALITYS: Partial<Record<LX.Source, LX.Quality[]>> = {
   bili: ['128k', '192k', 'atmos', 'hires'],
   git: ['128k', '192k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
-  mg: ['128k', '320k', 'flac', 'flac24bit', 'hires'],
+  mg: ['128k'],
 }
 
 export const TRAY_AUTO_ID = -1

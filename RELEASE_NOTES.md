@@ -1,6 +1,12 @@
-# LX Music 增强版 2.13.0-enhanced.11-beta.4（测试版）
+# LX Music 增强版 2.13.0-enhanced.11-beta.5（测试版）
 
 本测试版新增哔哩哔哩平台，并将其并入落雪现有的搜索、播放与账号体系，同时完善播放队列管理与音质展示。测试版可能存在不稳定，建议先备份数据。
+
+## beta.5 修复
+
+- 修复高音质偏好下咪咕播放“加载失败”的问题：兜底音质只保留 128k，避免换源候选被全部过滤；换源后仍按你的音质偏好播放。
+- GitCode 索引地址为空时自动回退到默认索引；搜索加载失败时显示真实原因（如索引 404、平台风控），便于定位。
+- 修复开发模式下的启动崩溃与热更新后界面卡死问题（仅影响开发环境）。
 
 ## beta.4 修复
 
@@ -54,4 +60,4 @@
 - 识曲决策单元测试、代码检查、类型检查、主进程与渲染进程生产构建均通过。
 - 已知边界：192k 以上音频流取决于视频是否提供高阶音轨及账号大会员权限；未提供时显示实测最高档位 192K。
 
-完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.4](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.4)
+完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.5](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.5)
