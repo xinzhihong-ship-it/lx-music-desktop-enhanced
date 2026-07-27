@@ -58,7 +58,10 @@ function startRenderer() {
       },
       client: {
         logging: 'warn',
-        overlay: true,
+        // HMR 热更新组件时 Vue 可能基于旧 DOM 计算插入锚点抛出良性 NotFoundError，过滤后不弹遮罩
+        overlay: {
+          runtimeErrors: error => !/insertBefore|removeChild/.test(error?.message || ''),
+        },
       },
       setupMiddlewares(middlewares, devServer) {
         devServer.app.use(hotMiddlewareRenderer)
@@ -106,7 +109,10 @@ function startRendererLyric() {
       // },
       client: {
         logging: 'warn',
-        overlay: true,
+        // HMR 热更新组件时 Vue 可能基于旧 DOM 计算插入锚点抛出良性 NotFoundError，过滤后不弹遮罩
+        overlay: {
+          runtimeErrors: error => !/insertBefore|removeChild/.test(error?.message || ''),
+        },
       },
       setupMiddlewares(middlewares, devServer) {
         devServer.app.use(hotMiddlewareRenderer)

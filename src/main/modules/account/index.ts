@@ -1,6 +1,7 @@
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { mainHandle } from '@common/mainIpc'
 import * as sessions from './sessions'
+import * as biliProvider from './providers/bili'
 import * as kgProvider from './providers/kg'
 import * as txProvider from './providers/tx'
 import * as wyProvider from './providers/wy'
@@ -8,9 +9,14 @@ import * as wyProvider from './providers/wy'
 let isInitialized = false
 
 const providers = {
+  bili: biliProvider,
   kg: kgProvider,
   tx: txProvider,
   wy: wyProvider,
+}
+
+const cookieStringify = (cookies: Record<string, string>): string => {
+  return Object.entries(cookies).map(([key, value]) => `${key}=${value}`).join('; ')
 }
 
 export default () => {
@@ -91,6 +97,9 @@ export default () => {
       case 'kg':
         list = await kgProvider.getSimilarSongs(sessions.getSessionBySource('kg'), params.hash ?? '', String(params.songId), limit)
         break
+      case 'bili':
+        list = await biliProvider.getSimilarSongs(sessions.getSessionBySource('bili'), String(params.songId), limit)
+        break
       default:
         throw new Error('当前平台暂不支持真实相似歌曲推荐')
     }
@@ -100,5 +109,11 @@ export default () => {
       seedSource: params.source,
       platform: params.source,
     }
+  })
+
+  // 播放/搜索模块获取已登录账号的 Cookie（如 B 站高码率音频流需要登录后才能获取）
+  mainHandle<LX.Account.Source, string>(WIN_MAIN_RENDERER_EVENT_NAME.account_source_cookie, async({ params: source }) => {
+    const session = sessions.getSessionBySource(source)
+    return session ? cookieStringify(session.cookies) : ''
   })
 }

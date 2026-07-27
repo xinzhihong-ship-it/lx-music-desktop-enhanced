@@ -70,6 +70,19 @@ export const createWindow = () => {
   const proxy = getProxy()
   setSesProxy(ses, proxy?.host, proxy?.port)
 
+  // B 站 CDN（bilivideo）与图片服务（hdslb）校验 Referer，异常来源会返回 403
+  ses.webRequest.onBeforeSendHeaders({
+    urls: ['*://*.bilivideo.com/*', '*://*.bilivideo.cn/*', '*://*.hdslb.com/*'],
+  }, (details, callback) => {
+    callback({
+      requestHeaders: {
+        ...details.requestHeaders,
+        Referer: 'https://www.bilibili.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+      },
+    })
+  })
+
   /**
    * Initial window options
    */

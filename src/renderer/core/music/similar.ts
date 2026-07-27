@@ -121,7 +121,7 @@ export const loadSimilarSongs = async(
   limit = 50,
 ): Promise<LX.Music.SimilarSongsResult> => {
   const partialErrors: LX.Music.SimilarSongsPartialError[] = []
-  if ((seed.source === 'wy' || seed.source === 'tx' || seed.source === 'kg') && seed.meta.songId) {
+  if ((seed.source === 'wy' || seed.source === 'tx' || seed.source === 'kg' || seed.source === 'bili') && seed.meta.songId) {
     try {
       const result = await loadPlatformSimilar(seed, seed.source, seed.meta.songId, limit, seed.meta.platformId, seed.meta.hash)
       if (result) return result

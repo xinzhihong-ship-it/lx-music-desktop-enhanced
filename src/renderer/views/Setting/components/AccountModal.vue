@@ -89,6 +89,7 @@ export default {
       { id: 'wy', name: '网易云音乐' },
       { id: 'tx', name: 'QQ音乐' },
       { id: 'kg', name: '酷狗音乐' },
+      { id: 'bili', name: '哔哩哔哩' },
     ])
     const methodList = computed(() => {
       const nameMap = {
@@ -111,7 +112,7 @@ export default {
     let qrTimer = null
 
     const sourceName = (source) => {
-      return { wy: '网易云音乐', kg: '酷狗音乐', tx: 'QQ音乐' }[source] ?? source
+      return { wy: '网易云音乐', kg: '酷狗音乐', tx: 'QQ音乐', bili: '哔哩哔哩' }[source] ?? source
     }
 
     const stopQrLogin = () => {

@@ -318,6 +318,10 @@ export const getAccounts = async() => {
   return rendererInvoke<LX.Account.PlatformAccount[]>(WIN_MAIN_RENDERER_EVENT_NAME.account_list)
 }
 
+export const getAccountSourceCookie = async(source: LX.Account.Source) => {
+  return rendererInvoke<LX.Account.Source, string>(WIN_MAIN_RENDERER_EVENT_NAME.account_source_cookie, source)
+}
+
 export const startMusicRecognition = async(hint?: LX.MusicRecognition.RecognitionHint): Promise<LX.MusicRecognition.Snapshot> => {
   return rendererInvoke<LX.MusicRecognition.RecognitionHint | undefined, LX.MusicRecognition.Snapshot>(WIN_MAIN_RENDERER_EVENT_NAME.music_recognition_start, hint)
 }

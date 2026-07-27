@@ -19,6 +19,7 @@
             </span>
           </div>
           <button
+            v-if="group.account.source !== 'bili'"
             :class="[$style.item, { [$style.active]: selectedKey === `${group.account.id}:daily` }]"
             @click="selectDaily(group.account)"
           >
@@ -77,6 +78,7 @@ import {
 import { getAccountDailyTrackIds, getAccountPlaylists, getAccountPlaylistTrackIds } from '@renderer/utils/ipc'
 import { toNewMusicInfo } from '@renderer/utils'
 import { getMusicInfos as getKgMusicInfos } from '@renderer/utils/musicSdk/kg/musicInfo'
+import { getMusicInfos as getBiliMusicInfos } from '@renderer/utils/musicSdk/bili/musicInfo'
 import txMusicInfo from '@renderer/utils/musicSdk/tx/musicInfo'
 import wyMusicDetail from '@renderer/utils/musicSdk/wy/musicDetail'
 import { dialog } from '@renderer/plugins/Dialog'
@@ -141,6 +143,8 @@ const loadDailyDetails = async(source: LX.Account.Source, ids: string[]) => {
       return (await Promise.all(ids.map(txMusicInfo))).filter(Boolean)
     case 'kg':
       return getKgMusicInfos(ids.map(hash => ({ hash })))
+    case 'bili':
+      return getBiliMusicInfos(ids)
   }
 }
 

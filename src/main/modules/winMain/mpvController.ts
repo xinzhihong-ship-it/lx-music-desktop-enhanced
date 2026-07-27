@@ -495,6 +495,11 @@ export class MpvController {
     await this.ensureStarted()
     this.loadedUrl = url
     log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
+    // B 站 CDN 校验 Referer，其他地址不带，避免向无关主机泄漏来源
+    const isBiliCdn = /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
+    await this.command(['set_property', 'http-header-fields', isBiliCdn
+      ? 'Referer: https://www.bilibili.com/,User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+      : '']).catch(err => log.warn('set http-header-fields failed:', err))
     // 必须在发 loadfile 之前就注册 file-loaded 等待：两者在同一条 IPC 流上，
     // 若 file-loaded 与命令响应在同一个数据块到达，事件会在 promise 注册前被处理并丢弃，
     // 导致 waitForFileLoaded 干等 10 秒超时（表现为切换输出设备时卡住/失败）。

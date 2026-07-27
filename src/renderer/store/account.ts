@@ -6,6 +6,7 @@ import {
   removeAccount as ipcRemoveAccount,
   removeAccountPlaylistTracks,
 } from '@renderer/utils/ipc'
+import { clearAccountCookieCache } from '@renderer/utils/musicSdk/bili/util'
 
 export interface PlatformPlaylistDestination {
   account: LX.Account.PlatformAccount
@@ -21,6 +22,8 @@ export const currentAccount = computed(() =>
 
 export const loadAccounts = async() => {
   accounts.value = await getAccounts()
+  // 账号变化（登录/退出）后立即使 B 站请求用上新登录态
+  clearAccountCookieCache()
 }
 
 export const removeAccount = async(id: string) => {
@@ -34,7 +37,7 @@ export const setCurrentAccount = (id: string | null) => {
 }
 
 const isAccountSource = (source: LX.Source): source is LX.Account.Source => {
-  return source == 'wy' || source == 'tx' || source == 'kg'
+  return source == 'wy' || source == 'tx' || source == 'kg' || source == 'bili'
 }
 
 export const getEditablePlatformPlaylists = async(source: LX.Source): Promise<PlatformPlaylistDestination[]> => {
@@ -50,9 +53,13 @@ export const getEditablePlatformPlaylists = async(source: LX.Source): Promise<Pl
 
 const toPlaylistMutationTrack = (musicInfo: LX.Music.MusicInfoOnline): LX.Account.PlaylistMutationTrack => {
   if (!isAccountSource(musicInfo.source)) throw new Error('不支持将该来源歌曲添加到平台歌单')
+  // B 站收藏夹操作使用视频 aid（存于 platformData）
+  const biliAid = musicInfo.source == 'bili'
+    ? String(musicInfo.meta.platformData?.aid ?? musicInfo.meta.songId)
+    : null
   return {
     source: musicInfo.source,
-    songId: String(musicInfo.meta.songId),
+    songId: biliAid ?? String(musicInfo.meta.songId),
     platformId: musicInfo.source == 'tx'
       ? musicInfo.meta.id == null ? undefined : String(musicInfo.meta.id)
       : musicInfo.meta.accountTrackId,

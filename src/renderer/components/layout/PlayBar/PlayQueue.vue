@@ -13,6 +13,19 @@
             </div>
             <div :class="$style.headerActions">
               <button
+                v-if="canEditQueue"
+                type="button"
+                :class="$style.iconBtn"
+                :disabled="!queue.length"
+                :aria-label="$t('player__queue_clear_all')"
+                :title="$t('player__queue_clear_all')"
+                @click="clearQueue"
+              >
+                <svg viewBox="0 0 512 512">
+                  <use xlink:href="#icon-eraser" />
+                </svg>
+              </button>
+              <button
                 type="button"
                 :class="$style.iconBtn"
                 :disabled="currentIndex < 0"
@@ -48,24 +61,38 @@
               :container-class="$style.queueScroll"
             >
               <template #default="{ item, index }">
-                <button
-                  type="button"
-                  :class="[$style.item, index == currentIndex ? $style.active : null]"
-                  :title="`${getInfo(item).name} - ${getInfo(item).singer}`"
-                  @dblclick="playIndex(index)"
-                >
-                  <span :class="$style.index">
-                    <svg v-if="index == currentIndex" viewBox="0 0 24 24">
-                      <use xlink:href="#icon-audio-wave" />
+                <div :class="[$style.item, index == currentIndex ? $style.active : null]">
+                  <button
+                    type="button"
+                    :class="$style.itemBody"
+                    :title="`${getInfo(item).name} - ${getInfo(item).singer}`"
+                    @dblclick="playIndex(index)"
+                  >
+                    <span :class="$style.index">
+                      <svg v-if="index == currentIndex" viewBox="0 0 24 24">
+                        <use xlink:href="#icon-audio-wave" />
+                      </svg>
+                      <template v-else>{{ index + 1 }}</template>
+                    </span>
+                    <span :class="$style.info">
+                      <strong>{{ getInfo(item).name }}</strong>
+                      <small>{{ getInfo(item).singer }}</small>
+                    </span>
+                    <span :class="$style.source">{{ getSourceName(item) }}</span>
+                  </button>
+                  <button
+                    v-if="canEditQueue"
+                    type="button"
+                    :class="$style.removeBtn"
+                    :aria-label="$t('player__queue_remove_item')"
+                    :title="$t('player__queue_remove_item')"
+                    @click="removeQueueItem(index)"
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <use xlink:href="#icon-close" />
                     </svg>
-                    <template v-else>{{ index + 1 }}</template>
-                  </span>
-                  <span :class="$style.info">
-                    <strong>{{ getInfo(item).name }}</strong>
-                    <small>{{ getInfo(item).singer }}</small>
-                  </span>
-                  <span :class="$style.source">{{ getSourceName(item) }}</span>
-                </button>
+                  </button>
+                </div>
               </template>
             </base-virtualized-list>
           </section>
@@ -111,11 +138,15 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from '@common/utils/vueTools'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from '@common/utils/vueTools'
 import { playInfo, playMusicInfo, tempPlayList } from '@renderer/store/player/state'
 import { getList, clearTempPlayeList, removeTempPlayList } from '@renderer/store/player/action'
+import { removeListMusics, clearListMusics } from '@renderer/store/list/action'
 import { playList } from '@renderer/core/player/action'
 import { sourceNames } from '@renderer/store'
+import { dialog } from '@renderer/plugins/Dialog'
+import { useI18n } from '@renderer/plugins/i18n'
+import { LIST_IDS } from '@common/constants'
 
 const props = defineProps({
   show: {
@@ -125,8 +156,22 @@ const props = defineProps({
 })
 defineEmits(['close'])
 
+const t = useI18n()
 const listRef = ref(null)
-const queue = computed(() => getList(playInfo.playerListId))
+const listVersion = ref(0)
+const handleListUpdate = () => {
+  listVersion.value++
+}
+window.app_event.on('myListUpdate', handleListUpdate)
+window.app_event.on('downloadListUpdate', handleListUpdate)
+onBeforeUnmount(() => {
+  window.app_event.off('myListUpdate', handleListUpdate)
+  window.app_event.off('downloadListUpdate', handleListUpdate)
+})
+const queue = computed(() => {
+  void listVersion.value
+  return [...getList(playInfo.playerListId)]
+})
 const currentIndex = computed(() => {
   if (!playMusicInfo.musicInfo || playMusicInfo.isTempPlay) return -1
   return queue.value.findIndex(item => item.id == playMusicInfo.musicInfo?.id)
@@ -140,6 +185,23 @@ const locateCurrent = () => {
 const playIndex = index => {
   if (!playInfo.playerListId) return
   playList(playInfo.playerListId, index)
+}
+const canEditQueue = computed(() => !!playInfo.playerListId && playInfo.playerListId != LIST_IDS.DOWNLOAD)
+const removeQueueItem = index => {
+  if (!canEditQueue.value) return
+  const item = queue.value[index]
+  if (!item) return
+  void removeListMusics({ listId: playInfo.playerListId, ids: [getInfo(item).id] })
+}
+const clearQueue = async() => {
+  if (!canEditQueue.value || !queue.value.length) return
+  const confirm = await dialog.confirm({
+    message: t('player__queue_clear_all_tip', { len: queue.value.length }),
+    cancelButtonText: t('cancel_button_text_2'),
+    confirmButtonText: t('confirm_button_text'),
+  })
+  if (!confirm) return
+  void clearListMusics([playInfo.playerListId])
 }
 
 watch(() => props.show, show => {
@@ -264,7 +326,20 @@ watch(() => props.show, show => {
   width: 100%;
   height: 52px;
   box-sizing: border-box;
-  padding: 0 14px 0 12px;
+  padding-right: 6px;
+  display: flex;
+  align-items: center;
+  color: inherit;
+  transition: background-color @transition-fast;
+  &:hover {
+    background: var(--color-primary-light-400-alpha-700);
+  }
+}
+.itemBody {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px 0 12px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -273,10 +348,6 @@ watch(() => props.show, show => {
   color: inherit;
   background: transparent;
   cursor: pointer;
-  transition: background-color @transition-fast;
-  &:hover {
-    background: var(--color-primary-light-400-alpha-700);
-  }
 }
 .active {
   color: var(--color-primary);

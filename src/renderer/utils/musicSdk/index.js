@@ -6,6 +6,7 @@ import mg from './mg/index'
 import bd from './bd/index'
 import xm from './xm'
 import git from './git'
+import bili from './bili'
 import { supportQuality } from './api-source'
 
 
@@ -40,6 +41,10 @@ const sources = {
       name: 'GitCode',
       id: 'git',
     },
+    {
+      name: 'Bilibili',
+      id: 'bili',
+    },
     // {
     //   name: '百度音乐',
     //   id: 'bd',
@@ -53,6 +58,7 @@ const sources = {
   bd,
   xm,
   git,
+  bili,
 }
 export default {
   ...sources,

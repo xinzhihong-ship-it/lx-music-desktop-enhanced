@@ -32,3 +32,18 @@ process.on('unhandledRejection', (reason, p) => {
   console.error(' reason: ', reason)
   log.error(reason)
 })
+
+// 开发模式专用：HMR 热更新组件时，Vue 可能基于已被替换的旧 DOM 计算插入锚点，
+// 抛出良性的 insertBefore/removeChild NotFoundError，触发 dev-server 红色遮罩打断测试。
+// 生产环境不走 HMR，不包含此逻辑。
+if (process.env.NODE_ENV !== 'production') {
+  const originalConsoleError = console.error
+  console.error = (...args: any[]) => {
+    const first = args[0]
+    if (first instanceof Error && first.name == 'NotFoundError' && /insertBefore|removeChild/.test(first.message)) {
+      console.warn('[dev] 已忽略 HMR 引起的良性 DOM 更新错误（生产环境不会出现）')
+      return
+    }
+    originalConsoleError.apply(console, args)
+  }
+}

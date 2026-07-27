@@ -83,6 +83,7 @@ export const sourceNames = computed(() => {
     mg: 'mg',
     wy: 'wy',
     git: 'git',
+    bili: 'bili',
     all: window.i18n.t(prefix + 'all' as any),
   }
   for (const { id } of music.sources) {

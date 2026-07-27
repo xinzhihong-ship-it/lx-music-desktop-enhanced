@@ -45,7 +45,7 @@ declare namespace LX {
     [key: string]: boolean | number | string
   }
 
-  type OnlineSource = 'kw' | 'kg' | 'tx' | 'wy' | 'mg' | 'git'
+  type OnlineSource = 'kw' | 'kg' | 'tx' | 'wy' | 'mg' | 'git' | 'bili'
   type Source = OnlineSource | 'local'
   type Quality = '128k' | '320k' | 'flac' | 'flac24bit' | 'hires' | 'atmos' | 'atmos_plus' | 'master' | '192k' | 'ape' | 'wav'
 
@@ -114,7 +114,7 @@ declare namespace LX {
   }
 
   namespace Account {
-    type Source = 'wy' | 'tx' | 'kg'
+    type Source = 'wy' | 'tx' | 'kg' | 'bili'
     type LoginMethod = 'qrcode' | 'phone_password' | 'phone_sms' | 'cookie'
 
     interface QrCodeLoginState {

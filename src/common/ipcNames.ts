@@ -178,6 +178,7 @@ const modules = {
     download_list_remove: 'winMain_download_list_remove',
     download_list_clear: 'winMain_download_list_clear',
     account_list: 'winMain_account_list',
+    account_source_cookie: 'winMain_account_source_cookie',
     account_remove: 'winMain_account_remove',
     account_login: 'winMain_account_login',
     account_qr_create: 'winMain_account_qr_create',
