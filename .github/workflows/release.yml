@@ -90,19 +90,19 @@ jobs:
               core.info(`已更新版本 ${tag} 的中文发布说明`)
             } catch (error) {
               if (error.status !== 404) throw error
-            await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: tag,
-              target_commitish: context.sha,
-              name,
-              body,
-              draft: false,
-              // 版本号含 beta/alpha/rc 时标记为测试版
-              prerelease: /beta|alpha|rc/i.test(process.env.VERSION),
-            })
-            core.info(`已创建版本 ${tag}`)
-          }
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                target_commitish: context.sha,
+                name,
+                body,
+                draft: false,
+                // 版本号含 beta/alpha/rc 时标记为测试版
+                prerelease: /beta|alpha|rc/i.test(process.env.VERSION),
+              })
+              core.info(`已创建版本 ${tag}`)
+            }
 
   Windows:
     name: Windows
