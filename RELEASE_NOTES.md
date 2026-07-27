@@ -1,6 +1,10 @@
-# LX Music 增强版 2.13.0-enhanced.11-beta.2（测试版）
+# LX Music 增强版 2.13.0-enhanced.11-beta.3（测试版）
 
 本测试版新增哔哩哔哩平台，并将其并入落雪现有的搜索、播放与账号体系，同时完善播放队列管理与音质展示。测试版可能存在不稳定，建议先备份数据。
+
+## beta.3 修复
+
+- 修复咪咕在搜索页右键菜单播放、稍后播放、下载等操作被禁用的问题：自定义源未声明咪咕时，不再整体禁用操作，播放继续走落雪现有换源链路（与双击播放行为一致）。
 
 ## beta.2 修复
 
@@ -46,4 +50,4 @@
 - 识曲决策单元测试、代码检查、类型检查、主进程与渲染进程生产构建均通过。
 - 已知边界：192k 以上音频流取决于视频是否提供高阶音轨及账号大会员权限；未提供时显示实测最高档位 192K。
 
-完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.2](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.2)
+完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.3](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.3)

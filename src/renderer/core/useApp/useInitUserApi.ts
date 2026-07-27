@@ -6,7 +6,7 @@ import { qualityList, userApi } from '@renderer/store'
 import { appSetting } from '@renderer/store/setting'
 import { dialog } from '@renderer/plugins/Dialog'
 import { setUserApi } from '@renderer/core/apiSource'
-import { SELF_RESOLVING_SOURCE_QUALITYS } from '@common/constants'
+import { ALWAYS_SUPPORTED_SOURCE_QUALITYS } from '@common/constants'
 
 const sendUserApiRequest: typeof sendUserApiRequestRemote = async(data) => {
   let stop: () => void
@@ -128,7 +128,7 @@ export default () => {
           }
           qualitys[source as LX.Source] = sourceQualitys
         }
-        qualityList.value = { ...SELF_RESOLVING_SOURCE_QUALITYS, ...qualitys }
+        qualityList.value = { ...ALWAYS_SUPPORTED_SOURCE_QUALITYS, ...qualitys }
         userApi.apis = apis
       }
     } else {

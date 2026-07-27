@@ -83,9 +83,12 @@ export const DOWNLOAD_STATUS = {
 
 export const QUALITYS = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', 'wav', 'ape', '320k', '192k', '128k'] as const
 
-// 自解析平台：不依赖自定义源，模块自身即可提供播放地址，始终视为受支持
-export const SELF_RESOLVING_SOURCE_QUALITYS: Partial<Record<LX.Source, LX.Quality[]>> = {
+// 始终视为受支持的来源：
+// - bili：自解析平台，模块自身即可提供播放地址，不依赖自定义源
+// - mg：取流依赖自定义源，但自定义源未声明时仍可经现有换源链路播放（与双击播放行为一致），不应禁用菜单操作
+export const ALWAYS_SUPPORTED_SOURCE_QUALITYS: Partial<Record<LX.Source, LX.Quality[]>> = {
   bili: ['128k', '192k', 'atmos', 'hires'],
+  mg: ['128k', '320k', 'flac', 'flac24bit', 'hires'],
 }
 
 export const TRAY_AUTO_ID = -1
