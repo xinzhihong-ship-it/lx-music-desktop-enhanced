@@ -37,13 +37,30 @@ process.on('unhandledRejection', (reason, p) => {
 // 抛出良性的 insertBefore/removeChild NotFoundError，触发 dev-server 红色遮罩打断测试。
 // 生产环境不走 HMR，不包含此逻辑。
 if (process.env.NODE_ENV !== 'production') {
+  const isHmrDomError = (err: any): boolean => {
+    const message = err?.message ?? (typeof err === 'string' ? err : '')
+    return /insertBefore|removeChild/.test(message) && /not a child of this node/.test(message)
+  }
   const originalConsoleError = console.error
   console.error = (...args: any[]) => {
-    const first = args[0]
-    if (first instanceof Error && first.name == 'NotFoundError' && /insertBefore|removeChild/.test(first.message)) {
+    if (isHmrDomError(args[0])) {
       console.warn('[dev] 已忽略 HMR 引起的良性 DOM 更新错误（生产环境不会出现）')
       return
     }
     originalConsoleError.apply(console, args)
   }
+  // dev-server 遮罩通过 window error/unhandledrejection 事件（冒泡阶段）捕获运行时错误，
+  // 捕获阶段监听可以确定性阻断该类良性错误到达遮罩
+  window.addEventListener('error', event => {
+    if (isHmrDomError(event.error) || isHmrDomError(event.message)) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+  }, true)
+  window.addEventListener('unhandledrejection', event => {
+    if (isHmrDomError(event.reason)) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+  }, true)
 }

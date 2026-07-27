@@ -83,4 +83,9 @@ export const DOWNLOAD_STATUS = {
 
 export const QUALITYS = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', 'wav', 'ape', '320k', '192k', '128k'] as const
 
+// 自解析平台：不依赖自定义源，模块自身即可提供播放地址，始终视为受支持
+export const SELF_RESOLVING_SOURCE_QUALITYS: Partial<Record<LX.Source, LX.Quality[]>> = {
+  bili: ['128k', '192k', 'atmos', 'hires'],
+}
+
 export const TRAY_AUTO_ID = -1

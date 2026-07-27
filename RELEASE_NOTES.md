@@ -1,6 +1,12 @@
-# LX Music 增强版 2.13.0-enhanced.11-beta.1（测试版）
+# LX Music 增强版 2.13.0-enhanced.11-beta.2（测试版）
 
 本测试版新增哔哩哔哩平台，并将其并入落雪现有的搜索、播放与账号体系，同时完善播放队列管理与音质展示。测试版可能存在不稳定，建议先备份数据。
+
+## beta.2 修复
+
+- 修复哔哩哔哩在搜索页无法播放的问题：B 站为自解析平台（不依赖自定义源），但播放入口被“音源支持”判断拦截，现已将其纳入受支持来源，搜索页可直接播放、行内播放按钮与右键菜单播放项恢复正常。
+- 修复播放音质选择因来源支持列表缺失而始终回退到 128k 的问题，B 站歌曲现按实测最高音质（通常 192k）播放。
+- 开发模式进一步过滤 Vue HMR 良性运行时错误遮罩（捕获阶段阻断，不影响其他错误提示）。
 
 ## 主要更新
 
@@ -40,4 +46,4 @@
 - 识曲决策单元测试、代码检查、类型检查、主进程与渲染进程生产构建均通过。
 - 已知边界：192k 以上音频流取决于视频是否提供高阶音轨及账号大会员权限；未提供时显示实测最高档位 192K。
 
-完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.1](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.1)
+完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.2](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.2)

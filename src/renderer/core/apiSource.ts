@@ -3,6 +3,7 @@ import { appSetting, setApiSource } from '@renderer/store/setting'
 import { setUserApi as setUserApiAction } from '@renderer/utils/ipc'
 import musicSdk from '@renderer/utils/musicSdk'
 import apiSourceInfo from '@renderer/utils/musicSdk/api-source-info'
+import { SELF_RESOLVING_SOURCE_QUALITYS } from '@common/constants'
 
 let prevId = ''
 export const setUserApi = async(apiId: string) => {
@@ -19,7 +20,7 @@ export const setUserApi = async(apiId: string) => {
   }
 
   if (/^user_api/.test(apiId)) {
-    qualityList.value = {}
+    qualityList.value = { ...SELF_RESOLVING_SOURCE_QUALITYS }
     userApi.status = false
     userApi.message = 'initing'
 
@@ -36,7 +37,7 @@ export const setUserApi = async(apiId: string) => {
       if (api.id != appSetting['common.apiSource']) setApiSource(api.id)
     })
   } else {
-    qualityList.value = musicSdk.supportQuality[apiId] ?? {}
+    qualityList.value = { ...SELF_RESOLVING_SOURCE_QUALITYS, ...(musicSdk.supportQuality[apiId] ?? {}) }
     apiSource.value = apiId
     void setUserApiAction(apiId)
     if (!window.lx.apiInitPromise[1]) window.lx.apiInitPromise[2](true)
