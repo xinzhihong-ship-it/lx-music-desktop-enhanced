@@ -1,5 +1,9 @@
 <template>
   <div :class="$style.footer">
+    <button type="button" :class="$style.picContent" :aria-label="$t('player__hide_detail_tip')" @click="setShowPlayerDetail(false)">
+      <img v-if="musicInfo.pic" :src="musicInfo.pic" decoding="async">
+      <span v-else :class="$style.emptyPic">L<span>X</span></span>
+    </button>
     <div :class="$style.footerLeft">
       <control-btns />
       <div :class="$style.progressContainer">
@@ -45,7 +49,8 @@
 <script setup>
 import { isMac } from '@common/utils'
 import { playNext, playPrev, togglePlay, stop } from '@renderer/core/player'
-import { status, isPlay } from '@renderer/store/player/state'
+import { status, isPlay, musicInfo } from '@renderer/store/player/state'
+import { setShowPlayerDetail } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 
@@ -69,6 +74,39 @@ const {
   overflow: hidden;
   display: flex;
   align-items: center;
+}
+.picContent {
+  width: 54px;
+  height: 54px;
+  margin: 0 0 6px calc(@width-app-left + 6px);
+  padding: 0;
+  border: 0;
+  border-radius: @radius-border;
+  align-self: flex-end;
+  flex: none;
+  overflow: hidden;
+  color: var(--color-primary-light-400-alpha-200);
+  background: var(--color-primary-light-900-alpha-200);
+  cursor: pointer;
+  transition: opacity @transition-fast;
+
+  &:hover { opacity: .8; }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+.emptyPic {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 20px Consolas, "Courier New", monospace;
+
+  span { padding-left: 3px; }
 }
 .footerLeft {
   flex: auto;
