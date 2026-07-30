@@ -83,7 +83,7 @@ const matchInfo = (scriptInfo: string) => {
   return infos as Record<keyof typeof INFO_NAMES, string>
 }
 const parseScriptInfo = (script: string) => {
-  log.info('[parseScriptInfo] input length:', script?.length, 'type:', typeof script, 'first 100 chars:', JSON.stringify(script?.slice(0, 100)))
+  log.info('[parseScriptInfo] input length:', script?.length, 'type:', typeof script)
   if (typeof script !== 'string' || !script.trim()) {
     log.error('[parseScriptInfo] invalid script input')
     throw new Error('无效的自定义源文件')
@@ -122,7 +122,7 @@ const inflateScript = async(script: string) => new Promise<string>((resolve, rej
     })
   } else resolve(script)
 })
-export const importApi = async(scriptRaw: string): Promise<LX.UserApi.UserApiInfo> => {
+export const importApi = async(scriptRaw: string, importSource: LX.UserApi.UserApiImportSource): Promise<LX.UserApi.UserApiInfo> => {
   log.info('[importApi] called with length:', scriptRaw?.length, 'type:', typeof scriptRaw)
   let scriptInfo = parseScriptInfo(scriptRaw)
   const script = await deflateScript(scriptRaw)
@@ -137,6 +137,7 @@ export const importApi = async(scriptRaw: string): Promise<LX.UserApi.UserApiInf
     id: `user_api_${Math.random().toString().substring(2, 5)}_${Date.now()}`,
     ...scriptInfo,
     allowShowUpdateAlert: true,
+    importSource,
   }
   userApis.push(apiInfo)
   scripts.set(apiInfo.id, script)

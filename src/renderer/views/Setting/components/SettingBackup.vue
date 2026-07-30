@@ -38,11 +38,12 @@ import {
 import { dialog } from '@renderer/plugins/Dialog'
 import useImportTip from '@renderer/utils/compositions/useImportTip'
 import { useI18n } from '@renderer/plugins/i18n'
-import { getListMusics, overwriteListFull, overwriteListMusics } from '@renderer/store/list/action'
+import { getListMusics, overwriteListFull, overwriteListMusics, reloadListData } from '@renderer/store/list/action'
 import { LIST_IDS } from '@common/constants'
 import { defaultList, loveList, userLists } from '@renderer/store/list/state'
 import { appSetting, updateSetting } from '@renderer/store/setting'
 import migrateSetting from '@common/utils/migrateSetting'
+import { createExportSetting, preserveAgreement } from '@renderer/utils/exportSetting'
 
 
 export default {
@@ -65,6 +66,11 @@ export default {
       }
 
       return lists
+    }
+    const refreshImportedLists = async(lists) => {
+      const ids = lists.map(list => list.id)
+      await reloadListData(ids)
+      window.app_event.myListUpdate(ids)
     }
 
     const importOldListData = async(lists) => {
@@ -91,6 +97,11 @@ export default {
       const defaultList = allLists.shift().list
       const loveList = allLists.shift().list
       await overwriteListFull({ defaultList, loveList, userList: allLists })
+      await refreshImportedLists([
+        { id: LIST_IDS.DEFAULT },
+        { id: LIST_IDS.LOVE },
+        ...allLists,
+      ])
     }
     const importNewListData = async(lists) => {
       const allLists = await getAllLists()
@@ -116,15 +127,18 @@ export default {
       const defaultList = allLists.shift().list
       const loveList = allLists.shift().list
       await overwriteListFull({ defaultList, loveList, userList: allLists })
+      await refreshImportedLists([
+        { id: LIST_IDS.DEFAULT },
+        { id: LIST_IDS.LOVE },
+        ...allLists,
+      ])
     }
     const importOldSettingData = (setting) => {
       setting = migrateSetting(setting)
-      setting['common.isAgreePact'] = false
-      updateSetting(setting)
+      updateSetting(preserveAgreement(setting, appSetting['common.isAgreePact']))
     }
     const importNewSettingData = (setting) => {
-      setting['common.isAgreePact'] = false
-      updateSetting(setting)
+      updateSetting(preserveAgreement(setting, appSetting['common.isAgreePact']))
     }
 
 
@@ -133,6 +147,7 @@ export default {
       try {
         allData = await window.lx.worker.main.readLxConfigFile(path)
       } catch (error) {
+        await dialog({ message: t('setting__backup_import_failed', { message: error?.message ?? String(error) }) })
         return
       }
 
@@ -147,8 +162,11 @@ export default {
           await importNewListData(allData.playList)
           importNewSettingData(allData.setting)
           break
-        default: { showImportTip(allData.type) }
+        default:
+          showImportTip(allData.type)
+          return
       }
+      await dialog({ message: t('setting__backup_import_success') })
     }
     const handleImportAllData = () => {
       void showSelectDialog({
@@ -171,17 +189,22 @@ export default {
       })
     }
 
-    const getExportSetting = () => ({
-      ...appSetting,
-      'network.gitcodeMusicAccessToken': '',
-    })
+    const getExportSetting = () => createExportSetting(toRaw(appSetting))
+    const saveExport = async(path, data) => {
+      try {
+        await window.lx.worker.main.saveLxConfigFile(path, data)
+        await dialog({ message: t('setting__backup_export_success') })
+      } catch (err) {
+        await dialog({ message: t('setting__backup_export_failed', { message: err?.message ?? String(err) }) })
+      }
+    }
     const exportAllData = async(path) => {
-      let allData = {
+      const allData = {
         type: 'allData_v2',
         setting: getExportSetting(),
         playList: await getAllLists(),
       }
-      void window.lx.worker.main.saveLxConfigFile(path, allData)
+      await saveExport(path, allData)
     }
     const handleExportAllData = () => {
       void openSaveDir({
@@ -193,12 +216,12 @@ export default {
       })
     }
 
-    const exportSetting = (path) => {
+    const exportSetting = async(path) => {
       const data = {
         type: 'setting_v2',
         data: getExportSetting(),
       }
-      void window.lx.worker.main.saveLxConfigFile(path, data)
+      await saveExport(path, data)
     }
     const handleExportSetting = () => {
       void openSaveDir({
@@ -206,7 +229,7 @@ export default {
         defaultPath: 'lx_setting_v2.lxmc',
       }).then(result => {
         if (result.canceled) return
-        exportSetting(result.filePath)
+        void exportSetting(result.filePath)
       })
     }
 
@@ -215,6 +238,7 @@ export default {
       try {
         settingData = await window.lx.worker.main.readLxConfigFile(path)
       } catch (error) {
+        await dialog({ message: t('setting__backup_import_failed', { message: error?.message ?? String(error) }) })
         return
       }
 
@@ -225,8 +249,11 @@ export default {
         case 'setting_v2':
           importNewSettingData(settingData.data)
           break
-        default: { showImportTip(settingData.type) }
+        default:
+          showImportTip(settingData.type)
+          return
       }
+      await dialog({ message: t('setting__backup_import_success') })
     }
     const handleImportSetting = () => {
       void showSelectDialog({
@@ -247,7 +274,7 @@ export default {
         type: 'playList_v2',
         data: await getAllLists(),
       }
-      void window.lx.worker.main.saveLxConfigFile(path, data)
+      await saveExport(path, data)
     }
     const handleExportPlayList = () => {
       void openSaveDir({
@@ -264,9 +291,9 @@ export default {
       try {
         listData = await window.lx.worker.main.readLxConfigFile(path)
       } catch (error) {
+        await dialog({ message: t('setting__backup_import_failed', { message: error?.message ?? String(error) }) })
         return
       }
-      console.log(listData.type)
 
       switch (listData.type) {
         case 'defautlList': // 兼容0.6.2及以前版本的列表数据
@@ -278,8 +305,11 @@ export default {
         case 'playList_v2':
           await importNewListData(listData.data)
           break
-        default: { showImportTip(listData.type) }
+        default:
+          showImportTip(listData.type)
+          return
       }
+      await dialog({ message: t('setting__backup_import_success') })
     }
     const handleImportPlayList = () => {
       void showSelectDialog({

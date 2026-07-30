@@ -139,6 +139,7 @@ const modules = {
     save_sound_effect_pitch_shifter_preset: 'winMain_save_sound_effect_pitch_shifter_preset',
     get_hot_key: 'winMain_get_hot_key',
     import_user_api: 'winMain_import_user_api',
+    export_user_api: 'winMain_export_user_api',
     remove_user_api: 'winMain_remove_user_api',
     set_user_api: 'winMain_set_user_api',
     get_user_api_list: 'winMain_get_user_api_list',

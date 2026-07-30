@@ -34,12 +34,15 @@ export const getMusicQualityInfo = (id) => {
 }
 
 export const getBatchMusicQualityInfo = async(idList) => {
-  const entries = await Promise.all(idList.map(async id => {
-    try {
-      return [id, await getMusicQualityInfo(id).promise]
-    } catch {
-      return [id, null]
-    }
-  }))
+  const entries = []
+  for (let index = 0; index < idList.length; index += 20) {
+    entries.push(...await Promise.all(idList.slice(index, index + 20).map(async id => {
+      try {
+        return [id, await getMusicQualityInfo(id).promise]
+      } catch {
+        return [id, null]
+      }
+    })))
+  }
   return Object.fromEntries(entries.filter(([, qualityInfo]) => qualityInfo))
 }

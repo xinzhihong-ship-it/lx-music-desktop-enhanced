@@ -11,6 +11,7 @@
               <h2>{{ $t('player__queue') }}</h2>
               <span :class="$style.count">{{ queue.length }}</span>
             </div>
+            <input v-model="filterText" :class="$style.filterInput" type="search" :placeholder="$t('list__search')">
             <div :class="$style.headerActions">
               <button
                 v-if="canEditQueue"
@@ -51,28 +52,28 @@
             </div>
           </header>
           <section :class="$style.current">
-            <p v-if="!queue.length" :class="$style.empty">{{ $t('no_item') }}</p>
+            <p v-if="!filteredQueue.length" :class="$style.empty">{{ $t('no_item') }}</p>
             <base-virtualized-list
               v-else
               ref="listRef"
-              :list="queue"
+              :list="filteredQueue"
               key-name="id"
               :item-height="52"
-              :container-class="$style.queueScroll"
+              :container-class="`${$style.queueScroll} music-list-scroll`"
             >
               <template #default="{ item, index }">
-                <div :class="[$style.item, index == currentIndex ? $style.active : null]">
+                <div :class="[$style.item, getSourceIndex(index) == currentIndex ? $style.active : null, getSourceIndex(index) == locatedIndex ? 'selected' : null]">
                   <button
                     type="button"
                     :class="$style.itemBody"
                     :title="`${getInfo(item).name} - ${getInfo(item).singer}`"
-                    @dblclick="playIndex(index)"
+                    @dblclick="playIndex(getSourceIndex(index))"
                   >
                     <span :class="$style.index">
-                      <svg v-if="index == currentIndex" viewBox="0 0 24 24">
+                      <svg v-if="getSourceIndex(index) == currentIndex" viewBox="0 0 24 24">
                         <use xlink:href="#icon-audio-wave" />
                       </svg>
-                      <template v-else>{{ index + 1 }}</template>
+                      <template v-else>{{ getSourceIndex(index) + 1 }}</template>
                     </span>
                     <span :class="$style.info">
                       <strong>{{ getInfo(item).name }}</strong>
@@ -86,7 +87,7 @@
                     :class="$style.removeBtn"
                     :aria-label="$t('player__queue_remove_item')"
                     :title="$t('player__queue_remove_item')"
-                    @click="removeQueueItem(index)"
+                    @click="removeQueueItem(getSourceIndex(index))"
                   >
                     <svg viewBox="0 0 24 24">
                       <use xlink:href="#icon-close" />
@@ -114,7 +115,7 @@
                 </svg>
               </button>
             </header>
-            <div class="scroll" :class="$style.laterList">
+            <div class="scroll music-list-scroll" :class="$style.laterList">
               <div v-for="(item, index) in tempPlayList" :key="`${item.musicInfo.id}_${index}`" :class="$style.laterItem">
                 <span>{{ getInfo(item.musicInfo).name }} - {{ getInfo(item.musicInfo).singer }}</span>
                 <button
@@ -132,6 +133,7 @@
             </div>
           </section>
         </aside>
+        <search-list :list="queueSearchList" :visible="isShowLocator" @action="handleLocatorAction" />
       </div>
     </transition>
   </teleport>
@@ -147,6 +149,8 @@ import { sourceNames } from '@renderer/store'
 import { dialog } from '@renderer/plugins/Dialog'
 import { useI18n } from '@renderer/plugins/i18n'
 import { LIST_IDS } from '@common/constants'
+import SearchList from '@renderer/views/List/MusicList/components/SearchList.vue'
+import { filterMusicRows } from '@renderer/utils/filterMusicRows'
 
 const props = defineProps({
   show: {
@@ -158,6 +162,9 @@ defineEmits(['close'])
 
 const t = useI18n()
 const listRef = ref(null)
+const filterText = ref('')
+const isShowLocator = ref(false)
+const locatedIndex = ref(-1)
 const listVersion = ref(0)
 const handleListUpdate = () => {
   listVersion.value++
@@ -172,15 +179,22 @@ const queue = computed(() => {
   void listVersion.value
   return [...getList(playInfo.playerListId)]
 })
+const getInfo = item => 'progress' in item ? item.metadata.musicInfo : item
+const queueSearchList = computed(() => queue.value.map(getInfo))
+const filteredRows = computed(() => filterMusicRows(queue.value, filterText.value, getInfo))
+const filteredQueue = computed(() => filteredRows.value.map(({ item }) => item))
+const getSourceIndex = index => filteredRows.value[index]?.index ?? index
 const currentIndex = computed(() => {
   if (!playMusicInfo.musicInfo || playMusicInfo.isTempPlay) return -1
   return queue.value.findIndex(item => item.id == playMusicInfo.musicInfo?.id)
 })
-const getInfo = item => 'progress' in item ? item.metadata.musicInfo : item
 const getSourceName = item => sourceNames.value[getInfo(item).source] || getInfo(item).source
 const locateCurrent = () => {
   if (currentIndex.value < 0) return
-  listRef.value?.scrollToIndex(currentIndex.value, -104, true)
+  filterText.value = ''
+  void nextTick(() => {
+    listRef.value?.scrollToIndex(currentIndex.value, -104, true)
+  })
 }
 const playIndex = index => {
   if (!playInfo.playerListId) return
@@ -203,9 +217,31 @@ const clearQueue = async() => {
   if (!confirm) return
   void clearListMusics([playInfo.playerListId])
 }
+const handleShowLocator = () => {
+  if (!props.show) return
+  isShowLocator.value = true
+}
+const handleLocatorAction = ({ action, data }) => {
+  isShowLocator.value = false
+  if (action != 'listClick' || !data || data.index < 0) return
+  filterText.value = ''
+  void nextTick(() => {
+    locatedIndex.value = data.index
+    listRef.value?.scrollToIndex(data.index, -104, true)
+    setTimeout(() => {
+      locatedIndex.value = -1
+    }, 600)
+    if (data.isPlay) playIndex(data.index)
+  })
+}
+window.key_event.on('key_mod+f_down', handleShowLocator)
 
 watch(() => props.show, show => {
   if (show) void nextTick(locateCurrent)
+  else isShowLocator.value = false
+})
+onBeforeUnmount(() => {
+  window.key_event.off('key_mod+f_down', handleShowLocator)
 })
 </script>
 
@@ -246,6 +282,22 @@ watch(() => props.show, show => {
 .title, .laterTitle, .headerActions {
   display: flex;
   align-items: center;
+}
+.filterInput {
+  flex: 1;
+  min-width: 80px;
+  height: 30px;
+  box-sizing: border-box;
+  margin: 0 8px;
+  padding: 0 9px;
+  border: 1px solid var(--color-primary-light-400-alpha-700);
+  border-radius: 4px;
+  outline: none;
+  color: var(--color-font);
+  background: var(--color-content-background);
+  &:focus {
+    border-color: var(--color-primary);
+  }
 }
 .title {
   gap: 8px;

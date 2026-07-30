@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "2.13.0-enhanced.11-beta.5",
+  "version": "2.13.0-enhanced.11-beta.6",
   "description": "基于 LX Music（洛雪音乐助手）桌面版的二次开发/增强版本，一个免费的音乐查找助手",
   "main": "./dist/main.js",
   "scripts": {
@@ -65,6 +65,7 @@
     "lint": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly src",
     "lint:fix": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly --fix src",
     "test:music-recognition": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/musicRecognitionDecision.test.mjs",
+    "test:issue6": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue6.test.mjs",
     "postinstall": "electron-builder install-app-deps",
     "dp": "cross-env ELECTRON_GET_USE_PROXY=true GLOBAL_AGENT_HTTPS_PROXY=http://127.0.0.1:2081 npm run pack",
     "up": "cross-env ELECTRON_GET_USE_PROXY=true GLOBAL_AGENT_HTTPS_PROXY=http://127.0.0.1:2081 npm i"

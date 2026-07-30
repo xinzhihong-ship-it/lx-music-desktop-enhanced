@@ -68,6 +68,21 @@ export default (songmid) => {
         size,
       }
     }
+    if (file.size_new?.[1]) {
+      const size = sizeFormate(file.size_new[1])
+      types.push({ type: 'atmos', size })
+      _types.atmos = { size }
+    }
+    if (file.size_new?.[2]) {
+      const size = sizeFormate(file.size_new[2])
+      types.push({ type: 'atmos_plus', size })
+      _types.atmos_plus = { size }
+    }
+    if (file.size_new?.[0]) {
+      const size = sizeFormate(file.size_new[0])
+      types.push({ type: 'master', size })
+      _types.master = { size }
+    }
     // types.reverse()
     let albumId = ''
     let albumName = ''
@@ -95,4 +110,3 @@ export default (songmid) => {
     }
   })
 }
-

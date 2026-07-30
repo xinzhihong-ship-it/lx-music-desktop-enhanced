@@ -101,6 +101,7 @@ export {
   overwriteListMusics,
   clearListMusics,
   overwriteListFull,
+  reloadListData,
   checkListExistMusic,
   getMusicExistListIds,
 } from '@renderer/store/list/listManage'

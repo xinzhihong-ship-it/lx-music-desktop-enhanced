@@ -1,6 +1,7 @@
 // import { getSongListSetting } from '@renderer/utils/data'
 import { deduplicationList, filterMusicList, toNewMusicInfo } from '@renderer/utils'
 import musicSdk from '@renderer/utils/musicSdk'
+import enrichQuality from '@renderer/utils/musicSdk/enrichQuality'
 import { markRaw, markRawList } from '@common/utils/vueTools'
 import {
   tags,
@@ -132,7 +133,8 @@ export const getListDetail = async(id: string, source: LX.OnlineSource, page: nu
   let key = `sdetail__${source}__${id}__${page}`
   if (!isRefresh && cache.has(key)) return cache.get(key)
 
-  return musicSdk[source]?.songList.getListDetail(id, page).then((result: ListDetailInfo) => {
+  return musicSdk[source]?.songList.getListDetail(id, page).then(async(result: ListDetailInfo) => {
+    await enrichQuality(source, result.list)
     // 网易云歌单会用只有时长的占位条目表示灰名/已下架歌曲。
     // 这些条目没有可用于换源匹配的标题，必须在进入临时列表前丢弃。
     result.list = markRawList(filterMusicList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[])))
@@ -156,7 +158,8 @@ export const getListDetailAll = async(id: string, source: LX.OnlineSource, isRef
     if (isRefresh && cache.has(key)) cache.delete(key)
     return cache.has(key)
       ? Promise.resolve(cache.get(key))
-      : musicSdk[source]?.songList.getListDetail(id, page).then((result: ListDetailInfo) => {
+      : musicSdk[source]?.songList.getListDetail(id, page).then(async(result: ListDetailInfo) => {
+        await enrichQuality(source, result.list)
         result.list = markRawList(filterMusicList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[])))
         cache.set(key, result)
         return result

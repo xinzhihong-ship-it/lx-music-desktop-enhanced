@@ -4,6 +4,7 @@ import { mainHandle } from '@common/mainIpc'
 import {
   getApiList,
   importApi,
+  exportApi,
   removeApi,
   setApi,
   getStatus,
@@ -14,10 +15,14 @@ import {
 import { sendEvent } from '@main/modules/winMain/main'
 
 export default () => {
-  mainHandle<string, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, async({ params: script }) => {
-    await importApi(script)
+  mainHandle<LX.UserApi.ImportUserApiParams, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, async({ params }) => {
+    await importApi(params)
     log.info('[rendererEvent import_user_api] importApi done, returning true')
     return true
+  })
+
+  mainHandle<LX.UserApi.ExportUserApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.export_user_api, async({ params }) => {
+    await exportApi(params)
   })
 
   mainHandle<string[], LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.remove_user_api, async({ params: apiIds }) => {
@@ -54,4 +59,3 @@ export const sendStatusChange = (status: LX.UserApi.UserApiStatus) => {
 export const sendShowUpdateAlert = (info: LX.UserApi.UserApiUpdateInfo) => {
   sendEvent(WIN_MAIN_RENDERER_EVENT_NAME.user_api_show_update_alert, info)
 }
-

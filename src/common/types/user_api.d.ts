@@ -12,6 +12,7 @@ declare namespace LX {
 
     type UserApiSources = Record<LX.Source, UserApiSourceInfo>
 
+    type UserApiImportSource = { type: 'online', url: string } | { type: 'local' }
 
     interface UserApiInfoFull {
       id: string
@@ -23,6 +24,7 @@ declare namespace LX {
       homepage?: string
       version?: string
       sources?: UserApiSources
+      importSource?: UserApiImportSource
     }
 
     type UserApiInfo = Omit<UserApiInfoFull, 'script'>
@@ -55,6 +57,16 @@ declare namespace LX {
     interface ImportUserApi {
       apiInfo: UserApiInfo
       apiList: UserApiInfo[]
+    }
+
+    interface ImportUserApiParams {
+      script: string
+      importSource: UserApiImportSource
+    }
+
+    interface ExportUserApiParams {
+      id: string
+      path: string
     }
 
   }

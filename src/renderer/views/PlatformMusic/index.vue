@@ -41,31 +41,33 @@
     </aside>
     <main :class="$style.content">
       <div :class="$style.listHeader">
-        <div>
+        <div :class="$style.headerInfo">
           <h3>{{ selectedTitle || $t('account__platform_music_select') }}</h3>
           <p v-if="selectedSource">{{ sourceName(selectedSource) }}</p>
         </div>
+        <input ref="filterInput" v-model="filterText" :class="$style.filterInput" type="search" :placeholder="$t('list__search')">
         <base-btn v-if="songs.length" outline @click="playSongs(0)">{{ $t('list__play') }}</base-btn>
       </div>
       <div :class="$style.songList">
         <material-online-list
           ref="listRef"
           :page="1"
-          :limit="Math.max(songs.length, 1)"
-          :total="songs.length"
-          :list="songs"
+          :limit="Math.max(filteredSongs.length, 1)"
+          :total="filteredSongs.length"
+          :list="filteredSongs"
           :no-item="statusText"
           :allow-platform-remove="Boolean(selectedDestination?.playlist.isEditable)"
-          @play-list="playSongs"
+          @play-list="playFilteredSongs"
           @remove-from-platform="handleRemoveFromPlatform"
         />
       </div>
     </main>
+    <search-list :list="songs" :visible="isShowLocator" @action="handleLocatorAction" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, markRawList, onMounted, ref } from '@common/utils/vueTools'
+import { computed, markRawList, nextTick, onBeforeUnmount, onMounted, ref } from '@common/utils/vueTools'
 import { LIST_IDS } from '@common/constants'
 import { playList } from '@renderer/core/player'
 import { setTempList } from '@renderer/store/list/action'
@@ -82,6 +84,8 @@ import { getMusicInfos as getBiliMusicInfos } from '@renderer/utils/musicSdk/bil
 import txMusicInfo from '@renderer/utils/musicSdk/tx/musicInfo'
 import wyMusicDetail from '@renderer/utils/musicSdk/wy/musicDetail'
 import { dialog } from '@renderer/plugins/Dialog'
+import SearchList from '@renderer/views/List/MusicList/components/SearchList.vue'
+import { filterMusicRows } from '@renderer/utils/filterMusicRows'
 
 interface AccountGroup {
   account: LX.Account.PlatformAccount
@@ -98,10 +102,16 @@ const selectedDestination = ref<PlatformPlaylistDestination | null>(null)
 const isLoading = ref(false)
 const error = ref('')
 const listRef = ref<any>(null)
+const filterInput = ref<HTMLInputElement | null>(null)
+const filterText = ref('')
+const isShowLocator = ref(false)
+const filteredRows = computed(() => filterMusicRows(songs.value, filterText.value))
+const filteredSongs = computed(() => filteredRows.value.map(({ item }) => item))
 
 const statusText = computed(() => {
   if (isLoading.value) return window.i18n.t('account__playlist_loading')
   if (error.value) return error.value
+  if (songs.value.length && !filteredSongs.value.length) return window.i18n.t('no_item')
   if (songs.value.length) return ''
   if (selectedKey.value.endsWith(':daily')) return window.i18n.t('account__playlist_no_daily')
   if (selectedKey.value) return window.i18n.t('account__playlist_no_songs')
@@ -209,9 +219,26 @@ const playSongs = async(index: number) => {
   await setTempList(`account__${selectedKey.value}`, [...songs.value])
   playList(LIST_IDS.TEMP, index)
 }
+const playFilteredSongs = async(index: number) => playSongs(filteredRows.value[index]?.index ?? index)
+const handleShowLocator = () => {
+  isShowLocator.value = true
+}
+const handleLocatorAction = ({ action, data }: { action: string, data?: { index: number, isPlay: boolean } }) => {
+  isShowLocator.value = false
+  if (action != 'listClick' || !data || data.index < 0) return
+  filterText.value = ''
+  void nextTick(() => {
+    listRef.value?.locateMusic(data.index)
+    if (data.isPlay) void playSongs(data.index)
+  })
+}
 
 onMounted(() => {
+  window.key_event.on('key_mod+f_down', handleShowLocator)
   loadAllPlaylists().catch(console.error)
+})
+onBeforeUnmount(() => {
+  window.key_event.off('key_mod+f_down', handleShowLocator)
 })
 </script>
 
@@ -248,6 +275,25 @@ onMounted(() => {
   padding: 0 10px;
   font-size: 12px;
   .mixin-ellipsis-1();
+}
+.headerInfo {
+  flex: auto;
+  min-width: 0;
+}
+.filterInput {
+  width: min(280px, 35%);
+  height: 30px;
+  box-sizing: border-box;
+  margin-right: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--color-primary-light-400-alpha-700);
+  border-radius: 4px;
+  outline: none;
+  color: var(--color-font);
+  background: var(--color-content-background);
+  &:focus {
+    border-color: var(--color-primary);
+  }
 }
 
 .refresh {

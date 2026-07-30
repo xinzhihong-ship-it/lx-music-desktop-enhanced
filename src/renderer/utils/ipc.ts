@@ -121,10 +121,10 @@ export const onUpdateNotAvailable = (listener: LX.IpcRendererEventListenerParams
 }
 
 
-export const importUserApi = async(fileText: string): Promise<LX.UserApi.ImportUserApi> => {
-  writeRendererLog('[renderer importUserApi] input length:', fileText?.length, 'type:', typeof fileText)
+export const importUserApi = async(params: LX.UserApi.ImportUserApiParams): Promise<LX.UserApi.ImportUserApi> => {
+  writeRendererLog('[renderer importUserApi] input length:', params.script?.length, 'type:', typeof params.script)
   try {
-    await rendererInvoke<string, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, fileText)
+    await rendererInvoke<LX.UserApi.ImportUserApiParams, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, params)
     writeRendererLog('[renderer importUserApi] import_user_api returned, calling getUserApiList')
     const apiList = await getUserApiList()
     const apiInfo = apiList[apiList.length - 1]
@@ -135,6 +135,9 @@ export const importUserApi = async(fileText: string): Promise<LX.UserApi.ImportU
     console.error('[renderer importUserApi] error:', err)
     throw err
   }
+}
+export const exportUserApi = async(params: LX.UserApi.ExportUserApiParams): Promise<void> => {
+  return rendererInvoke<LX.UserApi.ExportUserApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.export_user_api, params)
 }
 export const setUserApi = async(source: LX.UserApi.UserApiSetApiParams): Promise<void> => {
   return rendererInvoke<LX.UserApi.UserApiSetApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api, source)

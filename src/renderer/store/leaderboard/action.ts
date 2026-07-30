@@ -1,6 +1,7 @@
 // import { getLeaderboardSetting } from '@renderer/utils/data'
 import { deduplicationList, toNewMusicInfo } from '@renderer/utils'
 import musicSdk from '@renderer/utils/musicSdk'
+import enrichQuality from '@renderer/utils/musicSdk/enrichQuality'
 import { markRaw, markRawList } from '@common/utils/vueTools'
 import { boards, type Board, listDetailInfo, type ListDetailInfo } from './state'
 
@@ -53,7 +54,8 @@ export const getListDetail = async(id: string, page: number, isRefresh = false):
 
   const [source, bangId] = id.split('__') as [LX.OnlineSource, string]
 
-  return musicSdk[source]?.leaderboard?.getList(bangId, page).then((result: ListDetailInfo) => {
+  return musicSdk[source]?.leaderboard?.getList(bangId, page).then(async(result: ListDetailInfo) => {
+    await enrichQuality(source, result.list)
     result.list = markRawList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[]))
     cache.set(key, result)
     return result
@@ -75,7 +77,8 @@ export const getListDetailAll = async(id: string, isRefresh = false): Promise<LX
     let key = `${source}__${id}__${page}`
     if (!isRefresh && cache.has(key)) return cache.get(key)
 
-    return musicSdk[source]?.leaderboard.getList(id, page).then((result: ListDetailInfo) => {
+    return musicSdk[source]?.leaderboard.getList(id, page).then(async(result: ListDetailInfo) => {
+      await enrichQuality(source, result.list)
       result.list = markRawList(deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[]))
       cache.set(key, result)
       return result

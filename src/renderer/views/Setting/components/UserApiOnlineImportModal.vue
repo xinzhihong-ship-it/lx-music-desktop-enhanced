@@ -61,12 +61,12 @@ export default {
       this.disabled = true
       this.btnText = this.$t('user_api_import_online__input_loading')
       let script
-      writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetching url:', url)
+      writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetching source')
       try {
         script = await httpFetch(url, { follow_max: 3 }).promise.then(resp => resp.body)
         writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetch success, script length:', script?.length)
       } catch (err) {
-        writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetch error:', err)
+        writeRendererLog('[UserApiOnlineImportModal handleSubmit] fetch failed')
         const typeInfo = `type=${typeof err}, isError=${err instanceof Error}, toString=${Object.prototype.toString.call(err)}`
         const rawValue = `raw=${String(err)}`
         const message = String(err?.message ?? err)
@@ -92,7 +92,7 @@ export default {
         }))
         return
       }
-      this.$emit('import', script)
+      this.$emit('import', { script, importSource: { type: 'online', url } })
       this.handleClose()
     },
   },

@@ -1,6 +1,7 @@
 import { log } from '@common/utils'
+import { saveStrToFile } from '@common/utils/nodejs'
 import { closeWindow } from './main'
-import { getUserApis, importApi as handleImportApi, removeApi as handleRemoveApi, setAllowShowUpdateAlert as saveAllowShowUpdateAlert } from './utils'
+import { getScript, getUserApis, importApi as handleImportApi, removeApi as handleRemoveApi, setAllowShowUpdateAlert as saveAllowShowUpdateAlert } from './utils'
 import { loadApi, setAllowShowUpdateAlert as setRendererEventAllowShowUpdateAlert, init } from './rendererEvent/rendererEvent'
 
 let userApiId: string | null
@@ -14,12 +15,17 @@ export const getApiList = (): LX.UserApi.UserApiInfo[] => {
   return toPlainObject(getUserApis())
 }
 
-export const importApi = async(script: string): Promise<LX.UserApi.ImportUserApi> => {
+export const importApi = async({ script, importSource }: LX.UserApi.ImportUserApiParams): Promise<LX.UserApi.ImportUserApi> => {
   try {
-    const apiInfo = await handleImportApi(script)
+    if (
+      !importSource ||
+      (importSource.type == 'online' && !/^https?:\/\//.test(importSource.url)) ||
+      (importSource.type != 'online' && importSource.type != 'local')
+    ) throw new Error('Invalid user API import source')
+    const apiInfo = await handleImportApi(script, importSource)
     const apiList = getUserApis()
     const result = toPlainObject({ apiInfo, apiList })
-    log.info('[importApi] success, apiInfo:', result.apiInfo, 'apiList length:', result.apiList.length)
+    log.info('[importApi] success, api id:', result.apiInfo.id, 'apiList length:', result.apiList.length)
     return result
   } catch (err: any) {
     log.error('[importApi] error:', err)
@@ -27,6 +33,11 @@ export const importApi = async(script: string): Promise<LX.UserApi.ImportUserApi
     if (message == null) message = err instanceof Error ? err.toString() : String(err)
     throw new Error(message || '自定义源导入失败')
   }
+}
+export const exportApi = async({ id, path }: LX.UserApi.ExportUserApiParams): Promise<void> => {
+  const script = await getScript(id)
+  if (!script) throw new Error('User API script not found')
+  await saveStrToFile(path, script)
 }
 export const removeApi = async(ids: string[]): Promise<LX.UserApi.UserApiInfo[]> => {
   if (userApiId && ids.includes(userApiId)) {

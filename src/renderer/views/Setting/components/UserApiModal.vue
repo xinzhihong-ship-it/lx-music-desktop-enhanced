@@ -12,9 +12,11 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
           p {{ api.description }}
           div
             base-checkbox(:id="`user_api_${api.id}`" v-model="api.allowShowUpdateAlert" :class="$style.checkbox" :label="$t('user_api__allow_show_update_alert')" @change="handleChangeAllowUpdateAlert(api, $event)")
-        base-btn(:class="$style.listBtn" outline :aria-label="$t('user_api__btn_remove')" @click.stop="handleRemove(index)")
-          svg(v-once version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" viewBox="0 0 212.982 212.982" space="preserve")
-            use(xlink:href="#icon-delete")
+        div(:class="$style.listActions")
+          base-btn(min outline @click.stop="api.importSource?.type == 'online' ? handleCopyUrl(api) : handleExport(api)") {{ api.importSource?.type == 'online' ? $t('user_api__btn_copy_link') : $t('user_api__btn_export') }}
+          base-btn(:class="$style.listBtn" outline :aria-label="$t('user_api__btn_remove')" @click.stop="handleRemove(index)")
+            svg(v-once version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" viewBox="0 0 212.982 212.982" space="preserve")
+              use(xlink:href="#icon-delete")
     div(v-else :class="$style.content")
       div(:class="$style.noitem") {{ $t('user_api__noitem') }}
     div(:class="$style.note")
@@ -30,10 +32,10 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
 </template>
 
 <script>
-import { importUserApi, removeUserApi, showSelectDialog, setAllowShowUserApiUpdateAlert } from '@renderer/utils/ipc'
+import { exportUserApi, importUserApi, openSaveDir, removeUserApi, showSelectDialog, setAllowShowUserApiUpdateAlert } from '@renderer/utils/ipc'
 import { writeRendererLog } from '@common/rendererIpc'
 import { readFile } from '@common/utils/nodejs'
-import { openUrl } from '@common/utils/electron'
+import { clipboardWriteText, openUrl } from '@common/utils/electron'
 import apiSourceInfo from '@renderer/utils/musicSdk/api-source-info'
 import { userApi } from '@renderer/store'
 import { appSetting, updateSetting } from '@renderer/store/setting'
@@ -65,10 +67,9 @@ export default {
     }
   },
   methods: {
-    async importUserApi(script) {
-      writeRendererLog('[UserApiModal importUserApi] called, script length:', script?.length, 'type:', typeof script)
-      console.log('[UserApiModal importUserApi] script length:', script?.length)
-      return importUserApi(script).then(({ apiList }) => {
+    async importUserApi(params) {
+      writeRendererLog('[UserApiModal importUserApi] called, script length:', params.script?.length, 'type:', typeof params.script)
+      return importUserApi(params).then(({ apiList }) => {
         console.log('[UserApiModal importUserApi] success, apiList length:', apiList?.length)
         userApi.list = apiList
       }).catch((err) => {
@@ -107,12 +108,28 @@ export default {
       }).then(async result => {
         if (result.canceled) return
         return readFile(result.filePaths[0]).then(async data => {
-          return this.importUserApi(data.toString())
+          return this.importUserApi({ script: data.toString(), importSource: { type: 'local' } })
         })
       })
     },
-    handleExport() {
-
+    handleCopyUrl(api) {
+      if (api.importSource?.type == 'online') clipboardWriteText(api.importSource.url)
+    },
+    async handleExport(api) {
+      const fileName = `${api.name.replace(/[<>:"/\\|?*]/g, '_').trim() || 'lx-music-source'}.js`
+      const result = await openSaveDir({
+        title: this.$t('user_api__btn_export'),
+        defaultPath: fileName,
+        filters: [{ name: 'JavaScript', extensions: ['js'] }],
+      })
+      if (result.canceled) return
+      const path = result.filePath.endsWith('.js') ? result.filePath : `${result.filePath}.js`
+      try {
+        await exportUserApi({ id: api.id, path })
+        await dialog({ message: this.$t('user_api_export__success') })
+      } catch (err) {
+        await dialog({ message: this.$t('user_api_export__failed', { message: err?.message ?? String(err) }) })
+      }
     },
     async handleRemove(index) {
       const api = this.apiList[index]
@@ -231,6 +248,12 @@ export default {
   svg {
     width: 60%;
   }
+}
+.listActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .note {
   padding: 0 7px;

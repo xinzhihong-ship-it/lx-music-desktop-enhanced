@@ -73,6 +73,14 @@ export const getListMusics = async(listId: string | null): Promise<LX.Music.Musi
   return setMusicList(listId, list)
 }
 
+export const reloadListData = async(listIds: string[]): Promise<void> => {
+  await getUserLists()
+  await Promise.all(listIds.map(async listId => {
+    const list = await rendererInvoke<string, LX.Music.MusicInfo[]>(PLAYER_EVENT_NAME.list_music_get, listId)
+    setMusicList(listId, list)
+  }))
+}
+
 /**
  * 批量添加歌曲到列表
  * @param data
