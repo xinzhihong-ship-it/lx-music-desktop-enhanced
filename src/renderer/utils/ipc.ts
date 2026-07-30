@@ -163,6 +163,12 @@ export const onUserApiStatus = (listener: LX.IpcRendererEventListenerParams<LX.U
 export const getUserApiList = async() => {
   return rendererInvoke<LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_list)
 }
+export const getUserApiData = async() => {
+  return rendererInvoke<LX.WebDAVSync.UserApiData>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_data)
+}
+export const overwriteUserApiData = async(data: LX.WebDAVSync.UserApiData) => {
+  return rendererInvoke<LX.WebDAVSync.UserApiData, LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.overwrite_user_api_data, data)
+}
 export const sendUserApiRequest = async({ requestKey, data }: LX.UserApi.UserApiRequestParams): Promise<any> => {
   return rendererInvoke(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api, {
     requestKey,
@@ -897,6 +903,10 @@ export const onSyncAction = (listener: LX.IpcRendererEventListenerParams<LX.Sync
   return () => {
     rendererOff(WIN_MAIN_RENDERER_EVENT_NAME.sync_action, listener)
   }
+}
+
+export const sendWebDAVAction = async(action: LX.WebDAVSync.ServiceAction) => {
+  return rendererInvoke<LX.WebDAVSync.ServiceAction, LX.WebDAVSync.ServiceResult>(WIN_MAIN_RENDERER_EVENT_NAME.webdav_action, action)
 }
 
 /**

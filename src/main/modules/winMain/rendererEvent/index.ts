@@ -7,6 +7,7 @@ import kw_decodeLyric from './kw_decodeLyric'
 import tx_decodeLyric from './tx_decodeLyric'
 import userApi from './userApi'
 import sync from './sync'
+import webdav from './webdav'
 import data from './data'
 import music from './music'
 import download from './download'
@@ -36,6 +37,7 @@ export default () => {
   tx_decodeLyric()
   userApi()
   sync()
+  webdav()
   data()
   music()
   download()

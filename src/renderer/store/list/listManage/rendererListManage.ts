@@ -187,6 +187,7 @@ export const registerListAction = (appSetting: LX.AppSetting, onListChanged: (li
     for (const list of listInfos) {
       userListCreate({ ...list, position })
     }
+    if (listInfos.length) onListChanged(listInfos.map(list => list.id))
   }
   const list_remove = ({ params: ids }: LX.IpcRendererEventParams<LX.List.ListActionRemove>) => {
     const updatedListIds = userListsRemove(ids)
@@ -194,9 +195,11 @@ export const registerListAction = (appSetting: LX.AppSetting, onListChanged: (li
   }
   const list_update = ({ params: listInfos }: LX.IpcRendererEventParams<LX.List.ListActionUpdate>) => {
     userListsUpdate(listInfos)
+    if (listInfos.length) onListChanged(listInfos.map(list => list.id))
   }
   const list_update_position = ({ params: { position, ids } }: LX.IpcRendererEventParams<LX.List.ListActionUpdatePosition>) => {
     userListsUpdatePosition(position, ids)
+    if (ids.length) onListChanged(ids)
   }
   const list_music_add = ({ params: { id, musicInfos, addMusicLocationType } }: LX.IpcRendererEventParams<LX.List.ListActionMusicAdd>) => {
     addMusicLocationType ??= appSetting['list.addMusicLocationType']

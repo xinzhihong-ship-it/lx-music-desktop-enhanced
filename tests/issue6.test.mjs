@@ -38,11 +38,13 @@ test('empty taskbar state disables every button', () => {
 test('setting export removes nested Vue proxies and the GitCode token', () => {
   const setting = reactive({
     'network.gitcodeMusicAccessToken': 'DO_NOT_EXPORT',
+    'sync.webdav.password': 'DO_NOT_EXPORT',
     nested: { values: ['one', 'two'] },
   })
   const exported = createExportSetting(setting)
   assert.doesNotThrow(() => structuredClone(exported))
   assert.equal(exported['network.gitcodeMusicAccessToken'], '')
+  assert.equal(exported['sync.webdav.password'], '')
   assert.deepEqual(exported.nested.values, ['one', 'two'])
 })
 

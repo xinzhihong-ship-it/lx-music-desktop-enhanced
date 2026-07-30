@@ -1,7 +1,15 @@
 import { log } from '@common/utils'
 import { saveStrToFile } from '@common/utils/nodejs'
 import { closeWindow } from './main'
-import { getScript, getUserApis, importApi as handleImportApi, removeApi as handleRemoveApi, setAllowShowUpdateAlert as saveAllowShowUpdateAlert } from './utils'
+import {
+  getScript,
+  getUserApis,
+  getUserApiData as handleGetUserApiData,
+  overwriteUserApiData as handleOverwriteUserApiData,
+  importApi as handleImportApi,
+  removeApi as handleRemoveApi,
+  setAllowShowUpdateAlert as saveAllowShowUpdateAlert,
+} from './utils'
 import { loadApi, setAllowShowUpdateAlert as setRendererEventAllowShowUpdateAlert, init } from './rendererEvent/rendererEvent'
 
 let userApiId: string | null
@@ -13,6 +21,11 @@ const toPlainObject = <T>(value: T): T => {
 
 export const getApiList = (): LX.UserApi.UserApiInfo[] => {
   return toPlainObject(getUserApis())
+}
+export const getUserApiData = async(): Promise<LX.WebDAVSync.UserApiData> => toPlainObject(await handleGetUserApiData())
+export const overwriteUserApiData = async(data: LX.WebDAVSync.UserApiData): Promise<LX.UserApi.UserApiInfo[]> => {
+  await handleOverwriteUserApiData(data)
+  return getApiList()
 }
 
 export const importApi = async({ script, importSource }: LX.UserApi.ImportUserApiParams): Promise<LX.UserApi.ImportUserApi> => {

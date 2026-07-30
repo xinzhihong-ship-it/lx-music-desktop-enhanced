@@ -700,6 +700,17 @@ declare global {
        */
       'sync.client.host': string
 
+      /** WebDAV 数据同步 */
+      'sync.webdav.enable': boolean
+      'sync.webdav.autoSync': boolean
+      'sync.webdav.url': string
+      'sync.webdav.username': string
+      'sync.webdav.password': string
+      'sync.webdav.path': string
+      'sync.webdav.lastListEtag': string
+      'sync.webdav.lastListHash': string
+      'sync.webdav.lastSyncTime': number
+
 
       /**
        * 是否启用开放API服务

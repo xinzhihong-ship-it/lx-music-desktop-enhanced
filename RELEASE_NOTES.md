@@ -1,6 +1,13 @@
-# LX Music 增强版 2.13.0-enhanced.11-beta.7（测试版）
+# LX Music 增强版 2.13.0-enhanced.11-beta.8（测试版）
 
-本测试版新增哔哩哔哩平台，并将其并入落雪现有的搜索、播放与账号体系，同时完善播放队列管理与音质展示。测试版可能存在不稳定，建议先备份数据。
+本测试版新增 WebDAV 数据同步，并继续完善哔哩哔哩平台、播放队列管理与音质展示。测试版可能存在不稳定，建议先备份数据。
+
+## beta.8 新增
+
+- 设置 → 数据同步新增 WebDAV：支持测试连接、手动/自动同步全部歌单，以及上传、下载设置和自定义音源。
+- 自动同步在应用启动、窗口重新获得焦点和歌单变化后触发；通过同步快照判断上传、下载或冲突，冲突时由用户选择保留本地或云端。
+- 使用 ETag 条件写入与串行锁减少并发覆盖风险；下载覆盖前自动备份本地数据到数据目录的 `webdav-backups` 文件夹，最多保留 10 份。
+- WebDAV 密码只保存在本机，不上传到云端，也不包含在普通设置导出中；建议使用 HTTPS 服务。
 
 ## beta.7 优化
 
@@ -72,12 +79,14 @@
 - [maotoumao/MusicFreePlugins](https://github.com/maotoumao/MusicFreePlugins)：哔哩哔哩插件的接口与选流参考。
 - [SocialSisterYi/bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)：哔哩哔哩接口文档（WBI 签名、DASH 音频流标识）。
 - [ikunshare/ikun-music-desktop](https://github.com/ikunshare/ikun-music-desktop)：GitCode 扩展索引来源的实现参考。
+- [WalnutBai/lx-lxwalnut-music-mobile](https://github.com/WalnutBai/lx-lxwalnut-music-mobile)：WebDAV 同步交互与数据组织方式的参考。
 
 ## 测试说明
 
 - 哔哩哔哩搜索、播放、歌词（字幕转换与精确匹配）、收藏夹、扫码登录均已完成实际界面验证。
 - 播放队列单曲移除、全部清空、定位当前歌曲已通过实际操作验证。
+- WebDAV 路径、哈希与同步决策单元测试通过，并已使用本地 WebDAV 服务验证连接、目录创建、歌单/设置/音源上传、歌单下载及覆盖前备份。
 - 识曲决策单元测试、代码检查、类型检查、主进程与渲染进程生产构建均通过。
 - 已知边界：192k 以上音频流取决于视频是否提供高阶音轨及账号大会员权限；未提供时显示实测最高档位 192K。
 
-完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.7](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.7)
+完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.8](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.8)

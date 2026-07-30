@@ -169,3 +169,37 @@ export const setAllowShowUpdateAlert = (id: string, enable: boolean) => {
 export const getScript = async(id: string) => {
   return inflateScript(scripts.get(id) ?? '')
 }
+
+export const getUserApiData = async(): Promise<LX.WebDAVSync.UserApiData> => {
+  const list = getUserApis()
+  const rawScripts: Record<string, string> = {}
+  await Promise.all(list.map(async api => {
+    rawScripts[api.id] = await getScript(api.id)
+  }))
+  return { list, scripts: rawScripts }
+}
+
+export const overwriteUserApiData = async(data: LX.WebDAVSync.UserApiData): Promise<void> => {
+  if (!Array.isArray(data?.list) || data.list.length > 20 || !data.scripts || typeof data.scripts != 'object') throw new Error('Invalid WebDAV user API data')
+  const ids = new Set<string>()
+  const nextScripts = new Map<string, string>()
+  const nextApis = await Promise.all(data.list.map(async api => {
+    if (typeof api?.id != 'string' || !api.id || api.id.length > 128 || ids.has(api.id)) throw new Error('Invalid WebDAV user API id')
+    ids.add(api.id)
+    const rawScript = data.scripts[api.id]
+    if (typeof rawScript != 'string' || !rawScript || rawScript.length > 5 * 1024 * 1024) throw new Error('Invalid WebDAV user API script')
+    const parsed = parseScriptInfo(rawScript)
+    nextScripts.set(api.id, await deflateScript(rawScript))
+    return {
+      ...parsed,
+      ...api,
+      id: api.id,
+      importSource: api.importSource?.type == 'online' && /^https?:\/\//.test(api.importSource.url)
+        ? api.importSource
+        : { type: 'local' as const },
+    }
+  }))
+  userApis = nextApis
+  scripts = nextScripts
+  saveData()
+}

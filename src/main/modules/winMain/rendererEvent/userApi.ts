@@ -3,6 +3,8 @@ import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { mainHandle } from '@common/mainIpc'
 import {
   getApiList,
+  getUserApiData,
+  overwriteUserApiData,
   importApi,
   exportApi,
   removeApi,
@@ -35,6 +37,14 @@ export default () => {
 
   mainHandle<LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_list, async() => {
     return getApiList()
+  })
+
+  mainHandle<LX.WebDAVSync.UserApiData>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_data, async() => {
+    return getUserApiData()
+  })
+
+  mainHandle<LX.WebDAVSync.UserApiData, LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.overwrite_user_api_data, async({ params }) => {
+    return overwriteUserApiData(params)
   })
 
   mainHandle<LX.UserApi.UserApiStatus>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_status, async() => {

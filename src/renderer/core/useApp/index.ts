@@ -15,6 +15,7 @@ import usePlayer from './usePlayer'
 import useSettingSync from './useSettingSync'
 import { useRouter } from '@common/utils/vueRouter'
 import handleListAutoUpdate from './listAutoUpdate'
+import { initWebDAVSync } from '@renderer/core/webdavSync'
 
 
 export default () => {
@@ -68,6 +69,7 @@ export default () => {
       void initSyncService()
       void initOpenAPI()
       void initStatusbarLyric()
+      initWebDAVSync()
       sendInited()
 
       handleListAutoUpdate()
