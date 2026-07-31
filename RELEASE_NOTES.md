@@ -1,6 +1,10 @@
-# LX Music 增强版 2.13.0-enhanced.11-beta.8（测试版）
+# LX Music 增强版 2.13.0-enhanced.11-beta.9（测试版）
 
-本测试版新增 WebDAV 数据同步，并继续完善哔哩哔哩平台、播放队列管理与音质展示。测试版可能存在不稳定，建议先备份数据。
+本测试版修复 Win7 专用包的网易云平台响应解析问题，并继续包含 beta.8 的 WebDAV 数据同步等更新。测试版可能存在不稳定，建议先备份数据。
+
+## beta.9 修复
+
+- 修复 Win7 专用安装包与绿色包未正确解析部分 JSON 响应，导致网易云二维码登录及其他平台功能无法使用的问题。
 
 ## beta.8 新增
 
@@ -89,4 +93,4 @@
 - 识曲决策单元测试、代码检查、类型检查、主进程与渲染进程生产构建均通过。
 - 已知边界：192k 以上音频流取决于视频是否提供高阶音轨及账号大会员权限；未提供时显示实测最高档位 192K。
 
-完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.8](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.8)
+完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.9](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.9)
