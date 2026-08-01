@@ -14,7 +14,11 @@ dd(v-if="playEngine == 'mpv'")
     div(:class="$style.formItem")
       h3#basic_mpv_path(:class="$style.formLabel") {{ $t('setting__play_mpv_path') }}
       base-input(v-model="mpvPath" :class="$style.formInput" :placeholder="$t('setting__play_mpv_path_placeholder')" @update:model-value="updateSetting({'player.mpv.path': $event})")
-      p(:class="$style.formDesc") {{ $t('setting__play_mpv_path_order') }}
+      p(:class="$style.formDesc")
+        template(v-if="!mpvPath")
+          span(:class="$style.statusIcon") ✓ {{ $t('setting__play_mpv_path_auto_found') }}
+          | ·
+        | {{ $t('setting__play_mpv_path_order') }}
     div(:class="$style.formItem")
       h3#basic_mpv_extra_args(:class="$style.formLabel") {{ $t('setting__play_mpv_extra_args') }}
       base-input(v-model="mpvExtraArgs" :class="$style.formInput" :placeholder="$t('setting__play_mpv_extra_args_placeholder')" @update:model-value="handleMpvExtraArgsChange")
@@ -26,7 +30,7 @@ dd(v-if="playEngine == 'audirvana'")
 dd
   .gap-top(v-if="playEngine == 'mpv'")
     base-checkbox(id="setting_mpv_bit_perfect" :model-value="appSetting['player.mpv.bitPerfectMode']" :label="$t('setting__play_mpv_bit_perfect')" @update:model-value="handleMpvBitPerfectChange")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_mpv_bit_perfect_tip')" :title="$t('setting__play_mpv_bit_perfect_tip')")
   .gap-top
     base-checkbox(id="setting_player_startup_auto_play" :model-value="appSetting['player.startupAutoPlay']" :label="$t('setting__play_startup_auto_play')" @update:model-value="updateSetting({'player.startupAutoPlay': $event})")
   .gap-top
@@ -35,7 +39,7 @@ dd
     base-checkbox(id="setting_player_save_play_time" :model-value="appSetting['player.isSavePlayTime']" :label="$t('setting__play_save_play_time')" @update:model-value="updateSetting({'player.isSavePlayTime': $event})")
   .gap-top
     base-checkbox(id="setting_player_auto_clean_played_list" :model-value="appSetting['player.isAutoCleanPlayedList']" :label="$t('setting__play_auto_clean_played_list')" @update:model-value="updateSetting({'player.isAutoCleanPlayedList': $event})")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_auto_clean_played_list_tip')")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_auto_clean_played_list_tip')" :title="$t('setting__play_auto_clean_played_list_tip')")
   .gap-top
     base-checkbox(id="setting_player_lyric_transition" :model-value="appSetting['player.isShowLyricTranslation']" :label="$t('setting__play_lyric_transition')" @update:model-value="updateSetting({'player.isShowLyricTranslation': $event})")
   .gap-top
@@ -54,12 +58,12 @@ dd
     base-checkbox(id="setting_player_lyric_s2t" :model-value="appSetting['player.isS2t']" :label="$t('setting__play_lyric_s2t')" @update:model-value="updateSetting({'player.isS2t': $event})")
   .gap-top
     base-checkbox(id="setting_player_lyric_play_lxlrc" :model-value="appSetting['player.isPlayLxlrc']" :label="$t('setting__play_lyric_lxlrc')" @update:model-value="updateSetting({'player.isPlayLxlrc': $event})")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_lyric_lxlrc_tip')")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_lyric_lxlrc_tip')" :title="$t('setting__play_lyric_lxlrc_tip')")
   .gap-top
     base-checkbox(id="setting_player_showTaskProgess" :model-value="appSetting['player.isShowTaskProgess']" :label="$t('setting__play_task_bar')" @update:model-value="updateSetting({'player.isShowTaskProgess': $event})")
   .gap-top(v-if="isMac")
     base-checkbox(id="setting_player_showStatusBarLyric" :model-value="appSetting['player.isShowStatusBarLyric']" :label="$t('setting__play_statusbar_lyric')" @update:model-value="updateSetting({'player.isShowStatusBarLyric': $event})")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_statusbar_lyric_tip')")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_statusbar_lyric_tip')" :title="$t('setting__play_statusbar_lyric_tip')")
   .gap-top
     base-checkbox(id="setting_player_isMaxOutputChannelCount" :model-value="isMaxOutputChannelCount" :label="$t('setting__play_max_output_channel_count')" @update:model-value="handleUpdateMaxOutputChannelCount")
   .gap-top
@@ -394,10 +398,12 @@ export default {
 @import '@renderer/assets/styles/layout.less';
 
 .engineSection {
-  // 复用全局 dd > div 的 15px 水平内边距，使标题、下拉框、说明左对齐
+  // 与其他设置项保持统一的垂直布局
 }
 .engineSelect {
-  --selection-width: 260px;
+  --selection-width: 520px;
+  width: 520px;
+  max-width: 100%;
   margin-top: 3px;
 }
 .engineDesc {
@@ -409,11 +415,12 @@ export default {
 }
 
 .mpvSettings {
-  margin-top: 16px;
+  margin-top: 12px;
+  margin-bottom: 14px;
 }
 
 .formItem {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   &:last-child {
     margin-bottom: 0;
   }
@@ -421,7 +428,7 @@ export default {
 
 .formLabel {
   display: block;
-  margin-bottom: 4px;
+  margin: 0 0 3px !important;
   font-size: 14px;
   line-height: 1.4;
   color: var(--color-button-font);
@@ -431,6 +438,15 @@ export default {
   width: 100%;
   max-width: 520px;
   box-sizing: border-box;
+}
+
+.statusIcon {
+  color: var(--color-success, #4caf50);
+  font-weight: bold;
+}
+
+:global(.help-icon) {
+  vertical-align: -0.15em;
 }
 
 .formDesc {

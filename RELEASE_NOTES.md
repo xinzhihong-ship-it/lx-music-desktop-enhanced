@@ -1,6 +1,14 @@
-# LX Music 增强版 2.13.0-enhanced.11-beta.10（测试版）
+# LX Music 增强版 2.13.0-enhanced.11-beta.11（测试版）
 
-本测试版修复内置 mpv 首次启动超时，并完善播放详情页的播放队列与音质/引擎显示。测试版可能存在不稳定，建议先备份数据。
+本测试版优化 MPV 播放设置界面，支持自定义 mpv 路径并恢复帮助提示。测试版可能存在不稳定，建议先备份数据。
+
+## beta.11 优化
+
+- 优化播放设置页面布局、间距和字体层级。
+- MPV 可执行文件路径输入框始终可用，支持填写自定义路径，留空时自动查找。
+- 恢复 MPV 设置帮助图标的悬停提示。
+
+## beta.10 内容
 
 ## beta.10 修复与优化
 
@@ -99,4 +107,4 @@
 - 识曲决策单元测试、代码检查、类型检查、主进程与渲染进程生产构建均通过。
 - 已知边界：192k 以上音频流取决于视频是否提供高阶音轨及账号大会员权限；未提供时显示实测最高档位 192K。
 
-完整代码差异：[v2.13.0-enhanced.11-beta.9...v2.13.0-enhanced.11-beta.10](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.11-beta.9...v2.13.0-enhanced.11-beta.10)
+完整代码差异：[v2.13.0-enhanced.11-beta.10...v2.13.0-enhanced.11-beta.11](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.11-beta.10...v2.13.0-enhanced.11-beta.11)
