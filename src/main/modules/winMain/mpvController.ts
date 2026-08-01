@@ -207,17 +207,22 @@ export class MpvController {
       if (!this.isDestroyed) this.sendEvent('error', { message })
     })
 
-    await this.waitForIpc()
-    await this.command(['observe_property', 1, 'time-pos']).catch(err => log.warn(err))
-    await this.command(['observe_property', 2, 'duration']).catch(err => log.warn(err))
-    await this.command(['observe_property', 3, 'pause']).catch(err => log.warn(err))
-    await this.command(['observe_property', 4, 'idle-active']).catch(err => log.warn(err))
-    if (this.cachedVolume != null) {
-      await this.command(['set_property', 'volume', this.cachedVolume]).catch(err => log.warn(err))
+    try {
+      await this.waitForIpc()
+      await this.command(['observe_property', 1, 'time-pos']).catch(err => log.warn(err))
+      await this.command(['observe_property', 2, 'duration']).catch(err => log.warn(err))
+      await this.command(['observe_property', 3, 'pause']).catch(err => log.warn(err))
+      await this.command(['observe_property', 4, 'idle-active']).catch(err => log.warn(err))
+      if (this.cachedVolume != null) {
+        await this.command(['set_property', 'volume', this.cachedVolume]).catch(err => log.warn(err))
+      }
+      this.sendEvent('started', mpvPath)
+      this.cachedPathInfo = mpvPath
+      return mpvPath
+    } catch (err) {
+      await this.destroy()
+      throw err
     }
-    this.sendEvent('started', mpvPath)
-    this.cachedPathInfo = mpvPath
-    return mpvPath
   }
 
   private buildArgs(): string[] {
@@ -269,7 +274,7 @@ export class MpvController {
 
   private async waitForIpc(): Promise<void> {
     const startTime = Date.now()
-    while (Date.now() - startTime < 5000) {
+    while (Date.now() - startTime < 15000) {
       if (this.startError) throw this.startError
       if (this.process?.exitCode != null) throw new Error('mpv exited before IPC became ready')
       try {

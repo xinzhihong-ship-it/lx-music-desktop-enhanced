@@ -1,6 +1,12 @@
-# LX Music 增强版 2.13.0-enhanced.11-beta.9（测试版）
+# LX Music 增强版 2.13.0-enhanced.11-beta.10（测试版）
 
-本测试版修复 Win7 专用包的网易云平台响应解析问题，并继续包含 beta.8 的 WebDAV 数据同步等更新。测试版可能存在不稳定，建议先备份数据。
+本测试版修复内置 mpv 首次启动超时，并完善播放详情页的播放队列与音质/引擎显示。测试版可能存在不稳定，建议先备份数据。
+
+## beta.10 修复与优化
+
+- 增加内置 mpv IPC 启动等待时间，并在启动失败时清理残留进程，减少首次播放提示 `mpv IPC connect timeout` 的问题。
+- 播放详情页底部控制栏增加播放队列入口。
+- 播放详情页歌曲信息下显示当前音质与播放引擎，例如 `flac · MPV`。
 
 ## beta.9 修复
 
@@ -93,4 +99,4 @@
 - 识曲决策单元测试、代码检查、类型检查、主进程与渲染进程生产构建均通过。
 - 已知边界：192k 以上音频流取决于视频是否提供高阶音轨及账号大会员权限；未提供时显示实测最高档位 192K。
 
-完整代码差异：[v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.9](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.10...v2.13.0-enhanced.11-beta.9)
+完整代码差异：[v2.13.0-enhanced.11-beta.9...v2.13.0-enhanced.11-beta.10](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.11-beta.9...v2.13.0-enhanced.11-beta.10)

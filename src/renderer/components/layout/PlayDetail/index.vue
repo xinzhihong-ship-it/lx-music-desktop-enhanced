@@ -15,6 +15,8 @@ transition(enter-active-class="animated slideInRight" leave-active-class="animat
             p {{ $t('player__music_name') }}{{ musicInfo.name }}
             p {{ $t('player__music_singer') }}{{ musicInfo.singer }}
             p(v-if="musicInfo.album") {{ $t('player__music_album') }}{{ musicInfo.album }}
+            p(:class="$style.quality")
+              play-quality-tag
 
       transition(enter-active-class="animated fadeIn" leave-active-class="animated fadeOut")
         LyricPlayer(v-if="visibled")
@@ -48,6 +50,7 @@ import ControlBtnsRightHeader from './ControlBtnsRightHeader.vue'
 import { registerAutoHideMounse, unregisterAutoHideMounse } from './autoHideMounse'
 import { appSetting } from '@renderer/store/setting'
 import { closeWindow, maxWindow, minWindow, setFullScreen } from '@renderer/utils/ipc'
+import PlayQualityTag from '../PlayBar/PlayQualityTag.vue'
 
 export default {
   name: 'CorePlayDetail',
@@ -57,6 +60,7 @@ export default {
     LyricPlayer,
     PlayBar,
     MusicComment,
+    PlayQualityTag,
   },
   setup() {
     const visibled = ref(false)
@@ -258,6 +262,10 @@ export default {
   max-width: 300px;
   margin-top: 15px;
   padding-bottom: 15px;
+
+  .quality {
+    margin-top: 8px;
+  }
   min-height: 0;
   p {
     line-height: 1.5;
