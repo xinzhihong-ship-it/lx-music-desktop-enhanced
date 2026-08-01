@@ -501,8 +501,8 @@ export const getSimilarSongs = async(
 ): Promise<LX.Music.MusicInfoOnline[]> => {
   // 推荐接口支持匿名请求，未登录时使用游客身份（结果仅缺少个性化权重）
   const session = sessionValue?.source === 'tx' ? sessionValue : createGuestSession()
-  const resolvedSongId = await getNumericSongId(session, seedMid).catch(() => 0)
-  const songId = resolvedSongId || Number(seedSongId)
+  const resolvedSongId = /^\d+$/.test(seedMid) ? 0 : await getNumericSongId(session, seedMid).catch(() => 0)
+  const songId = resolvedSongId || Number(seedSongId) || Number(seedMid)
   if (!Number.isInteger(songId) || songId <= 0) throw new Error('QQ 音乐歌曲缺少数字 ID')
   const body = {
     comm: {

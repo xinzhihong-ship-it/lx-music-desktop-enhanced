@@ -42,7 +42,7 @@
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
                   <span v-else-if="item.meta._qualitys['192k']" class="no-select badge badge-theme-secondary">{{ $t('tag__hq_192k') }}</span>
                   <span v-else-if="item.meta._qualitys.risk" class="no-select badge badge-theme-tertiary">{{ $t('tag__risk_control') }}</span>
-                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.source }}</span>
+                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.meta.platformSources?.join(' · ') || item.source }}</span>
                 </div>
                 <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
                 <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
@@ -75,7 +75,7 @@
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
                   <span v-else-if="item.meta._qualitys['192k']" class="no-select badge badge-theme-secondary">{{ $t('tag__hq_192k') }}</span>
                   <span v-else-if="item.meta._qualitys.risk" class="no-select badge badge-theme-tertiary">{{ $t('tag__risk_control') }}</span>
-                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.source }}</span>
+                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.meta.platformSources?.join(' · ') || item.source }}</span>
                 </div>
                 <div class="list-item-cell" style="flex: 0 0 24%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
                 <div class="list-item-cell" style="flex: 0 0 27%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>

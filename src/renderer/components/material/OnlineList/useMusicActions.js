@@ -30,7 +30,7 @@ export default ({ props }) => {
       path: '/similar',
       query: {
         source: info.source,
-        ...(isPlatformSource ? { songId: String(info.meta.songId) } : {}),
+        ...(isPlatformSource ? { songId: String(info.source === 'tx' ? (info.meta.id ?? info.meta.songId) : info.meta.songId) } : {}),
         platformId: info.source === 'tx' ? String(info.meta.id ?? '') : '',
         hash: info.source === 'kg' ? String(info.meta.hash ?? '') : '',
         name: info.name,

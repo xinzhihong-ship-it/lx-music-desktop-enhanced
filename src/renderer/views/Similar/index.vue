@@ -7,6 +7,7 @@
           ? $t('similar_songs__platform_tip', { platform: platformName })
           : $t(hasPartialErrors ? 'list__load_failed' : 'similar_songs__unavailable') }}
       </span>
+      <base-btn :class="$style.back" @click="handleBack">{{ $t('back') }}</base-btn>
     </div>
     <div :class="$style.list">
       <material-online-list
@@ -26,7 +27,7 @@
 
 <script setup lang="ts">
 import { markRaw, ref, watch } from '@common/utils/vueTools'
-import { useRoute } from '@common/utils/vueRouter'
+import { useRoute, useRouter } from '@common/utils/vueRouter'
 import { useI18n } from '@renderer/plugins/i18n'
 import { loadSimilarSongs, type SimilarSongSeed } from '@renderer/core/music/similar'
 import { LIST_IDS } from '@common/constants'
@@ -36,6 +37,7 @@ import { assertApiSupport } from '@renderer/store/utils'
 import { sourceNames } from '@renderer/store'
 
 const route = useRoute()
+const router = useRouter()
 const t = useI18n()
 const listRef = ref<any>(null)
 const mode = ref<LX.Music.SimilarSongsResult['mode'] | null>(null)
@@ -85,7 +87,7 @@ const load = async() => {
     if (token !== requestToken) return
     mode.value = result.mode
     hasPartialErrors.value = Boolean(result.partialErrors?.length)
-    platformName.value = result.platform ? sourceNames.value[result.platform] : ''
+    platformName.value = result.platforms?.map(platform => sourceNames.value[platform as LX.OnlineSource]).filter(Boolean).join('、') ?? '多平台'
     listInfo.value.list = result.list.map(item => markRaw(item))
     listInfo.value.total = result.list.length
     listInfo.value.noItemLabel = result.list.length
@@ -98,6 +100,10 @@ const load = async() => {
     console.error('[similar songs] load failed:', error)
     listInfo.value.noItemLabel = t('list__load_failed')
   }
+}
+
+const handleBack = () => {
+  router.back()
 }
 
 const handlePlayList = async(index: number) => {
@@ -135,6 +141,10 @@ watch(() => route.fullPath, async() => {
 .tip {
   opacity: .65;
   font-size: 12px;
+}
+
+.back {
+  margin-left: auto;
 }
 
 .list {

@@ -139,6 +139,7 @@ declare namespace LX {
       mode: 'platform' | 'unavailable'
       seedSource: LX.Source
       platform?: LX.OnlineSource
+      platforms?: LX.OnlineSource[]
       partialErrors?: SimilarSongsPartialError[]
     }
 
