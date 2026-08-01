@@ -2,10 +2,18 @@
   <div :class="$style.songList">
     <!-- <transition enter-active-class="animated-fast fadeIn" leave-active-class="animated-fast fadeOut"> -->
     <div :class="$style.list">
+      <div v-if="selectionMode" :class="$style.selectionToolbar">
+        <base-btn :class="$style.selectionBtn" @click="selectAll">{{ $t('list__select_all') }}</base-btn>
+        <base-btn :class="$style.selectionBtn" @click="removeAllSelect">{{ $t('list__select_none') }}</base-btn>
+        <base-btn :class="$style.selectionBtn" :disabled="!selectedList.length" @click="handleBatchPlayNext">{{ $t('list__play_next') }}</base-btn>
+        <base-btn :class="$style.selectionBtn" :disabled="!selectedList.length" @click="handleBatchAddToPlayList">{{ $t('list__add_to_play_list') }}</base-btn>
+        <span :class="$style.selectionCount">{{ $t('list__selected_count', { count: selectedList.length }) }}</span>
+      </div>
       <div class="thead">
         <table>
           <thead>
             <tr v-if="actionButtonsVisible">
+              <th v-if="selectionMode" class="num" style="width: 5%;">✓</th>
               <th class="num" style="width: 5%;">#</th>
               <th class="nobreak">{{ $t('music_name') }}</th>
               <th class="nobreak" style="width: 22%;">{{ $t('music_singer') }}</th>
@@ -14,6 +22,7 @@
               <th class="nobreak" style="width: 16%;">{{ $t('action') }}</th>
             </tr>
             <tr v-else>
+              <th v-if="selectionMode" class="num" style="width: 5%;">✓</th>
               <th class="num" style="width: 5%;">#</th>
               <th class="nobreak">{{ $t('music_name') }}</th>
               <th class="nobreak" style="width: 24%;">{{ $t('music_singer') }}</th>
@@ -31,6 +40,9 @@
                 class="list-item" :class="[{ selected: rightClickSelectedIndex == index || locatedIndex == index }, { active: selectedList.includes(item) }]"
                 @click="handleListItemClick($event, index)" @contextmenu="handleListItemRightClick($event, index)"
               >
+                <div v-if="selectionMode" class="list-item-cell no-select num" style="flex: 0 0 5%;" @click.stop>
+                  <base-checkbox :id="`songlist_select_action_${index}`" :model-value="selectedList.includes(item)" :aria-label="item.name" @update:model-value="handleCheckboxChange(index, $event)" />
+                </div>
                 <div class="list-item-cell no-select num" style="flex: 0 0 5%;" @click.stop>{{ index + 1 }}</div>
                 <div class="list-item-cell auto name">
                   <span class="select name" :aria-label="item.name">{{ item.name }}</span>
@@ -64,6 +76,9 @@
                 class="list-item" :class="[{ selected: rightClickSelectedIndex == index || locatedIndex == index }, { active: selectedList.includes(item) }]"
                 @click="handleListItemClick($event, index)" @contextmenu="handleListItemRightClick($event, index)"
               >
+                <div v-if="selectionMode" class="list-item-cell no-select num" style="flex: 0 0 5%;" @click.stop>
+                  <base-checkbox :id="`songlist_select_${index}`" :model-value="selectedList.includes(item)" :aria-label="item.name" @update:model-value="handleCheckboxChange(index, $event)" />
+                </div>
                 <div class="list-item-cell no-select num" style="flex: 0 0 5%;" @click.stop>{{ index + 1 }}</div>
                 <div class="list-item-cell auto name">
                   <span class="select name" :aria-label="item.name">{{ item.name }}</span>
@@ -156,6 +171,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    selectionMode: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['show-menu', 'play-list', 'togglePage', 'remove-from-platform'],
   setup(props, { emit }) {
@@ -170,6 +189,7 @@ export default {
       listItemHeight,
       handleSelectData,
       removeAllSelect,
+      selectAll,
     } = useList({ props, listRef })
 
     const {
@@ -225,10 +245,26 @@ export default {
       handleDislikeMusic,
     })
 
+    const handleBatchPlayNext = () => {
+      if (!selectedList.value.length) return
+      const index = props.list.indexOf(selectedList.value[0])
+      if (index > -1) handlePlayMusicNext(index, false)
+    }
+    const handleBatchAddToPlayList = () => {
+      if (!selectedList.value.length) return
+      const index = props.list.indexOf(selectedList.value[0])
+      if (index > -1) void handleAddToPlayList(index, false)
+    }
     const handleListItemClick = (event, index) => {
       if (rightClickSelectedIndex.value > -1) return
       handleSelectData(index)
       doubleClickPlay(index)
+    }
+    const handleCheckboxChange = (index, checked) => {
+      const item = props.list[index]
+      const selectedIndex = selectedList.value.indexOf(item)
+      if (checked && selectedIndex < 0) selectedList.value.push(item)
+      else if (!checked && selectedIndex > -1) selectedList.value.splice(selectedIndex, 1)
     }
     const handleListItemRightClick = (event, index) => {
       rightClickSelectedIndex.value = index
@@ -282,7 +318,11 @@ export default {
     return {
       listItemHeight,
       handleListItemClick,
+      handleBatchPlayNext,
+      handleBatchAddToPlayList,
       selectedList,
+      selectAll,
+      handleCheckboxChange,
       handleListItemRightClick,
       removeAllSelect,
       handleListBtnClick,
@@ -327,6 +367,24 @@ export default {
   :global(.thead) {
     padding-right: 10px;
   }
+}
+
+.selectionToolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.selectionBtn {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.selectionCount {
+  color: var(--color-font-label);
+  font-size: 12px;
 }
 
 .list {

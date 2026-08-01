@@ -51,6 +51,13 @@
               </button>
             </div>
           </header>
+          <div v-if="canEditQueue" :class="$style.selectionToolbar">
+            <button type="button" @click="selectAllQueue">{{ $t('list__select_all') }}</button>
+            <button type="button" :disabled="!selectedQueueItems.length" @click="clearQueueSelection">{{ $t('list__select_none') }}</button>
+            <span v-if="selectedQueueItems.length" :class="$style.selectionCount">{{ $t('list__selected_count', { count: selectedQueueItems.length }) }}</span>
+            <button v-if="selectedQueueItems.length" type="button" @click="collectSelected">♡ {{ $t('list__collect') }}</button>
+            <button v-if="selectedQueueItems.length" type="button" @click="removeSelected">× {{ $t('list__remove') }}</button>
+          </div>
           <section :class="$style.current">
             <p v-if="!filteredQueue.length" :class="$style.empty">{{ $t('no_item') }}</p>
             <base-virtualized-list
@@ -62,15 +69,22 @@
               :container-class="`${$style.queueScroll} music-list-scroll`"
             >
               <template #default="{ item, index }">
-                <div :class="[$style.item, getSourceIndex(index) == currentIndex ? $style.active : null, getSourceIndex(index) == locatedIndex ? 'selected' : null]">
+                <div
+                  :class="[$style.item, getSourceIndex(index) == currentIndex ? $style.active : null, getSourceIndex(index) == locatedIndex ? 'selected' : null, isQueueSelected(item) ? $style.selected : null]"
+                  :aria-selected="isQueueSelected(item)"
+                >
                   <button
                     type="button"
                     :class="$style.itemBody"
                     :title="`${getInfo(item).name} - ${getInfo(item).singer}`"
+                    @click="handleQueueSelect($event, getSourceIndex(index))"
                     @dblclick="playIndex(getSourceIndex(index))"
                   >
                     <span :class="$style.index">
-                      <svg v-if="getSourceIndex(index) == currentIndex" viewBox="0 0 24 24">
+                      <svg v-if="isQueueSelected(item)" viewBox="0 0 448 512">
+                        <use xlink:href="#icon-check-true" />
+                      </svg>
+                      <svg v-else-if="getSourceIndex(index) == currentIndex" viewBox="0 0 24 24">
                         <use xlink:href="#icon-audio-wave" />
                       </svg>
                       <template v-else>{{ getSourceIndex(index) + 1 }}</template>
@@ -81,6 +95,31 @@
                     </span>
                     <span :class="$style.source">{{ getSourceName(item) }}</span>
                   </button>
+                  <button
+                    v-if="canEditQueue"
+                    type="button"
+                    :class="$style.iconBtn"
+                    :aria-label="$t('player__queue_move_up')"
+                    :title="$t('player__queue_move_up')"
+                    :disabled="getSourceIndex(index) <= 0"
+                    @click="moveQueueItem(getSourceIndex(index), -1)"
+                  >↑</button>
+                  <button
+                    v-if="canEditQueue"
+                    type="button"
+                    :class="$style.iconBtn"
+                    :aria-label="$t('player__queue_move_down')"
+                    :title="$t('player__queue_move_down')"
+                    :disabled="getSourceIndex(index) >= queue.length - 1"
+                    @click="moveQueueItem(getSourceIndex(index), 1)"
+                  >↓</button>
+                  <button
+                    type="button"
+                    :class="$style.iconBtn"
+                    :aria-label="$t('list__collect')"
+                    :title="$t('list__collect')"
+                    @click="collectQueueItem(getInfo(item))"
+                  >♡</button>
                   <button
                     v-if="canEditQueue"
                     type="button"
@@ -120,6 +159,29 @@
                 <span>{{ getInfo(item.musicInfo).name }} - {{ getInfo(item.musicInfo).singer }}</span>
                 <button
                   type="button"
+                  :class="$style.iconBtn"
+                  :aria-label="$t('player__queue_move_up')"
+                  :title="$t('player__queue_move_up')"
+                  :disabled="index <= 0"
+                  @click="moveTempPlayList(index, -1)"
+                >↑</button>
+                <button
+                  type="button"
+                  :class="$style.iconBtn"
+                  :aria-label="$t('player__queue_move_down')"
+                  :title="$t('player__queue_move_down')"
+                  :disabled="index >= tempPlayList.length - 1"
+                  @click="moveTempPlayList(index, 1)"
+                >↓</button>
+                <button
+                  type="button"
+                  :class="$style.iconBtn"
+                  :aria-label="$t('list__collect')"
+                  :title="$t('list__collect')"
+                  @click="collectQueueItem(item.musicInfo)"
+                >♡</button>
+                <button
+                  type="button"
                   :class="$style.removeBtn"
                   :aria-label="$t('player__queue_remove')"
                   :title="$t('player__queue_remove')"
@@ -143,12 +205,13 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from '@common/utils/vueTools'
 import { playInfo, playMusicInfo, tempPlayList } from '@renderer/store/player/state'
 import { getList, clearTempPlayeList, removeTempPlayList } from '@renderer/store/player/action'
-import { removeListMusics, clearListMusics } from '@renderer/store/list/action'
+import { addListMusics, removeListMusics, clearListMusics, updateListMusicsPosition } from '@renderer/store/list/action'
 import { playList } from '@renderer/core/player/action'
 import { sourceNames } from '@renderer/store'
 import { dialog } from '@renderer/plugins/Dialog'
 import { useI18n } from '@renderer/plugins/i18n'
 import { LIST_IDS } from '@common/constants'
+import { loveList } from '@renderer/store/list/state'
 import SearchList from '@renderer/views/List/MusicList/components/SearchList.vue'
 import { filterMusicRows } from '@renderer/utils/filterMusicRows'
 
@@ -163,6 +226,8 @@ defineEmits(['close'])
 const t = useI18n()
 const listRef = ref(null)
 const filterText = ref('')
+const selectedQueueItems = ref([])
+let lastSelectedIndex = -1
 const isShowLocator = ref(false)
 const locatedIndex = ref(-1)
 const listVersion = ref(0)
@@ -189,6 +254,43 @@ const currentIndex = computed(() => {
   return queue.value.findIndex(item => item.id == playMusicInfo.musicInfo?.id)
 })
 const getSourceName = item => sourceNames.value[getInfo(item).source] || getInfo(item).source
+const isQueueSelected = item => selectedQueueItems.value.some(selected => selected.id == getInfo(item).id)
+const selectAllQueue = () => {
+  selectedQueueItems.value = queue.value.map(getInfo)
+  lastSelectedIndex = queue.value.length - 1
+}
+const clearQueueSelection = () => {
+  selectedQueueItems.value = []
+  lastSelectedIndex = -1
+}
+const handleQueueSelect = (event, index) => {
+  if (!canEditQueue.value) return
+  const item = queue.value[index]
+  if (!item) return
+  const info = getInfo(item)
+  if (event.shiftKey && lastSelectedIndex > -1) {
+    const start = Math.min(lastSelectedIndex, index)
+    const end = Math.max(lastSelectedIndex, index)
+    selectedQueueItems.value = queue.value.slice(start, end + 1).map(getInfo)
+  } else if (event.metaKey || event.ctrlKey) {
+    const selectedIndex = selectedQueueItems.value.findIndex(selected => selected.id == info.id)
+    if (selectedIndex > -1) selectedQueueItems.value.splice(selectedIndex, 1)
+    else selectedQueueItems.value.push(info)
+    lastSelectedIndex = index
+  } else if (selectedQueueItems.value.length) {
+    selectedQueueItems.value = []
+    lastSelectedIndex = index
+  }
+}
+const collectSelected = () => {
+  if (selectedQueueItems.value.length) void addListMusics(loveList.id, [...selectedQueueItems.value])
+  clearQueueSelection()
+}
+const removeSelected = () => {
+  if (!canEditQueue.value || !selectedQueueItems.value.length) return
+  void removeListMusics({ listId: playInfo.playerListId, ids: selectedQueueItems.value.map(item => item.id) })
+  clearQueueSelection()
+}
 const locateCurrent = () => {
   if (currentIndex.value < 0) return
   filterText.value = ''
@@ -201,6 +303,22 @@ const playIndex = index => {
   playList(playInfo.playerListId, index)
 }
 const canEditQueue = computed(() => !!playInfo.playerListId && playInfo.playerListId != LIST_IDS.DOWNLOAD)
+const moveQueueItem = (index, delta) => {
+  if (!canEditQueue.value) return
+  const item = queue.value[index]
+  const target = index + delta
+  if (!item || target < 0 || target >= queue.value.length) return
+  void updateListMusicsPosition({ listId: playInfo.playerListId, position: target, ids: [getInfo(item).id] })
+}
+const moveTempPlayList = (index, delta) => {
+  const target = index + delta
+  if (index < 0 || target < 0 || target >= tempPlayList.length) return
+  const [item] = tempPlayList.splice(index, 1)
+  tempPlayList.splice(target, 0, item)
+}
+const collectQueueItem = item => {
+  if (item) void addListMusics(loveList.id, [item])
+}
 const removeQueueItem = index => {
   if (!canEditQueue.value) return
   const item = queue.value[index]
@@ -279,9 +397,43 @@ onBeforeUnmount(() => {
   background: var(--color-primary-light-100-alpha-100);
   border-bottom: 1px solid var(--color-primary-light-400-alpha-700);
 }
-.title, .laterTitle, .headerActions {
+.title, .laterTitle {
   display: flex;
   align-items: center;
+  gap: 4px;
+}
+.selectionToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 38px;
+  box-sizing: border-box;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-primary-light-400-alpha-700);
+  background: var(--color-primary-light-100-alpha-100);
+
+  button {
+    border: 0;
+    border-radius: 4px;
+    min-width: 26px;
+    height: 24px;
+    padding: 2px 6px;
+    color: var(--color-button-font);
+    background: var(--color-button-background);
+    cursor: pointer;
+    font-size: 11px;
+    white-space: nowrap;
+    &:disabled {
+      cursor: default;
+      opacity: .4;
+    }
+  }
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  flex: none;
 }
 .filterInput {
   flex: 1;
@@ -385,6 +537,17 @@ onBeforeUnmount(() => {
   transition: background-color @transition-fast;
   &:hover {
     background: var(--color-primary-light-400-alpha-700);
+  }
+}
+.selected {
+  background: var(--color-primary-light-400-alpha-700);
+  box-shadow: inset 3px 0 0 var(--color-primary);
+  .index {
+    color: var(--color-primary);
+    opacity: 1;
+  }
+  .info strong {
+    color: var(--color-primary);
   }
 }
 .itemBody {

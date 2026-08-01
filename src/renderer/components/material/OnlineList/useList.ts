@@ -68,6 +68,9 @@ export default ({ props, listRef }: {
     removeAllSelect()
     selectedList.value = [...props.list]
   }
+  const selectAll = () => {
+    handleSelectAllData()
+  }
   const keyEvent = useKeyEvent({ handleSelectAllData, listRef })
 
   const handleSelectData = (clickIndex: number) => {
@@ -110,6 +113,7 @@ export default ({ props, listRef }: {
     selectedList,
     listItemHeight,
     removeAllSelect,
+    selectAll,
     handleSelectData,
   }
 }

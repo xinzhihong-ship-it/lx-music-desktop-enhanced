@@ -11,15 +11,15 @@
       <div :class="$style.songListHeaderRight">
         <base-btn
           :class="$style.headerRightBtn"
-          :disabled="!!listDetailInfo.noItemLabel"
-          @click="playSongListDetail(listDetailInfo.id, listDetailInfo.source, listDetailInfo.list)"
+          :disabled="!!listDetailInfo.noItemLabel || playing"
+          @click="handlePlay"
         >
           {{ $t('list__play') }}
         </base-btn>
         <base-btn
           :class="$style.headerRightBtn"
-          :disabled="!!listDetailInfo.noItemLabel"
-          @click="addSongListDetail(listDetailInfo.id, listDetailInfo.source, listDetailInfo.info.name)"
+          :disabled="!!listDetailInfo.noItemLabel || collecting"
+          @click="handleCollect"
         >
           {{ $t('list__collect') }}
         </base-btn>
@@ -34,8 +34,14 @@
         :total="listDetailInfo.total"
         :list="listDetailInfo.list"
         :no-item="listDetailInfo.noItemLabel"
+        selection-mode
         @play-list="handlePlayList"
         @toggle-page="togglePage"
+      />
+      <common-list-add-multiple-modal
+        v-model:show="isShowListAdd"
+        :music-list="selectedMusicList"
+        teleport="#view"
       />
     </div>
   </div>
@@ -44,7 +50,7 @@
 <script lang="ts">
 import { ref, watch } from '@common/utils/vueTools'
 import { listDetailInfo } from '@renderer/store/songList/state'
-import { setVisibleListDetail } from '@renderer/store/songList/action'
+import { getListDetailAll, setVisibleListDetail } from '@renderer/store/songList/action'
 import { useRouter } from '@common/utils/vueRouter'
 import { addSongListDetail, playSongListDetail } from './action'
 import useList from './useList'
@@ -108,6 +114,10 @@ export default {
   beforeRouteUpdate: verifyQueryParams,
   setup() {
     const router = useRouter()
+    const isShowListAdd = ref(false)
+    const selectedMusicList = ref<LX.Music.MusicInfoOnline[]>([])
+    const collecting = ref(false)
+    const playing = ref(false)
 
     const {
       listRef,
@@ -119,6 +129,34 @@ export default {
 
     const togglePage = (page: number) => {
       void getListData(source.value, id.value, page, refresh.value)
+    }
+
+    const handlePlay = async() => {
+      if (playing.value) return
+      playing.value = true
+      try {
+        const selected = listRef.value?.selectedList ?? []
+        const list = selected.length ? [...selected] : await getListDetailAll(id.value, source.value)
+        if (list.length) await playSongListDetail(id.value, source.value, list)
+      } finally {
+        playing.value = false
+      }
+    }
+
+    const handleCollect = async() => {
+      if (collecting.value) return
+      collecting.value = true
+      try {
+        const allSongs = await getListDetailAll(id.value, source.value)
+        const selected = listRef.value?.selectedList ?? []
+        const selectedIds = new Set(selected.map((song: LX.Music.MusicInfoOnline) => song.id))
+        selectedMusicList.value = selected.length
+          ? allSongs.filter(song => selectedIds.has(song.id))
+          : allSongs
+        if (selectedMusicList.value.length) isShowListAdd.value = true
+      } finally {
+        collecting.value = false
+      }
     }
 
     const handleBack = () => {
@@ -149,6 +187,12 @@ export default {
       listDetailInfo,
       listRef,
       togglePage,
+      isShowListAdd,
+      selectedMusicList,
+      collecting,
+      playing,
+      handlePlay,
+      handleCollect,
       addSongListDetail,
       playSongListDetail,
       handlePlayList,
