@@ -227,7 +227,7 @@ jobs:
 
   Mac_Intel_FFmpeg:
     name: Mac Intel FFmpeg
-    runs-on: macos-latest
+    runs-on: macos-13
     env:
       HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
     steps:
