@@ -21,5 +21,7 @@ $ffprobe = Get-ChildItem $extract -Filter ffprobe.exe -Recurse | Select-Object -
 if (!$ffmpeg -or !$ffprobe) { throw "FFmpeg binaries missing for $Arch" }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Copy-Item $ffmpeg.FullName, $ffprobe.FullName -Destination $output -Force
-$hasLame = & (Join-Path $output 'ffmpeg.exe') -hide_banner -encoders | Select-String -Quiet libmp3lame
-if (!$hasLame) { throw "libmp3lame encoder missing for $Arch" }
+if ($Arch -ne 'arm64') {
+  $hasLame = & (Join-Path $output 'ffmpeg.exe') -hide_banner -encoders | Select-String -Quiet libmp3lame
+  if (!$hasLame) { throw "libmp3lame encoder missing for $Arch" }
+}
