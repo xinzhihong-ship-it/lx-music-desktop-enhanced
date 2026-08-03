@@ -6,6 +6,39 @@ Project versioning adheres to [Semantic Versioning](http://semver.org/).
 Commit convention is based on [Conventional Commits](http://conventionalcommits.org).
 Change log format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [3.1.0](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0...v3.1.0) - 2026-08-03
+
+# LX Music 增强版 3.1.0
+
+本版本正式整合播放、音质、平台来源、数据同步与下载处理能力，重点修复自动切歌时偶发暂停的问题。
+
+## 播放体验
+
+- 修复自动切换下一首时，旧歌曲的延迟暂停事件覆盖新歌曲播放状态，导致新歌偶尔暂停的问题。
+- 播放失败时支持自动刷新链接、切换音源、降低音质并继续播放下一首。
+- 播放详情显示当前实际使用的音质与播放引擎。
+- 播放队列支持调整顺序、批量操作、移除歌曲和清空队列。
+- MPV 播放引擎增强启动、切歌、输出设备切换和异常恢复的稳定性。
+
+## 音质与平台
+
+- 网易云、QQ 音乐、酷狗支持更多高音质详情与音质回退策略。
+- 新增哔哩哔哩搜索、播放、歌单、收藏夹、扫码登录和 Cookie 登录支持。
+- 哔哩哔哩音频流按实际可用音质播放并显示对应音质标识。
+- 相似歌曲推荐支持跨平台合并，减少重复结果。
+
+## 下载与同步
+
+- 下载页新增音频格式转换，可转换为 FLAC、ALAC/M4A、WAV、WavPack、MP3 或 AAC/M4A。
+- 转换任务支持批量处理、进度查看、取消、重试和定位文件，并在完成后校验输出。
+- 新增 WebDAV 数据同步，支持歌单、设置和自定义音源同步，并在覆盖前自动备份本地数据。
+
+## 界面与稳定性
+
+- 优化播放详情、播放队列、设置页和列表筛选等界面交互。
+- 修复多个平台搜索、播放、登录、二维码和数据导入导出问题。
+- 更新 Electron 及相关运行组件，改善 Windows 与 MPV 环境兼容性。
+
 ## [2.13.0-enhanced.9](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0-enhanced.8...v2.13.0-enhanced.9) - 2026-07-25
 
 ### 新增
