@@ -3,7 +3,7 @@
     <main :class="$style.main">
       <h2>{{ info.name }}<br>{{ info.singer }}</h2>
       <base-btn v-for="quality in qualitys" :key="quality.type" :class="$style.btn" @click="handleClick(quality.type)">
-        {{ getTypeName(quality.type) }}{{ quality.size && ` - ${quality.size.toUpperCase()}` }}
+        {{ getTypeName(quality.type) }}（{{ getDownloadFormat(quality.type) }}）{{ quality.size && ` - ${quality.size.toUpperCase()}` }}
       </base-btn>
     </main>
   </material-modal>
@@ -12,6 +12,7 @@
 <script>
 import { qualityList } from '@renderer/store'
 import { createDownloadTasks } from '@renderer/store/download/action'
+import { getExt } from '@renderer/worker/download/utils'
 
 export default {
   props: {
@@ -82,6 +83,9 @@ export default {
         case '128k':
           return this.$t('download__normal') + ' ' + quality.toUpperCase()
       }
+    },
+    getDownloadFormat(quality) {
+      return getExt(quality).toUpperCase()
     },
     checkSource(quality) {
       return this.sourceQualityList.includes(quality)

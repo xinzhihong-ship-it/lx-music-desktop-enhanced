@@ -87,24 +87,31 @@ export default () => {
 
 	// 切歌时旧音频的 pause 事件可能晚于新歌加载到达，不能让它覆盖新歌的播放意图。
 	let isSwitchingMusic = false;
+	let switchPauseHandled = false;
 	const setPlayStatus = () => {
 		isSwitchingMusic = false;
+		switchPauseHandled = false;
 		setPlay(true);
 	};
 	const setPauseStatus = () => {
-		// ponytail: 忽略切歌窗口内的旧 pause 事件；真正的暂停会在新歌 playing 后正常处理。
-		if (isSwitchingMusic && !window.lx.isPlayedStop) return;
+		if (isSwitchingMusic) {
+			// 切歌流程主动发出的第一次 pause 要同步清空旧状态，之后才忽略旧音频的迟到事件。
+			if (switchPauseHandled) return;
+			switchPauseHandled = true;
+		}
 		setPlay(false);
 		if (window.lx.isPlayedStop) pause();
 		removePowerSaveBlocker();
 	};
 	const setErrorStatus = () => {
 		isSwitchingMusic = false;
+		switchPauseHandled = false;
 		setPauseStatus();
 	};
 
 	const handleUpdatePlayInfo = () => {
 		isSwitchingMusic = true;
+		switchPauseHandled = false;
 		setTitle(musicInfo.id ? `${musicInfo.name} - ${musicInfo.singer}` : null);
 	};
 

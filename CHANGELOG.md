@@ -6,6 +6,22 @@ Project versioning adheres to [Semantic Versioning](http://semver.org/).
 Commit convention is based on [Conventional Commits](http://conventionalcommits.org).
 Change log format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [3.1.1](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v3.1.0...v3.1.1) - 2026-08-03
+
+# LX Music 增强版 3.1.1
+
+## 播放修复
+
+- 修复自动切歌时播放状态同步错误，避免新歌曲 URL 被误判为旧请求而加载失败。
+- 修复 MPV 切歌后偶发显示“音频加载出错，5 秒后切换下一首”的问题。
+- 保持 Electron、MPV、Audirvana 三种播放引擎以及列表、随机、循环、稍后播放和失败自动切歌逻辑的一致性。
+
+## 下载与转换
+
+- 下载质量选择弹窗显示对应文件格式，例如 128K/320K 为 MP3，FLAC、Master、Atmos 等为 FLAC。
+- 修复 macOS 音频转换遇到 ffprobe 空输出或进程终止时显示 `Unexpected end of JSON input` 的问题，并补充具体错误信息。
+- 优化 Windows 手动转换任务的输出文件名分配，减少选择文件和输出目录确认后的等待时间。
+
 ## [3.1.0](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/compare/v2.13.0...v3.1.0) - 2026-08-03
 
 # LX Music 增强版 3.1.0
