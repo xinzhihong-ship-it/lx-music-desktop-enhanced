@@ -227,7 +227,7 @@ jobs:
 
   Mac_Intel_FFmpeg:
     name: Mac Intel FFmpeg
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6

@@ -31,3 +31,4 @@ for binary in "$output/ffmpeg" "$output/ffprobe"; do
 done
 "$output/ffmpeg" -hide_banner -encoders | grep -q libmp3lame
 "$output/ffprobe" -version >/dev/null
+file "$output/ffmpeg" | grep -q "$([ "$arch" = arm64 ] && echo arm64 || echo x86_64)"
