@@ -5,6 +5,7 @@ arch="${1:?usage: build-ffmpeg-macos.sh arm64|x64}"
 case "$arch" in arm64|x64) ;; *) exit 2 ;; esac
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$root/build"
 source="$root/build/ffmpeg-8.1.1-source-$arch"
 output="$root/resources/ffmpeg/darwin-$arch"
 lame="$(brew --prefix lame)"

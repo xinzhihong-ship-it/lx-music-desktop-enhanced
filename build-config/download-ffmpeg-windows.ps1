@@ -7,6 +7,8 @@ $sources = @{
 }
 
 $root = Split-Path -Parent $PSScriptRoot
+$build = Join-Path $root 'build'
+New-Item -ItemType Directory -Force -Path $build | Out-Null
 $temp = Join-Path $root "build\ffmpeg-$Arch.zip"
 $extract = Join-Path $root "build\ffmpeg-$Arch"
 $output = Join-Path $root "resources\ffmpeg\win32-$Arch"

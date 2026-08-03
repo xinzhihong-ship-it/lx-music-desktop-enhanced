@@ -9,6 +9,7 @@ case "$arch" in
 esac
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$root/build"
 archive="$root/build/$file"
 extract="$root/build/ffmpeg-linux-$arch"
 output="$root/resources/ffmpeg/linux-$arch"
