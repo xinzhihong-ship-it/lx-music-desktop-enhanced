@@ -11,6 +11,7 @@ import webdav from './webdav'
 import data from './data'
 import music from './music'
 import download from './download'
+import audioConversion, { initAudioConversion } from './audioConversion'
 import soundEffect from './soundEffect'
 import mpv from './mpv'
 import audirvana from './audirvana'
@@ -41,6 +42,8 @@ export default () => {
   data()
   music()
   download()
+  audioConversion()
+  void initAudioConversion()
   soundEffect()
   mpv()
   audirvana()
@@ -50,4 +53,3 @@ export default () => {
     sendConfigChange(setting)
   })
 }
-

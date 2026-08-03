@@ -50,11 +50,17 @@ jobs:
   Create_Release:
     name: Create Release
     runs-on: ubuntu-latest
+    needs: [Windows, Windows_7, Mac, Linux]
     outputs:
       version: ${{ steps.meta.outputs.version }}
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
+
+      - name: Download release assets
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
 
       - name: Read package version
         id: meta
@@ -102,12 +108,17 @@ jobs:
                 prerelease: /beta|alpha|rc/i.test(process.env.VERSION),
               })
               core.info(`已创建版本 ${tag}`)
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: find release-assets -type f -print0 | xargs -0 gh release upload "v$VERSION" --clobber
             }
 
   Windows:
     name: Windows
     runs-on: windows-latest
-    needs: Create_Release
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
@@ -124,20 +135,31 @@ jobs:
           NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
 
+      - name: Download verified FFmpeg
+        shell: pwsh
+        run: |
+          .\build-config\download-ffmpeg-windows.ps1 x64
+          .\build-config\download-ffmpeg-windows.ps1 arm64
+
       - name: Build src code
         run: |
           git status --porcelain
           npm run build
 
-      - name: Release package
+      - name: Build package
         run: |
-          npm run publish:win:7z:x64
-          npm run publish:win:7z:arm64
-          npm run publish:win:setup:arm64
-          npm run publish:win:setup:x64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BT_TOKEN: ${{ secrets.BT_TOKEN }}
+          npm run pack:win:7z:x64
+          npm run pack:win:7z:arm64
+          npm run pack:win:setup:arm64
+          npm run pack:win:setup:x64
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-release
+          path: |
+            build/*.exe
+            build/*.7z
 
       - name: Generate file MD5
         run: |
@@ -148,7 +170,6 @@ jobs:
   Windows_7:
     name: Windows_7
     runs-on: windows-latest
-    needs: Create_Release
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
@@ -161,6 +182,12 @@ jobs:
         env:
           NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
+
+      - name: Download verified FFmpeg
+        shell: pwsh
+        run: |
+          .\build-config\download-ffmpeg-windows.ps1 x64
+          .\build-config\download-ffmpeg-windows.ps1 x86
 
       - name: Prepare win7 undici env
         run: |
@@ -179,29 +206,63 @@ jobs:
           npm install electron@22
           pip.exe install setuptools
 
-      - name: Release win7 package
+      - name: Build win7 package
         run: |
-          npm run publish:win7:setup:x64
-          npm run publish:win7:7z:x64
-          npm run publish:win7:7z:x86
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BT_TOKEN: ${{ secrets.BT_TOKEN }}
+          npm run pack:win7:setup:x64
+          npm run pack:win7:7z:x64
+          npm run pack:win7:7z:x86
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows7-release
+          path: |
+            build/*.exe
+            build/*.7z
 
       - name: Generate file MD5
         run: |
           cd build
           Get-FileHash *.exe,*.7z -Algorithm MD5 | Format-List
 
+  Mac_Intel_FFmpeg:
+    name: Mac Intel FFmpeg
+    runs-on: macos-13
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v6
+
+      - name: Build LGPL FFmpeg
+        run: |
+          brew install lame
+          bash build-config/build-ffmpeg-macos.sh x64
+
+      - name: Upload Intel FFmpeg
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-x64-ffmpeg
+          path: resources/ffmpeg/darwin-x64
+
   Mac:
     name: Mac
-    runs-on: macos-latest
-    needs: Create_Release
+    runs-on: macos-14
+    needs: Mac_Intel_FFmpeg
     env:
       HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
+
+      - name: Build Apple Silicon FFmpeg
+        run: |
+          brew install lame
+          bash build-config/build-ffmpeg-macos.sh arm64
+
+      - name: Download Intel FFmpeg
+        uses: actions/download-artifact@v8
+        with:
+          name: macos-x64-ffmpeg
+          path: resources/ffmpeg/darwin-x64
 
       - name: Install python3 setuptools
         run: brew install python-setuptools
@@ -222,13 +283,16 @@ jobs:
           git status --porcelain
           npm run build
 
-      - name: Release package
+      - name: Build package
         run: |
-          npm run publish:mac:dmg
-          npm run publish:mac:dmg:arm64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BT_TOKEN: ${{ secrets.BT_TOKEN }}
+          npm run pack:mac:dmg
+          npm run pack:mac:dmg:arm64
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-release
+          path: build/*.dmg
 
       - name: Generate file MD5
         run: |
@@ -238,10 +302,9 @@ jobs:
   Linux:
     name: Linux
     runs-on: ubuntu-latest
-    needs: Create_Release
     steps:
       - name: Install package
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools gcc-arm-linux-gnueabihf qemu-user-static
 
       - name: Check out git repository
         uses: actions/checkout@v6
@@ -257,22 +320,35 @@ jobs:
           NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
 
+      - name: Download verified FFmpeg
+        run: |
+          bash build-config/download-ffmpeg-linux.sh x64
+          bash build-config/download-ffmpeg-linux.sh arm64
+          bash build-config/build-ffmpeg-linux-armv7.sh
+
       - name: Build src code
         run: |
           git status --porcelain
           npm run build
 
-      - name: Release package
+      - name: Build package
         run: |
-          npm run publish:linux:deb:amd64
-          npm run publish:linux:deb:arm64
-          npm run publish:linux:deb:armv7l
-          npm run publish:linux:appImage
-          npm run publish:linux:rpm
-          npm run publish:linux:pacman
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BT_TOKEN: ${{ secrets.BT_TOKEN }}
+          npm run pack:linux:deb:amd64
+          npm run pack:linux:deb:arm64
+          npm run pack:linux:deb:armv7l
+          npm run pack:linux:appImage
+          npm run pack:linux:rpm
+          npm run pack:linux:pacman
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-release
+          path: |
+            build/*.deb
+            build/*.rpm
+            build/*.pacman
+            build/*.AppImage
 
       - name: Generate file MD5
         run: |

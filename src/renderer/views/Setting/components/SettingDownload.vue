@@ -31,6 +31,15 @@ dd
   div
     base-checkbox(id="setting_download_isUseOtherSource" :model-value="appSetting['download.isUseOtherSource']" :label="$t('setting__is_enable')" @update:model-value="updateSetting({'download.isUseOtherSource': $event})")
   div
+dd
+  h3 {{ $t('setting__download_auto_convert') }}
+  .gap-top
+    base-checkbox(id="setting_download_autoConvert" :model-value="appSetting['download.autoConvert']" :label="$t('setting__is_enable')" @update:model-value="updateSetting({'download.autoConvert': $event})")
+  .gap-top(v-if="appSetting['download.autoConvert']")
+    .gap-top
+      base-selection(:model-value="appSetting['download.convertFormat']" :list="convertFormats" item-key="id" item-name="name" @change="updateSetting({'download.convertFormat': $event.id})")
+    .gap-top
+      base-checkbox(id="setting_download_deleteSourceAfterConvert" :model-value="appSetting['download.deleteSourceAfterConvert']" :label="$t('conversion__delete_source')" @update:model-value="updateSetting({'download.deleteSourceAfterConvert': $event})")
 dd(:aria-label="$t('setting__download_name_title')")
   h3#download_name {{ $t('setting__download_name') }}
   div
@@ -116,6 +125,10 @@ export default {
         { id: 'gbk', name: t('setting__download_lyric_format_gbk') },
       ]
     })
+    const convertFormats = computed(() => [
+      { id: 'flac', name: 'FLAC' }, { id: 'alac', name: 'ALAC / M4A' }, { id: 'wav', name: 'WAV' },
+      { id: 'wavpack', name: 'WavPack' }, { id: 'mp3', name: 'MP3（320 kbps）' }, { id: 'aac', name: 'AAC / M4A（320 kbps）' },
+    ])
 
     return {
       appSetting,
@@ -124,6 +137,7 @@ export default {
       handleChangeSavePath,
       musicNames,
       lrcFormatList,
+      convertFormats,
       maxNums,
       handleUpdateMaxNum,
     }

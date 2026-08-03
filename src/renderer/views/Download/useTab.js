@@ -23,6 +23,10 @@ export default () => {
         label: window.i18n.t('download__finished'),
         id: 'finished',
       },
+      {
+        label: window.i18n.t('download__conversion'),
+        id: 'conversion',
+      },
     ]
   })
   const activeTab = ref('all')

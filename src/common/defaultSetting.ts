@@ -131,6 +131,9 @@ const defaultSetting: LX.AppSetting = {
   'download.isEmbedLyricT': false,
   'download.isEmbedLyricR': false,
   'download.isUseOtherSource': false,
+  'download.autoConvert': false,
+  'download.convertFormat': 'flac',
+  'download.deleteSourceAfterConvert': false,
 
   'search.isShowHotSearch': false,
   'search.isShowHistorySearch': false,

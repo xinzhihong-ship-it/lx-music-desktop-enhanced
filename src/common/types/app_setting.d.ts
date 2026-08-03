@@ -604,6 +604,9 @@ declare global {
        * 歌曲源不可用时，是否启用换源下载
        */
       'download.isUseOtherSource': boolean
+      'download.autoConvert': boolean
+      'download.convertFormat': LX.AudioConversion.Format
+      'download.deleteSourceAfterConvert': boolean
 
       /**
        * 主题id

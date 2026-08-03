@@ -979,6 +979,13 @@ export const downloadListClear = async() => {
   return rendererInvoke(WIN_MAIN_RENDERER_EVENT_NAME.download_list_clear)
 }
 
+export const getAudioConversionTasks = () => rendererInvoke<LX.AudioConversion.Task[]>(WIN_MAIN_RENDERER_EVENT_NAME.audio_conversion_list_get)
+export const addAudioConversionTasks = (params: LX.AudioConversion.AddParams) => rendererInvoke<LX.AudioConversion.AddParams, LX.AudioConversion.Task[]>(WIN_MAIN_RENDERER_EVENT_NAME.audio_conversion_add, params)
+export const waitAudioConversionTasks = (ids: string[]) => rendererInvoke<string[], LX.AudioConversion.Task[]>(WIN_MAIN_RENDERER_EVENT_NAME.audio_conversion_wait, ids)
+export const cancelAudioConversionTasks = (ids: string[]) => rendererInvoke<string[]>(WIN_MAIN_RENDERER_EVENT_NAME.audio_conversion_cancel, ids)
+export const removeAudioConversionTasks = (ids: string[]) => rendererInvoke<string[]>(WIN_MAIN_RENDERER_EVENT_NAME.audio_conversion_remove, ids)
+export const retryAudioConversionTasks = (ids: string[]) => rendererInvoke<string[]>(WIN_MAIN_RENDERER_EVENT_NAME.audio_conversion_retry, ids)
+
 /**
  * 重启应用
  */

@@ -1,10 +1,13 @@
 import {
+  addAudioConversionTasks,
   downloadTasksGet,
   // downloadListClear,
   downloadTasksCreate,
   downloadTasksRemove,
   downloadTasksUpdate,
+  waitAudioConversionTasks,
 } from '@renderer/utils/ipc'
+import path from 'node:path'
 import {
   downloadList,
 } from './state'
@@ -255,6 +258,37 @@ const handleError = (downloadInfo: LX.Download.ListItem, message?: string) => {
   void checkStartTask()
 }
 
+const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
+  downloadInfo.progress = 100
+  if (appSetting['download.autoConvert'] && !['128k', '192k', '320k'].includes(downloadInfo.metadata.quality)) {
+    const format = appSetting['download.convertFormat']
+    setStatusText(downloadInfo, '正在转换')
+    try {
+      const tasks = await addAudioConversionTasks({
+        filePaths: [downloadInfo.metadata.filePath],
+        outputDir: path.dirname(downloadInfo.metadata.filePath),
+        format,
+        deleteSource: appSetting['download.deleteSourceAfterConvert'],
+        useCurrentDownloadDeleteSetting: true,
+      })
+      const [task] = await waitAudioConversionTasks(tasks.map(task => task.id))
+      if (task.status !== 'completed') throw new Error(task.error || '转换失败')
+      downloadInfo.metadata.filePath = task.outputPath
+      downloadInfo.metadata.fileName = path.basename(task.outputPath)
+      downloadInfo.metadata.ext = path.extname(task.outputPath).slice(1) as LX.Download.FileExt
+    } catch (error: any) {
+      handleError(downloadInfo, error?.message || '转换失败')
+      return
+    }
+  }
+  saveMeta(downloadInfo)
+  downloadLyric(downloadInfo)
+  void window.lx.worker.download.removeTask(downloadInfo.id)
+  runingTask.delete(downloadInfo.id)
+  setStatus(downloadInfo, DOWNLOAD_STATUS.COMPLETED)
+  void checkStartTask()
+}
+
 const handleStartTask = async(downloadInfo: LX.Download.ListItem) => {
   if (!downloadInfo.metadata.url) {
     setStatusText(downloadInfo, window.i18n.t('download_status_url_getting'))
@@ -280,13 +314,7 @@ const handleStartTask = async(downloadInfo: LX.Download.ListItem) => {
         setStatus(downloadInfo, DOWNLOAD_STATUS.RUN)
         break
       case 'complete':
-        downloadInfo.progress = 100
-        saveMeta(downloadInfo)
-        downloadLyric(downloadInfo)
-        void window.lx.worker.download.removeTask(downloadInfo.id)
-        runingTask.delete(downloadInfo.id)
-        setStatus(downloadInfo, DOWNLOAD_STATUS.COMPLETED)
-        void checkStartTask()
+        void handleCompletedTask(downloadInfo)
         break
       case 'refreshUrl':
         handleRefreshUrl(downloadInfo)

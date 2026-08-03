@@ -140,6 +140,10 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting.version = '2.1.0'
   }
 
+  if (!['flac', 'alac', 'wav', 'wavpack', 'mp3', 'aac'].includes(setting['download.convertFormat'])) {
+    setting['download.convertFormat'] = 'flac'
+  }
+
 
   return setting
 }

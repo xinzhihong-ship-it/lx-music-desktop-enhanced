@@ -77,3 +77,7 @@ src/**/*-internal.js
 
 # mpv download temp dir
 build/mpv-downloads
+
+# FFmpeg is built per release target in CI; only its source notice is tracked.
+resources/ffmpeg/*
+!resources/ffmpeg/README.md

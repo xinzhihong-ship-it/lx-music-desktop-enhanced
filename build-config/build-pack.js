@@ -89,6 +89,22 @@ const withMpvResources = async(baseOptions, mpvPlatform, mpvArch) => {
       ]
     }
   }
+  if (mpvPlatform && mpvArch) {
+    const ffmpegResourcePath = `./resources/ffmpeg/${mpvPlatform}-${mpvArch}`
+    const ffmpegName = mpvPlatform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+    const ffprobeName = mpvPlatform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
+    const requiredBinaries = [ffmpegName, ffprobeName]
+    const missingBinaries = requiredBinaries.filter(name => !fs.existsSync(`${ffmpegResourcePath}/${name}`))
+    if (missingBinaries.length) throw new Error(`Missing FFmpeg runtime for ${mpvPlatform}-${mpvArch}: ${missingBinaries.join(', ')}`)
+    buildOptions.extraResources = [
+      ...buildOptions.extraResources,
+      {
+        from: ffmpegResourcePath,
+        to: './bin',
+        filter: ['**/*'],
+      },
+    ]
+  }
   if (mpvPlatform === 'darwin') {
     const audioTeePath = './node_modules/audiotee/bin/audiotee'
     if (!fs.existsSync(audioTeePath)) throw new Error(`Missing music recognition binary: ${audioTeePath}`)
