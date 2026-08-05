@@ -159,6 +159,7 @@ export class MpvController {
   private startError: Error | null = null
   private cachedPathInfo: MpvPathInfo | null = null
   private isPlayingState = false
+  private isLoading = false
   hasFileLoaded = false
   private isPaused = true
   pausedAt = 0
@@ -361,13 +362,15 @@ export class MpvController {
         break
       case 'playback-restart':
         // 只有在真正有文件在播放时才上报 playing，避免空闲/加载状态误报。
-        if (this.hasFileLoaded && !this.isPaused && !this.isPlayingState) {
+        if (!this.isLoading && this.hasFileLoaded && !this.isPaused && !this.isPlayingState) {
           this.sendEvent('playing')
           this.isPlayingState = true
           this.startPolling()
         }
         break
       case 'end-file':
+        if (this.isLoading && message.reason == 'replaced') break
+        this.isLoading = false
         this.hasFileLoaded = false
         this.stopPolling()
         this.isPlayingState = false
@@ -396,11 +399,8 @@ export class MpvController {
     switch (name) {
       case 'time-pos':
         if (typeof data == 'number') {
+          if (this.isLoading || !this.hasFileLoaded) break
           this.sendEvent('timeUpdate', data)
-          // time-pos 变化意味着文件已加载且正在推进；某些场景下 file-loaded 或
-          // pause property-change 可能延迟/丢失，这里补充同步状态，避免 UI 卡在加载中。
-          // 但必须排除已暂停的情况，否则暂停后的残余 time-pos 更新会误报 playing。
-          if (!this.hasFileLoaded) this.hasFileLoaded = true
           if (!this.isPaused && !this.isPlayingState) {
             this.sendEvent('playing')
             this.isPlayingState = true
@@ -409,10 +409,11 @@ export class MpvController {
         }
         break
       case 'duration':
-        if (typeof data == 'number') this.sendEvent('duration', data)
+        if (!this.isLoading && this.hasFileLoaded && typeof data == 'number') this.sendEvent('duration', data)
         break
       case 'pause':
         this.isPaused = !!data
+        if (this.isLoading || !this.hasFileLoaded) break
         if (data) {
           this.sendEvent('pause')
           this.isPlayingState = false
@@ -429,11 +430,12 @@ export class MpvController {
         break
       case 'idle-active':
         if (data) {
+          const wasLoaded = this.hasFileLoaded
           this.hasFileLoaded = false
           this.isPaused = true
           this.stopPolling()
           this.isPlayingState = false
-          this.sendEvent('stopped')
+          if (!this.isLoading && wasLoaded) this.sendEvent('stopped')
         }
         break
     }
@@ -468,9 +470,18 @@ export class MpvController {
   private fileLoadedReject: ((err: Error) => void) | null = null
   private fileLoadedPromise: Promise<void> | null = null
 
-  private async waitForFileLoaded(): Promise<void> {
+  private async isFileReady(url: string): Promise<boolean> {
+    const [path, duration, idleActive] = await Promise.all([
+      this.command<string | null>(['get_property', 'path']).catch(() => null),
+      this.command<number | null>(['get_property', 'duration']).catch(() => null),
+      this.command<boolean | null>(['get_property', 'idle-active']).catch(() => null),
+    ])
+    return path === url && idleActive !== true && typeof duration == 'number' && duration > 0
+  }
+
+  private async waitForFileLoaded(url: string): Promise<void> {
     // 文件可能在注册等待前就已加载完成（file-loaded 与 loadfile 响应同块到达时被提前处理），
-    // 此时直接返回，避免干等 10 秒超时。
+    // 此时直接返回，避免重复等待。
     if (this.hasFileLoaded) return
     if (this.fileLoadedPromise) return this.fileLoadedPromise
     this.fileLoadedPromise = new Promise((resolve, reject) => {
@@ -484,14 +495,29 @@ export class MpvController {
         this.fileLoadedResolve = null
         this.fileLoadedReject = null
         this.fileLoadedPromise = null
+        this.isLoading = false
         reject(err)
       }
+      const rejectOnTimeout = () => {
+        if (!this.fileLoadedReject) return
+        const timeoutErr = new Error('mpv file-load timeout')
+        this.fileLoadedReject(timeoutErr)
+      }
+      // 长视频/直播流可能先开始推进，再延迟发出 file-loaded；先用 MPV 的
+      // path + duration 确认同一 URL 已可播放，避免把真实播放误判成超时。
       setTimeout(() => {
-        if (this.fileLoadedReject) {
-          const timeoutErr = new Error('mpv file-load timeout')
-          this.fileLoadedReject(timeoutErr)
-          this.sendEvent('error', { message: timeoutErr.message })
-        }
+        if (!this.fileLoadedReject) return
+        void this.isFileReady(url).then(isReady => {
+          if (!this.fileLoadedReject) return
+          if (isReady) {
+            this.hasFileLoaded = true
+            this.fileLoadedResolve?.()
+          } else {
+            setTimeout(rejectOnTimeout, 10000)
+          }
+        }).catch(() => {
+          if (this.fileLoadedReject) setTimeout(rejectOnTimeout, 10000)
+        })
       }, 10000)
     })
     return this.fileLoadedPromise
@@ -511,6 +537,13 @@ export class MpvController {
     await this.ensureStarted()
     this.loadedUrl = url
     log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
+    // 从切换开始就屏蔽旧文件的状态事件；否则设置请求头期间旧音频仍在推进，
+    // renderer 会先收到旧的 time-pos/playing，再被新文件的 loaded 状态覆盖。
+    this.hasFileLoaded = false
+    this.isLoading = true
+    this.isPaused = true
+    this.isPlayingState = false
+    this.stopPolling()
     // B 站 CDN 校验 Referer，其他地址不带，避免向无关主机泄漏来源
     const isBiliCdn = /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
     await this.command(['set_property', 'referrer', isBiliCdn ? 'https://www.bilibili.com/' : ''])
@@ -519,13 +552,18 @@ export class MpvController {
       ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
       : 'libmpv']).catch(err => log.warn('set user-agent failed:', err))
     const biliCookie = isBiliCdn ? getBiliCookie() : ''
-    await this.command(['set_property', 'http-header-fields', biliCookie ? [`Cookie: ${biliCookie}`] : []])
+    await this.command(['set_property', 'http-header-fields', isBiliCdn
+      ? [
+          'Referer: https://www.bilibili.com/',
+          'Origin: https://www.bilibili.com',
+          ...(biliCookie ? [`Cookie: ${biliCookie}`] : []),
+        ]
+      : []])
       .catch(err => log.warn('set http-header-fields failed:', err))
     // 必须在发 loadfile 之前就注册 file-loaded 等待：两者在同一条 IPC 流上，
     // 若 file-loaded 与命令响应在同一个数据块到达，事件会在 promise 注册前被处理并丢弃，
-    // 导致 waitForFileLoaded 干等 10 秒超时（表现为切换输出设备时卡住/失败）。
-    this.hasFileLoaded = false
-    const fileLoaded = this.waitForFileLoaded()
+    // 导致 waitForFileLoaded 把仍在播放的流误判为超时（表现为切歌偶发失败）。
+    const fileLoaded = this.waitForFileLoaded(url)
     try {
       await this.command(['loadfile', url, 'replace'])
     } catch (err: any) {
@@ -539,6 +577,7 @@ export class MpvController {
         await new Promise(resolve => setTimeout(resolve, 200))
         await this.command(['loadfile', url])
       } else {
+        this.isLoading = false
         throw err
       }
     }
@@ -557,6 +596,7 @@ export class MpvController {
     // 否则紧接着的 play() 会把新文件 seek 到上一首的暂停位置。
     this.pausedAt = 0
     await this.command(['seek', 0, 'absolute', 'exact']).catch(() => {})
+    this.isLoading = false
     // restart 场景下由调用方在 play() 成功后再通知 renderer，
     // 避免 renderer 在切换期间误发 pause 覆盖新实例的播放命令。
     if (options?.emitLoaded !== false) {
@@ -593,6 +633,10 @@ export class MpvController {
 
   async stop(): Promise<void> {
     if (!this.socket) return
+    this.isLoading = false
+    this.hasFileLoaded = false
+    this.isPaused = true
+    this.isPlayingState = false
     this.pausedAt = 0
     await this.command(['stop']).catch(() => {})
     this.stopPolling()
@@ -636,17 +680,17 @@ export class MpvController {
   private startPolling() {
     if (this.pollTimer) return
     this.pollTimer = setInterval(() => {
-      if (!this.socket || this.isDestroyed) return
+      if (!this.socket || this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
       void this.getPosition().then(position => {
-        if (this.isDestroyed) return
+        if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
         this.sendEvent('timeUpdate', position)
       }).catch(() => {})
       void this.getDuration().then(duration => {
-        if (this.isDestroyed) return
+        if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
         this.sendEvent('duration', duration)
       }).catch(() => {})
       void this.getPaused().then(paused => {
-        if (this.isDestroyed) return
+        if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
 
         // 定期同步暂停状态，避免 property-change 事件丢失导致 UI 与实际状态不一致。
         if (paused) {
@@ -670,6 +714,7 @@ export class MpvController {
 
   async destroy(): Promise<void> {
     this.isDestroyed = true
+    this.isLoading = false
     this.isPlayingState = false
     this.hasFileLoaded = false
     this.isPaused = true

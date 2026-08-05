@@ -94,6 +94,7 @@ const createDelayNextTimeout = (delay: number) => {
 }
 const { addDelayNextTimeout, clearDelayNextTimeout } = createDelayNextTimeout(5000)
 const { addDelayNextTimeout: addLoadTimeout, clearDelayNextTimeout: clearLoadTimeout } = createDelayNextTimeout(100000)
+const isMpvLoadError = (message: string) => /winMain_mpv_loadUrl|mpv playback error|mpv file-load timeout|mpv IPC request timeout/i.test(message)
 
 /**
  * 检查音乐信息是否已更改
@@ -194,11 +195,12 @@ interface SetMusicUrlOptions {
 
 export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh?: boolean, options: SetMusicUrlOptions = {}) => {
   // if (appSetting['player.autoSkipOnError']) addLoadTimeout()
-  if (!diffCurrentMusicInfo(musicInfo)) return
+  if (!isRefresh && !diffCurrentMusicInfo(musicInfo)) return
   if (cancelDelayRetry) cancelDelayRetry()
   const requestId = ++activeUrlRequest
   gettingUrlId = createGettingUrlId(musicInfo)
   void getMusicPlayUrl(musicInfo, isRefresh, false, options.quality, options.hasLoweredQuality, options.forceToggleSource).then(async(result) => {
+    if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     if (!result) {
       // 没有获取到 URL 时，如果是用户主动播放/自动播放则按错误处理；
       // 否则（如启动预加载）清空加载状态，避免一直显示“音乐加载中...”。
@@ -212,6 +214,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       return
     }
     const { url, quality } = result
+    if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     // 记录当前播放音质，用于在主界面显示。
     if (musicInfo.id == playMusicInfo.musicInfo?.id) {
       setPlayQuality(getMusicQualityLabel(musicInfo, quality))
@@ -246,8 +249,16 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     }
     await setResource(url)
   }).catch((err: any) => {
+    if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     console.log(err)
-    setAllStatus(err.message)
+    const message = err?.message ?? String(err)
+    if (isMpvLoadError(message)) {
+      // loadUrl 失败时主进程会直接拒绝 IPC，不一定能走 mpv_error 事件；
+      // 转成统一播放器错误，交给 usePlayEvent 刷新 URL/切换备用源。
+      window.app_event.playerError()
+      return
+    }
+    setAllStatus(message)
     window.app_event.error()
     if (shouldSkipOnError()) addDelayNextTimeout()
   }).finally(() => {

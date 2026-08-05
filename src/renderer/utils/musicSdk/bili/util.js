@@ -35,6 +35,12 @@ let accountCookieLoadedAt = 0
 let accountCookiePromise = null
 const ACCOUNT_COOKIE_CACHE_DURATION = 5 * 60 * 1000
 
+// B 站 CDN 会用访客 buvid 校验 DASH 地址；仅有登录 Cookie 时仍可能返回空 buvid。
+let visitorCookie = ''
+let visitorCookieLoadedAt = 0
+let visitorCookiePromise = null
+const VISITOR_COOKIE_CACHE_DURATION = 24 * 60 * 60 * 1000
+
 export const getAccountCookie = async() => {
   if (Date.now() - accountCookieLoadedAt < ACCOUNT_COOKIE_CACHE_DURATION) return accountCookie
   if (accountCookiePromise) return accountCookiePromise
@@ -54,9 +60,32 @@ export const refreshAccountCookie = async() => {
   return getAccountCookie()
 }
 
+const getVisitorCookie = async() => {
+  if (Date.now() - visitorCookieLoadedAt < VISITOR_COOKIE_CACHE_DURATION) return visitorCookie
+  if (visitorCookiePromise) return visitorCookiePromise
+  visitorCookiePromise = httpFetch(`${BILI_API}/x/frontend/finger/spi`, {
+    method: 'get',
+    headers: { 'User-Agent': BILI_UA, Referer: BILI_REFERER },
+  }).promise.then(({ statusCode, body }) => {
+    if (statusCode != 200) return ''
+    const data = typeof body == 'string' ? JSON.parse(body) : body
+    visitorCookie = [
+      data?.data?.b_3 ? `buvid3=${data.data.b_3}` : '',
+      data?.data?.b_4 ? `buvid4=${data.data.b_4}` : '',
+    ].filter(Boolean).join('; ')
+    visitorCookieLoadedAt = Date.now()
+    return visitorCookie
+  }).catch(() => visitorCookie).finally(() => {
+    visitorCookiePromise = null
+  })
+  return visitorCookiePromise
+}
+
 export const clearAccountCookieCache = () => {
   accountCookie = ''
   accountCookieLoadedAt = 0
+  visitorCookie = ''
+  visitorCookieLoadedAt = 0
   wbiKey = ''
   wbiKeyLoadedAt = 0
 }
@@ -106,13 +135,21 @@ export const wbiSign = async params => {
 export const biliGet = async(url, params = {}, { signed = false, raw = false } = {}) => {
   const query = signed ? await wbiSign(params) : buildQuery(params)
   const fullUrl = query ? `${url}?${query}` : url
-  const cookie = await getAccountCookie()
+  const [cookie, visitor] = await Promise.all([getAccountCookie(), getVisitorCookie()])
+  const cookies = new Map()
+  for (const value of [cookie, visitor]) {
+    for (const item of String(value || '').split(';')) {
+      const index = item.indexOf('=')
+      const key = item.slice(0, index).trim()
+      if (index > 0 && key && !cookies.has(key)) cookies.set(key, item.slice(index + 1).trim())
+    }
+  }
   const { statusCode, body } = await httpFetch(fullUrl, {
     method: 'get',
     headers: {
       'User-Agent': BILI_UA,
       Referer: BILI_REFERER,
-      ...(cookie ? { Cookie: cookie } : {}),
+      ...(cookies.size ? { Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join('; ') } : {}),
     },
   }).promise
   if (statusCode != 200) throw new Error(`bili request failed (${statusCode})`)
