@@ -3,8 +3,8 @@ set -euo pipefail
 
 arch="${1:?usage: download-ffmpeg-linux.sh x64|arm64}"
 case "$arch" in
-  x64) file='ffmpeg-n8.1-latest-linux64-lgpl-8.1.tar.xz'; sha='4d74265b17fb6675c67fdfc2016f2fc26de084a5269a0e2757f4554120657e5d' ;;
-  arm64) file='ffmpeg-n8.1-latest-linuxarm64-lgpl-8.1.tar.xz'; sha='b77233223f7a12b7703f4d49ea91db2df8bd56b9d4fc6d6f9a274b30f15c9151' ;;
+  x64) file='ffmpeg-n8.1-latest-linux64-lgpl-8.1.tar.xz'; sha='8e53139130278d516824611b2d608f45a6c62aff0cf7feffa33012349e0061eb' ;;
+  arm64) file='ffmpeg-n8.1-latest-linuxarm64-lgpl-8.1.tar.xz'; sha='63fde9a698c0b17acdc5b023860f3f4846b4922599614767d94bdd2b9ade7f80' ;;
   *) exit 2 ;;
 esac
 
