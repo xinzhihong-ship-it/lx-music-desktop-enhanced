@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { log } from '@common/utils'
 import { sendEvent } from '@main/modules/winMain/main'
+import * as accountSessions from '@main/modules/account/sessions'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 
 export type MpvPathSource = 'custom' | 'bundled' | 'bundled-macos26' | 'dev-bundled' | 'dev-bundled-app' | 'dev-bundled-macos26' | 'dev-bundled-x64-fallback' | 'system' | 'common-path'
@@ -36,6 +37,12 @@ const sanitizeUrl = (url: string) => {
   } catch {
     return url.length > 80 ? `${url.substring(0, 80)}…` : url
   }
+}
+
+const getBiliCookie = () => {
+  const session = accountSessions.getSessionBySource('bili')
+  if (!session) return ''
+  return Object.entries(session.cookies).map(([key, value]) => `${key}=${String(value)}`).join('; ')
 }
 
 const existsFile = (filePath: string) => {
@@ -368,7 +375,10 @@ export class MpvController {
         if (message.reason == 'eof') {
           this.sendEvent('ended')
         } else if (message.reason == 'error') {
-          this.sendEvent('error', { message: 'mpv playback error (end-file reason=error)' })
+          const detail = message.error ? `: ${message.error}` : ''
+          const error = new Error(`mpv playback error${detail}`)
+          if (this.fileLoadedReject) this.fileLoadedReject(error)
+          else this.sendEvent('error', { message: error.message })
         } else {
           this.sendEvent('stopped')
         }
@@ -480,6 +490,7 @@ export class MpvController {
         if (this.fileLoadedReject) {
           const timeoutErr = new Error('mpv file-load timeout')
           this.fileLoadedReject(timeoutErr)
+          this.sendEvent('error', { message: timeoutErr.message })
         }
       }, 10000)
     })
@@ -502,9 +513,14 @@ export class MpvController {
     log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
     // B 站 CDN 校验 Referer，其他地址不带，避免向无关主机泄漏来源
     const isBiliCdn = /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
-    await this.command(['set_property', 'http-header-fields', isBiliCdn
-      ? 'Referer: https://www.bilibili.com/,User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
-      : '']).catch(err => log.warn('set http-header-fields failed:', err))
+    await this.command(['set_property', 'referrer', isBiliCdn ? 'https://www.bilibili.com/' : ''])
+      .catch(err => log.warn('set referrer failed:', err))
+    await this.command(['set_property', 'user-agent', isBiliCdn
+      ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+      : 'libmpv']).catch(err => log.warn('set user-agent failed:', err))
+    const biliCookie = isBiliCdn ? getBiliCookie() : ''
+    await this.command(['set_property', 'http-header-fields', biliCookie ? [`Cookie: ${biliCookie}`] : []])
+      .catch(err => log.warn('set http-header-fields failed:', err))
     // 必须在发 loadfile 之前就注册 file-loaded 等待：两者在同一条 IPC 流上，
     // 若 file-loaded 与命令响应在同一个数据块到达，事件会在 promise 注册前被处理并丢弃，
     // 导致 waitForFileLoaded 干等 10 秒超时（表现为切换输出设备时卡住/失败）。
