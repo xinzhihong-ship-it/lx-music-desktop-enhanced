@@ -7,13 +7,13 @@
   <a href="https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/blob/main/LICENSE"><img src="https://img.shields.io/github/license/xinzhihong-ship-it/lx-music-desktop-enhanced" alt="License"></a>
 </p>
 
-<p align="center">基于 <a href="https://github.com/lyswhut/lx-music-desktop">LX Music（洛雪音乐助手）桌面版</a> 的二次开发/增强版本。</p>
+<p align="center">基于 <a href="https://github.com/lyswhut/lx-music-desktop">LX Music（洛雪音乐助手）桌面版</a> 的二次开发/增强版本，专注于多平台音乐、哔哩哔哩地址播放、听歌识曲与稳定播放体验。</p>
 
 ## 说明
 
 本项目是 [LX Music 桌面版](https://github.com/lyswhut/lx-music-desktop) 的**个人魔改/增强 fork**，在保留原项目核心功能的基础上，针对日常使用中的痛点做了少量修改与增强。
 
-当前增强版重点提供多平台听歌识曲、网易云/QQ 音乐/酷狗账号内容、高音质播放、MPV Bit Perfect 与播放失败自动恢复能力。
+当前增强版重点提供多平台听歌识曲、网易云/QQ 音乐/酷狗/哔哩哔哩账号内容、哔哩哔哩地址直接播放、高音质播放、MPV Bit Perfect 与播放失败自动恢复能力。
 
 > **本项目为纯 AI 改造**：除上游原项目代码外，本 fork 的全部新增/修改代码（功能设计、实现、调试、文案）均由 AI 编程助手完成，无人工手写代码。仅供个人学习使用，与上游官方无关。
 
@@ -30,6 +30,10 @@
   - 设置页新增「账号」入口，支持酷狗、QQ 音乐、网易云等平台账号登录管理。
   - 新增「平台音乐」页面，浏览已登录账号的每日推荐与自建/收藏歌单。
   - 网易云接口加解密（weapi/eapi）抽取为公共模块，修复 renderer 侧 Node crypto 依赖问题。
+
+- **哔哩哔哩播放**
+  - 支持在搜索框粘贴哔哩哔哩视频地址或短链接，解析后直接加入播放队列。
+  - 支持多 P 视频选择、登录态访问与可用音质选择，播放失败时自动尝试刷新地址或恢复播放。
 
 - **高音质与稳定播放**
   - 网易云、QQ 音乐、酷狗支持按歌曲查询 `Hires`、`Atmos`、`Atmos Plus`、`Master` 等高音质档位，实际可用音质取决于平台、地区、版权及所用音源权限。
@@ -63,6 +67,12 @@
   - 打包脚本会根据目标平台自动下载并集成 mpv 资源。
 
 > 提示：由于本 fork 以个人使用为主，不保证与上游功能完全同步，也不会提供官方支持渠道。遇到问题请先查阅原项目文档。
+
+## 反馈、Bug 与建议
+
+感谢每一位提交 Bug、改进建议和使用反馈的朋友！你们提供的复现信息与使用场景，帮助本项目持续发现问题、完善功能。
+
+无论是播放失败、状态显示异常、登录或音源问题，还是新功能建议，都欢迎通过 [GitHub Issues](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/issues) 提出。提交 Bug 时请尽量附上软件版本、操作系统、播放引擎、复现步骤，以及必要的日志或截图；请先隐藏账号、Cookie、密钥等隐私信息。
 
 ### 附：ACRCloud 密钥申请（可选）
 
