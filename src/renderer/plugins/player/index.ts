@@ -400,8 +400,16 @@ export const hasInitedAdvancedAudioFeatures = (): boolean => audioContext != nul
 
 const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
 const isAudirvanaEngine = () => appSetting['player.playEngine'] == 'audirvana'
+const isMpvUnavailableError = (message: string) => /未找到 mpv|ENOENT|mpv IPC connect timeout|mpv IPC is not connected|mpv exited before IPC became ready/i.test(message)
+const handleMpvError = (action: string, err: any) => {
+  const message = err?.message ?? String(err)
+  console.error(`mpv ${action} failed:`, message)
+  if (!isMpvUnavailableError(message)) return
+  window.alert(`mpv ${action}失败：${message}\n\n请确认：\n1. mpv 已安装（brew install mpv）\n2. 或切换到内置引擎（设置 → 播放引擎 → 内置引擎）`)
+  window.app_event.stop()
+}
 
-export const setResource = (src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string) => {
+export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string): Promise<void> => {
   if (isMpvEngine()) {
     if (!src) {
       console.warn('mpv setResource skipped: empty src')
@@ -409,11 +417,12 @@ export const setResource = (src: string, musicInfo?: LX.Music.MusicInfo, filePat
     }
     // MPV 的 loadstart 需要手动触发，与 audio.loadstart 语义对齐。
     window.app_event?.playerLoadstart()
-    void mpvPlayer.setResource(src).catch(err => {
-      console.error('mpv load url failed:', err?.message ?? err)
-      window.alert(`mpv 播放失败：${err?.message ?? err}\n\n请确认：\n1. mpv 已安装（brew install mpv）\n2. 或切换到内置引擎（设置 → 播放引擎 → 内置引擎）`)
-      window.app_event.stop()
-    })
+    try {
+      await mpvPlayer.setResource(src)
+    } catch (err) {
+      handleMpvError('加载', err)
+      throw err
+    }
     return
   }
   if (isAudirvanaEngine()) {
@@ -421,10 +430,7 @@ export const setResource = (src: string, musicInfo?: LX.Music.MusicInfo, filePat
       console.warn('audirvana setResource skipped: empty src')
       return
     }
-    void audirvanaPlayer.setResource(src, musicInfo, filePath).catch(err => {
-      console.error('audirvana setResource failed:', err?.message ?? err)
-      window.app_event.stop()
-    })
+    await audirvanaPlayer.setResource(src, musicInfo, filePath)
     return
   }
   if (audio) audio.src = src
@@ -432,11 +438,7 @@ export const setResource = (src: string, musicInfo?: LX.Music.MusicInfo, filePat
 
 export const setPlay = () => {
   if (isMpvEngine()) {
-    void mpvPlayer.setPlay().catch(err => {
-      console.error('mpv play failed:', err?.message ?? err)
-      window.alert(`mpv 播放失败：${err?.message ?? err}\n\n请确认：\n1. mpv 已安装（brew install mpv）\n2. 或切换到内置引擎（设置 → 播放引擎 → 内置引擎）`)
-      window.app_event.stop()
-    })
+    void mpvPlayer.setPlay().catch(err => { handleMpvError('播放', err) })
     return
   }
   if (isAudirvanaEngine()) {

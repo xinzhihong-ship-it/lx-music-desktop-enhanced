@@ -6,6 +6,7 @@
 import music from '@renderer/utils/musicSdk'
 import { debounce } from '@common/utils'
 import {
+  markRaw,
   ref,
   watch,
   nextTick,
@@ -15,6 +16,12 @@ import { appSetting } from '@renderer/store/setting'
 import { searchText as _searchText } from '@renderer/store/search/state'
 import { setSearchText } from '@renderer/store/search/action'
 import { getSearchSetting } from '@renderer/utils/data'
+import { parseBiliVideoUrl } from '@renderer/utils/musicSdk/bili/url'
+import { toNewMusicInfo } from '@renderer/utils'
+import { addTempPlayList, setAllStatus } from '@renderer/store/player/action'
+import { playMusicInfo } from '@renderer/store/player/state'
+import { playNext } from '@renderer/core/player'
+import { LIST_IDS } from '@common/constants'
 
 export default {
   setup() {
@@ -51,6 +58,10 @@ export default {
         music[prevTempSearchSource].tipSearch.cancelTipSearch()
         return
       }
+      if (parseBiliVideoUrl(searchText.value)) {
+        tipList.value = []
+        return
+      }
       const { temp_source } = await getSearchSetting()
       prevTempSearchSource ||= temp_source
       music[prevTempSearchSource].tipSearch.search(searchText.value).then(list => {
@@ -63,10 +74,25 @@ export default {
       tipSearch()
     }
 
-    const handleSearch = () => {
+    const handleSearch = async() => {
       visibleList.value &&= false
       if (!searchText.value && route.path != '/search') {
         setSearchText('')
+        return
+      }
+      const biliUrl = parseBiliVideoUrl(searchText.value)
+      if (biliUrl) {
+        setAllStatus('正在读取哔哩哔哩地址…')
+        try {
+          const rawMusicInfo = await music.bili.getMusicInfoByUrl(searchText.value)
+          if (!rawMusicInfo) throw new Error('地址格式不正确')
+          const musicInfo = markRaw(toNewMusicInfo(rawMusicInfo))
+          const isPlaying = !!playMusicInfo.musicInfo
+          addTempPlayList([{ listId: LIST_IDS.PLAY_LATER, musicInfo, isTop: true }])
+          if (isPlaying) void playNext()
+        } catch (err) {
+          setAllStatus(`哔哩哔哩地址播放失败：${err?.message || '无法获取视频'}`)
+        }
         return
       }
       setTimeout(() => {
@@ -93,11 +119,11 @@ export default {
           }, 50)
           break
         case 'submit':
-          handleSearch()
+          void handleSearch()
           break
         case 'listClick':
           searchText.value = tipList.value[data]
-          void nextTick(handleSearch)
+          void nextTick(() => { void handleSearch() })
       }
     }
 

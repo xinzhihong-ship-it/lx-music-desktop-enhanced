@@ -30,6 +30,7 @@ import { shouldLowerQualityOnError, shouldSkipOnError, shouldToggleSourceOnError
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
 let gettingUrlId = ''
+let activeUrlRequest = 0
 let shouldPlayAfterLoad = false
 
 const getOnlineMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem): LX.Music.MusicInfoOnline | null => {
@@ -195,6 +196,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   // if (appSetting['player.autoSkipOnError']) addLoadTimeout()
   if (!diffCurrentMusicInfo(musicInfo)) return
   if (cancelDelayRetry) cancelDelayRetry()
+  const requestId = ++activeUrlRequest
   gettingUrlId = createGettingUrlId(musicInfo)
   void getMusicPlayUrl(musicInfo, isRefresh, false, options.quality, options.hasLoweredQuality, options.forceToggleSource).then(async(result) => {
     if (!result) {
@@ -242,14 +244,14 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
         throw err
       }
     }
-    setResource(url)
+    await setResource(url)
   }).catch((err: any) => {
     console.log(err)
     setAllStatus(err.message)
     window.app_event.error()
     if (shouldSkipOnError()) addDelayNextTimeout()
   }).finally(() => {
-    if (musicInfo === playMusicInfo.musicInfo) {
+    if (musicInfo === playMusicInfo.musicInfo && requestId === activeUrlRequest) {
       gettingUrlId = ''
       clearLoadTimeout()
     }

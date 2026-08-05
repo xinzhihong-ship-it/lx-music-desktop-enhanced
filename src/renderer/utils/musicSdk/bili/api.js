@@ -1,17 +1,20 @@
 import { appSetting } from '@renderer/store/setting'
 import { BILI_API, biliGet, refreshAccountCookie, DASH_QUALITY_MAP, getQualityRank } from './util'
+import { getStreamUrls, pickStreamUrl } from './stream'
 
 const PLAY_URL_API = `${BILI_API}/x/player/playurl`
 const VIEW_API = `${BILI_API}/x/web-interface/view`
 
 let viewCache = new Map()
 const VIEW_CACHE_DURATION = 30 * 60 * 1000
+const streamUrlAttempts = new Map()
 
-export const getViewInfo = async bvid => {
-  const cached = viewCache.get(bvid)
+export const getViewInfo = async videoId => {
+  const cached = viewCache.get(videoId)
   if (cached && Date.now() - cached.time < VIEW_CACHE_DURATION) return cached.data
-  const data = await biliGet(VIEW_API, { bvid })
-  viewCache.set(bvid, { time: Date.now(), data })
+  const params = /^av\d+$/i.test(videoId) ? { aid: videoId.slice(2) } : { bvid: videoId }
+  const data = await biliGet(VIEW_API, params)
+  viewCache.set(videoId, { time: Date.now(), data })
   return data
 }
 
@@ -42,10 +45,24 @@ const toStreams = dash => [
   .map(audio => ({
     quality: DASH_QUALITY_MAP[audio.id] || '128k',
     bandwidth: audio.bandwidth || 0,
-    url: audio.baseUrl || audio.base_url || audio.backupUrl?.[0] || audio.backup_url?.[0] || '',
+    urls: getStreamUrls(audio),
   }))
-  .filter(audio => audio.url)
+  .filter(audio => audio.urls.length)
   .sort((a, b) => b.bandwidth - a.bandwidth)
+
+const getStreamKey = (songInfo, stream) => [
+  getBvid(songInfo),
+  songInfo.platformData?.cid || songInfo.platformData?.page || 1,
+  stream.quality,
+  stream.bandwidth,
+].join(':')
+
+const resolveStreamUrl = (songInfo, stream, isRefresh) => {
+  const key = getStreamKey(songInfo, stream)
+  const { url, index } = pickStreamUrl(stream.urls, isRefresh, streamUrlAttempts.get(key) ?? 0)
+  streamUrlAttempts.set(key, index)
+  return url
+}
 
 /**
  * 在实际可用音频流中选流：
@@ -63,7 +80,7 @@ const pickStream = (streams, targetQuality) => {
   return [...candidates].sort((a, b) => getQualityRank(a.quality) - getQualityRank(b.quality) || b.bandwidth - a.bandwidth)[0]
 }
 
-export const getMusicUrl = (songInfo, type) => {
+export const getMusicUrl = (songInfo, type, { isRefresh = false } = {}) => {
   const promise = (async() => {
     // 播放关键时刻强制使用最新登录态，避免登录后仍用到旧的空 Cookie 缓存
     await refreshAccountCookie()
@@ -71,7 +88,7 @@ export const getMusicUrl = (songInfo, type) => {
     const streams = toStreams(data?.dash)
     const stream = pickStream(streams, type)
     if (!stream) throw new Error('bili audio stream was not found')
-    return { type: stream.quality, url: stream.url }
+    return { type: stream.quality, url: resolveStreamUrl(songInfo, stream, isRefresh) }
   })()
   return { promise, cancelHttp: () => {} }
 }

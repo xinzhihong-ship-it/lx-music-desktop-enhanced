@@ -306,7 +306,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
 
   let reqPromise
   try {
-    reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), itemQuality).promise
+    reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), itemQuality, { isRefresh }).promise
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
@@ -343,7 +343,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
 
   let reqPromise
   try {
-    reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality).promise
+    reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality, { isRefresh }).promise
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
