@@ -1,8 +1,8 @@
 import { onBeforeUnmount } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
 import { musicInfo, playMusicInfo, isPlay, playQuality } from '@renderer/store/player/state'
-import { setStop, isEmpty } from '@renderer/plugins/player'
-import { playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
+import { setStop } from '@renderer/plugins/player'
+import { getShouldPlayAfterLoad, playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { isPlayErrorHandlingEnabled, shouldLowerQualityOnError, shouldSkipOnError, shouldToggleSourceOnError } from '@renderer/core/player/errorStrategy'
@@ -162,9 +162,15 @@ export default () => {
     if (!musicInfo.id) return
     clearLoadingTimeout()
     if (window.lx.isPlayedStop) return
-    const shouldResume = isPlay.value
-    if (!isEmpty()) setStop()
-    recoverPlayback(true, shouldResume, errCode)
+    // 首次点击播放时，MPV 可能还没发出 playing；此时仍要保留用户的播放意图，
+    // 否则首个 CDN 失败后切换备用地址会停在暂停状态，必须再次点击播放。
+    const shouldResume = isPlay.value || getShouldPlayAfterLoad()
+    const recover = () => {
+      if (!window.lx.isPlayedStop) recoverPlayback(true, shouldResume, errCode)
+    }
+    // 即使 renderer 已经把 mpv 标记为空，主进程仍可能正在播放旧 URL；
+    // 必须先等 stop 命令完成，再开始刷新/换源，避免两条 load 命令交叉。
+    void setStop().then(recover, recover)
   }
 
   const handleSetPlayInfo = () => {

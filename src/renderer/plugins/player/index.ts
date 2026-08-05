@@ -469,23 +469,22 @@ export const setPause = () => {
   audio?.pause()
 }
 
-export const setStop = () => {
+export const setStop = async(): Promise<void> => {
   if (isMpvEngine()) {
-    void mpvPlayer.setStop().catch(err => {
+    return mpvPlayer.setStop().catch(err => {
       console.error('mpv stop failed', err)
     })
-    return
   }
   if (isAudirvanaEngine()) {
-    void audirvanaPlayer.setStop().catch(err => {
+    return audirvanaPlayer.setStop().catch(err => {
       console.error('audirvana stop failed', err)
     })
-    return
   }
   if (audio) {
     audio.src = ''
     audio.removeAttribute('src')
   }
+  return Promise.resolve()
 }
 
 export const isEmpty = (): boolean => {

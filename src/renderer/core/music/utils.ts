@@ -301,7 +301,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   }
   if (!musicInfo || !itemQuality) throw new Error(window.i18n.t('toggle_source_failed'))
 
-  const cachedUrl = await getStoreMusicUrl(musicInfo, itemQuality)
+  const cachedUrl = musicInfo.source == 'bili' ? null : await getStoreMusicUrl(musicInfo, itemQuality)
   if (cachedUrl && !isRefresh) return { url: cachedUrl, musicInfo, quality: itemQuality, isFromCache: true }
 
   let reqPromise

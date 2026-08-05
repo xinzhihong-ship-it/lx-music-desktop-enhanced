@@ -77,13 +77,13 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
       isRefresh: true,
       retryedSource: [musicInfo.source],
     })
-    if (!result.isFromCache) void saveMusicUrl(result.musicInfo, result.quality, result.url)
-    void saveMusicUrl(musicInfo, result.quality, result.url)
+    if (!result.isFromCache && result.musicInfo.source != 'bili') void saveMusicUrl(result.musicInfo, result.quality, result.url)
+    if (musicInfo.source != 'bili') void saveMusicUrl(musicInfo, result.quality, result.url)
     onResolvedQuality(result.quality)
     return result.url
   }
   const targetQuality = quality ?? getPlayQuality(appSetting['player.playQuality'], musicInfo)
-  const cachedUrl = qualityList.value[musicInfo.source] == null
+  const cachedUrl = musicInfo.source == 'bili' || qualityList.value[musicInfo.source] == null
     ? null
     : await getStoreMusicUrl(musicInfo, targetQuality)
   if (cachedUrl && !isRefresh) {
@@ -92,8 +92,8 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   }
 
   return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource }).then(({ url, quality: resolvedQuality, musicInfo: targetMusicInfo, isFromCache }) => {
-    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, resolvedQuality, url)
-    void saveMusicUrl(musicInfo, resolvedQuality, url)
+    if (targetMusicInfo.id != musicInfo.id && !isFromCache && targetMusicInfo.source != 'bili') void saveMusicUrl(targetMusicInfo, resolvedQuality, url)
+    if (musicInfo.source != 'bili') void saveMusicUrl(musicInfo, resolvedQuality, url)
     onResolvedQuality(resolvedQuality)
     return url
   })
