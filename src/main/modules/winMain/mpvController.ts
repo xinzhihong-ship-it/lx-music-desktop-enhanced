@@ -315,6 +315,9 @@ export class MpvController {
       log.info('No extraArgs in config, using default audio device')
     }
 
+    // Windows 的 --wid 是外部 HWND；固定使用 WGL，避免部分显卡的 D3D11 输出只出声音不出画面。
+    if (this.isVideo && isWin) args.push('--vo=gpu', '--gpu-api=opengl', '--gpu-context=win')
+
     log.info(`mpv final args: ${args.join(' ')}`)
     return args
   }

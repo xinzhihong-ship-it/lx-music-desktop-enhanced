@@ -57,7 +57,12 @@ module.exports = async(context) => {
   const electronVersion = context.packager?.info?._framework?.version ?? require('../package.json').devDependencies.electron.replace(/^[^\d]*?(\d+)/, '$1')
   const electronNodeAbi = nodeAbi.getAbi(electronVersion, 'electron')
   await replaceQrcDecodeLib(electronNodeAbi, electronPlatformName, arch)
-  if (electronPlatformName === 'darwin' && (arch === Arch.arm64 || (arch === Arch.x64 && process.arch === 'x64'))) buildMpvVideoNative()
+  if (electronPlatformName === 'darwin') {
+    const targetArch = arch === Arch.arm64 ? 'arm64' : arch === Arch.x64 ? 'x64' : ''
+    const sameArchitecture = targetArch === process.arch
+    if (!sameArchitecture) throw new Error(`macOS 视频原生桥不能交叉编译：目标 ${targetArch || arch}，当前构建进程 ${process.arch}`)
+    if (!buildMpvVideoNative()) throw new Error('macOS 视频原生桥构建失败：请先安装对应架构的 mpv（brew install mpv）')
+  }
   if (electronPlatformName !== 'linux' || process.env.FORCE) return
   const bindingFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp')
   const bindingBakFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp.bak')

@@ -44,12 +44,17 @@ const options = {
     'node_modules/utf-8-validate',
     'build/Release/qrc_decode.node',
     'build/Release/lx_mpv_video.node',
+    'build/Release/mpv-libs/**/*',
     'dist/**/*',
     '!dist/**/index-dev.js',
   ],
   asar: {
     smartUnpack: false,
   },
+  asarUnpack: [
+    'build/Release/lx_mpv_video.node',
+    'build/Release/mpv-libs/**/*',
+  ],
   extraResources: [
     './licenses',
   ],

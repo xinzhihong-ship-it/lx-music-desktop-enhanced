@@ -178,8 +178,18 @@ jobs:
           Get-FileHash *.exe,*.7z -Algorithm MD5 | Format-List
 
   Mac:
-    name: Mac
-    runs-on: macos-14
+    name: Mac (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-13
+            package: pack:mac:dmg
+          - arch: arm64
+            runner: macos-14
+            package: pack:mac:dmg:arm64
+    runs-on: ${{ matrix.runner }}
     # needs: CheckCode
     env:
       HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
@@ -188,12 +198,10 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Build verified FFmpeg
-        run: |
-          bash build-config/build-ffmpeg-macos.sh x64
-          bash build-config/build-ffmpeg-macos.sh arm64
+        run: bash build-config/build-ffmpeg-macos.sh ${{ matrix.arch }}
 
       - name: Install python setuptools
-        run: brew install python-setuptools
+        run: brew install mpv python-setuptools
 
       - name: Get npm cache directory
         shell: bash
@@ -210,22 +218,13 @@ jobs:
           npm run build
 
       - name: Build Package dmg
-        run: |
-          npm run pack:mac:dmg
-          npm run pack:mac:dmg:arm64
+        run: npm run ${{ matrix.package }}
 
       - name: Upload Artifact dmg
         uses: actions/upload-artifact@v7
         with:
-          name: lx-music-desktop-mac-dmg
-          path: |
-            build/*.dmg
-            !build/*-arm64.dmg
-      - name: Upload Artifact dmg
-        uses: actions/upload-artifact@v7
-        with:
-          name: lx-music-desktop-mac-dmg-arm64
-          path: build/*-arm64.dmg
+          name: lx-music-desktop-mac-dmg-${{ matrix.arch }}
+          path: build/*.dmg
 
       - name: Generate file MD5
         run: |
