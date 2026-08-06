@@ -58,6 +58,12 @@ jobs:
           NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
 
+      - name: Download verified FFmpeg
+        shell: pwsh
+        run: |
+          .\build-config\download-ffmpeg-windows.ps1 x64
+          .\build-config\download-ffmpeg-windows.ps1 arm64
+
       - name: Build src code
         run: |
           git status --porcelain
@@ -119,6 +125,12 @@ jobs:
           NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
 
+      - name: Download verified FFmpeg
+        shell: pwsh
+        run: |
+          .\build-config\download-ffmpeg-windows.ps1 x64
+          .\build-config\download-ffmpeg-windows.ps1 x86
+
       - name: Prepare win7 undici env
         run: |
           npm install undici@5
@@ -167,13 +179,18 @@ jobs:
 
   Mac:
     name: Mac
-    runs-on: macos-latest
+    runs-on: macos-14
     # needs: CheckCode
     env:
       HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
+
+      - name: Build verified FFmpeg
+        run: |
+          bash build-config/build-ffmpeg-macos.sh x64
+          bash build-config/build-ffmpeg-macos.sh arm64
 
       - name: Install python setuptools
         run: brew install python-setuptools
@@ -221,7 +238,7 @@ jobs:
     # needs: CheckCode
     steps:
       - name: Install package
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools gcc-arm-linux-gnueabihf qemu-user-static
 
       - name: Check out git repository
         uses: actions/checkout@v6
@@ -234,6 +251,12 @@ jobs:
         env:
           NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
+
+      - name: Download verified FFmpeg
+        run: |
+          bash build-config/download-ffmpeg-linux.sh x64
+          bash build-config/download-ffmpeg-linux.sh arm64
+          bash build-config/build-ffmpeg-linux-armv7.sh
 
       - name: Build src code
         run: |
