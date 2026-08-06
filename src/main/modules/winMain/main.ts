@@ -133,6 +133,7 @@ export const createWindow = () => {
 }
 
 export const isExistWindow = (): boolean => !!browserWindow
+export const getBrowserWindow = (): Electron.BrowserWindow | null => browserWindow
 export const isShowWindow = (): boolean => {
   if (!browserWindow) return false
   return browserWindow.isVisible() && (isWin ? true : browserWindow.isFocused())

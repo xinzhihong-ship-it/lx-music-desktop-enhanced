@@ -2,6 +2,7 @@ const isMcdnUrl = url => /\.mcdn\.bilivideo\.cn(?::\d+)?\//i.test(url)
 
 export const getStreamUrls = audio => {
   const urls = [
+    audio?.url,
     audio?.baseUrl,
     audio?.base_url,
     ...(Array.isArray(audio?.backupUrl) ? audio.backupUrl : []),

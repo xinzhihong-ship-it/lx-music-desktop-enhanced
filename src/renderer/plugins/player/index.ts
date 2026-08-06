@@ -1,6 +1,8 @@
 import { appSetting } from '@renderer/store/setting'
 import * as mpvPlayer from './mpv'
+import * as mpvVideoPlayer from './mpvVideo'
 import * as audirvanaPlayer from './audirvana'
+import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 
 interface HTMLAudioElementChrome extends HTMLAudioElement {
   setSinkId: (id: string) => Promise<void>
@@ -409,7 +411,32 @@ const handleMpvError = (action: string, err: any) => {
   window.app_event.stop()
 }
 
-export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string): Promise<void> => {
+const stopSelectedAudioEngine = async() => {
+  if (isMpvEngine()) {
+    await mpvPlayer.setStop().catch(err => { console.error('mpv stop before video failed', err) })
+  } else if (isAudirvanaEngine()) {
+    await audirvanaPlayer.setStop().catch(err => { console.error('audirvana stop before video failed', err) })
+  } else if (audio) {
+    audio.pause()
+    audio.src = ''
+    audio.removeAttribute('src')
+  }
+}
+
+export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string, videoAudioUrl?: string): Promise<void> => {
+  if (isBiliVideoActive()) {
+    if (!src) return
+    await stopSelectedAudioEngine()
+    window.app_event?.playerLoadstart()
+    try {
+      await mpvVideoPlayer.setResource(src, videoAudioUrl)
+    } catch (err) {
+      handleMpvError('加载视频', err)
+      throw err
+    }
+    return
+  }
+  if (!mpvVideoPlayer.isEmpty()) await mpvVideoPlayer.setStop().catch(err => { console.error('mpv video stop before audio failed', err) })
   if (isMpvEngine()) {
     if (!src) {
       console.warn('mpv setResource skipped: empty src')
@@ -437,6 +464,10 @@ export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, fi
 }
 
 export const setPlay = () => {
+  if (isBiliVideoActive()) {
+    void mpvVideoPlayer.setPlay().catch(err => { handleMpvError('播放视频', err) })
+    return
+  }
   if (isMpvEngine()) {
     void mpvPlayer.setPlay().catch(err => { handleMpvError('播放', err) })
     return
@@ -454,6 +485,10 @@ export const setPlay = () => {
 }
 
 export const setPause = () => {
+  if (isBiliVideoActive()) {
+    void mpvVideoPlayer.setPause().catch(err => { console.error('mpv video pause failed', err) })
+    return
+  }
   if (isMpvEngine()) {
     void mpvPlayer.setPause().catch(err => {
       console.error('mpv pause failed', err)
@@ -470,6 +505,10 @@ export const setPause = () => {
 }
 
 export const setStop = async(): Promise<void> => {
+  if (isBiliVideoActive()) {
+    return mpvVideoPlayer.setStop().catch(err => { console.error('mpv video stop failed', err) })
+  }
+  if (!mpvVideoPlayer.isEmpty()) await mpvVideoPlayer.setStop().catch(err => { console.error('mpv video stop failed', err) })
   if (isMpvEngine()) {
     return mpvPlayer.setStop().catch(err => {
       console.error('mpv stop failed', err)
@@ -488,12 +527,14 @@ export const setStop = async(): Promise<void> => {
 }
 
 export const isEmpty = (): boolean => {
+  if (isBiliVideoActive()) return mpvVideoPlayer.isEmpty()
   if (isMpvEngine()) return mpvPlayer.isEmpty()
   if (isAudirvanaEngine()) return audirvanaPlayer.isEmpty()
   return !audio?.src
 }
 
 export const setLoopPlay = (isLoop: boolean) => {
+  if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) {
     audirvanaPlayer.setLoopPlay(isLoop)
     return
@@ -502,11 +543,13 @@ export const setLoopPlay = (isLoop: boolean) => {
 }
 
 export const getPlaybackRate = (): number => {
+  if (isBiliVideoActive()) return 1
   if (isAudirvanaEngine()) return audirvanaPlayer.getPlaybackRate()
   return audio?.defaultPlaybackRate ?? 1
 }
 
 export const setPlaybackRate = (rate: number) => {
+  if (isBiliVideoActive()) return
   if (isMpvEngine()) return
   if (isAudirvanaEngine()) {
     audirvanaPlayer.setPlaybackRate(rate)
@@ -518,6 +561,7 @@ export const setPlaybackRate = (rate: number) => {
 }
 
 export const setPreservesPitch = (preservesPitch: boolean) => {
+  if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) {
     audirvanaPlayer.setPreservesPitch(preservesPitch)
     return
@@ -527,11 +571,16 @@ export const setPreservesPitch = (preservesPitch: boolean) => {
 }
 
 export const getMute = (): boolean => {
+  if (isBiliVideoActive()) return mpvVideoPlayer.getMute()
   if (isAudirvanaEngine()) return audirvanaPlayer.getMute()
   return audio?.muted ?? false
 }
 
 export const setMute = (isMute: boolean) => {
+  if (isBiliVideoActive()) {
+    mpvVideoPlayer.setMute(isMute)
+    return
+  }
   if (isMpvEngine()) {
     mpvPlayer.setMute(isMute)
     return
@@ -544,6 +593,7 @@ export const setMute = (isMute: boolean) => {
 }
 
 export const getCurrentTime = () => {
+  if (isBiliVideoActive()) return mpvVideoPlayer.getCurrentTime()
   if (isMpvEngine()) return mpvPlayer.getCurrentTime()
   if (isAudirvanaEngine()) return audirvanaPlayer.getCurrentTime()
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -551,6 +601,10 @@ export const getCurrentTime = () => {
 }
 
 export const setCurrentTime = (time: number) => {
+  if (isBiliVideoActive()) {
+    mpvVideoPlayer.setCurrentTime(time)
+    return
+  }
   if (isMpvEngine()) {
     mpvPlayer.setCurrentTime(time)
     return
@@ -563,12 +617,17 @@ export const setCurrentTime = (time: number) => {
 }
 
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
+  if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
   if (!audio) return
   return audio.setSinkId(mediaDeviceId)
 }
 
 export const setVolume = (volume: number) => {
+  if (isBiliVideoActive()) {
+    mpvVideoPlayer.setVolume(volume)
+    return
+  }
   if (isMpvEngine()) {
     mpvPlayer.setVolume(volume)
     return
@@ -581,6 +640,7 @@ export const setVolume = (volume: number) => {
 }
 
 export const getDuration = () => {
+  if (isBiliVideoActive()) return mpvVideoPlayer.getDuration()
   if (isMpvEngine()) return mpvPlayer.getDuration()
   if (isAudirvanaEngine()) return audirvanaPlayer.getDuration()
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -592,67 +652,43 @@ export const getDuration = () => {
 // }
 
 type Noop = () => void
+type PlayerSub = (callback: (...args: any[]) => void) => () => void
 
-// 同时注册 audio 和 mpv 两套监听器，引擎切换时各自响应
-// mpv 事件只在当前引擎为 mpv 时才转发，避免 stray 事件干扰 electron 播放
-const registerEvent = (event: string, mpvSub: (cb: Noop) => () => void, callback: Noop): (() => void) => {
+// 三套后端都订阅，回调根据当前播放模式过滤，保证切到 B 站视频时不用重启播放器。
+const registerEvent = (event: string, mpvSub: PlayerSub, videoSub: PlayerSub, audirvanaSub: PlayerSub, callback: Noop): (() => void) => {
   const unsubs: Array<() => void> = []
   if (audio) {
-    audio.addEventListener(event, callback)
-    unsubs.push(() => audio?.removeEventListener(event, callback))
+    const audioCallback = () => {
+      if (!isBiliVideoActive() && appSetting['player.playEngine'] === 'electron') callback()
+    }
+    audio.addEventListener(event, audioCallback)
+    unsubs.push(() => audio?.removeEventListener(event, audioCallback))
   }
   unsubs.push(mpvSub(() => {
-    if (isMpvEngine()) callback()
+    if (!isBiliVideoActive() && isMpvEngine()) callback()
+  }))
+  unsubs.push(videoSub(() => {
+    if (isBiliVideoActive()) callback()
+  }))
+  unsubs.push(audirvanaSub(() => {
+    if (isBiliVideoActive() === false && isAudirvanaEngine()) callback()
   }))
   return () => {
     unsubs.forEach(fn => { fn() })
   }
 }
 
-export const onPlaying = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onPlaying(callback)
-  return registerEvent('playing', mpvPlayer.onPlaying, callback)
-}
-export const onPause = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onPause(callback)
-  return registerEvent('pause', mpvPlayer.onPause, callback)
-}
-export const onEnded = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onEnded(callback)
-  return registerEvent('ended', mpvPlayer.onEnded, callback)
-}
-export const onError = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onError(callback)
-  return registerEvent('error', mpvPlayer.onError, callback)
-}
-export const onLoadeddata = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onLoadeddata(callback)
-  return registerEvent('loadeddata', mpvPlayer.onLoadeddata, callback)
-}
-export const onLoadstart = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onLoadstart(callback)
-  return registerEvent('loadstart', mpvPlayer.onLoadstart, callback)
-}
-export const onCanplay = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onCanplay(callback)
-  return registerEvent('canplay', mpvPlayer.onCanplay, callback)
-}
-export const onEmptied = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onEmptied(callback)
-  return registerEvent('emptied', mpvPlayer.onEmptied, callback)
-}
-export const onTimeupdate = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onTimeupdate(callback)
-  return registerEvent('timeupdate', mpvPlayer.onTimeupdate, callback)
-}
-export const onWaiting = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onWaiting(callback)
-  return registerEvent('waiting', mpvPlayer.onWaiting, callback)
-}
-export const onSeeked = (callback: Noop) => {
-  if (isAudirvanaEngine()) return audirvanaPlayer.onSeeked(callback)
-  return registerEvent('seeked', mpvPlayer.onSeeked, callback)
-}
+export const onPlaying = (callback: Noop) => registerEvent('playing', mpvPlayer.onPlaying, mpvVideoPlayer.onPlaying, audirvanaPlayer.onPlaying, callback)
+export const onPause = (callback: Noop) => registerEvent('pause', mpvPlayer.onPause, mpvVideoPlayer.onPause, audirvanaPlayer.onPause, callback)
+export const onEnded = (callback: Noop) => registerEvent('ended', mpvPlayer.onEnded, mpvVideoPlayer.onEnded, audirvanaPlayer.onEnded, callback)
+export const onError = (callback: Noop) => registerEvent('error', mpvPlayer.onError, mpvVideoPlayer.onError, audirvanaPlayer.onError, callback)
+export const onLoadeddata = (callback: Noop) => registerEvent('loadeddata', mpvPlayer.onLoadeddata, mpvVideoPlayer.onLoadeddata, audirvanaPlayer.onLoadeddata, callback)
+export const onLoadstart = (callback: Noop) => registerEvent('loadstart', mpvPlayer.onLoadstart, mpvVideoPlayer.onLoadstart, audirvanaPlayer.onLoadstart, callback)
+export const onCanplay = (callback: Noop) => registerEvent('canplay', mpvPlayer.onCanplay, mpvVideoPlayer.onCanplay, audirvanaPlayer.onCanplay, callback)
+export const onEmptied = (callback: Noop) => registerEvent('emptied', mpvPlayer.onEmptied, mpvVideoPlayer.onEmptied, audirvanaPlayer.onEmptied, callback)
+export const onTimeupdate = (callback: Noop) => registerEvent('timeupdate', mpvPlayer.onTimeupdate, mpvVideoPlayer.onTimeupdate, audirvanaPlayer.onTimeupdate, callback)
+export const onWaiting = (callback: Noop) => registerEvent('waiting', mpvPlayer.onWaiting, mpvVideoPlayer.onWaiting, audirvanaPlayer.onWaiting, callback)
+export const onSeeked = (callback: Noop) => registerEvent('seeked', mpvPlayer.onSeeked, mpvVideoPlayer.onSeeked, audirvanaPlayer.onSeeked, callback)
 
 // 可见性改变
 export const onVisibilityChange = (callback: Noop) => {
@@ -665,6 +701,7 @@ export const onVisibilityChange = (callback: Noop) => {
 
 
 export const getErrorCode = () => {
+  if (isBiliVideoActive()) return 0
   if (isAudirvanaEngine()) return audirvanaPlayer.getErrorCode()
   return audio?.error?.code
 }

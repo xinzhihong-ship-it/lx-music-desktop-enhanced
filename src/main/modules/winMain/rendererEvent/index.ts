@@ -14,6 +14,7 @@ import download from './download'
 import audioConversion, { initAudioConversion } from './audioConversion'
 import soundEffect from './soundEffect'
 import mpv from './mpv'
+import mpvVideo from './mpvVideo'
 import audirvana from './audirvana'
 import openAPI from './openAPI'
 import { sendEvent } from '../main'
@@ -46,6 +47,7 @@ export default () => {
   void initAudioConversion()
   soundEffect()
   mpv()
+  mpvVideo()
   audirvana()
   openAPI()
 

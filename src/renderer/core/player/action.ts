@@ -5,6 +5,7 @@ import {
   clearPlayedList,
   clearTempPlayeList,
   setPlayMusicInfo,
+  setPlay as setPlayerPlaying,
   addPlayedList,
   setMusicInfo,
   setAllStatus,
@@ -27,6 +28,9 @@ import { buildSavePath } from '@renderer/store/download/utils'
 import { createDownloadInfo } from '@renderer/worker/download/utils'
 import { joinPath } from '@common/utils/nodejs'
 import { shouldLowerQualityOnError, shouldSkipOnError, shouldToggleSourceOnError } from './errorStrategy'
+import { getVideoUrl } from '@renderer/utils/musicSdk/bili/api'
+import { biliPlaybackMode, biliVideoQuality, isBiliVideoActive } from '@renderer/store/player/biliVideo'
+import { toOldMusicInfo } from '@renderer/utils'
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
 let gettingUrlId = ''
@@ -47,7 +51,7 @@ const buildAudirvanaFilePath = (musicInfo: LX.Music.MusicInfo | LX.Download.List
   return joinPath(buildSavePath(downloadInfo), downloadInfo.metadata.fileName)
 }
 
-const getMusicQualityLabel = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, quality?: LX.Quality): string => {
+const getMusicQualityLabel = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, quality?: string): string => {
   if ('progress' in musicInfo) return '下载'
   if (musicInfo.source == 'local') return '本地'
   return quality ?? getPlayQuality(appSetting['player.playQuality'], musicInfo)
@@ -105,7 +109,8 @@ const diffCurrentMusicInfo = (curMusicInfo: LX.Music.MusicInfo | LX.Download.Lis
 }
 
 let cancelDelayRetry: (() => void) | null = null
-interface MusicUrlResult { url: string, quality: LX.Quality }
+interface MusicUrlResult { url: string, quality: string, audioUrl?: string, isVideo?: boolean }
+interface SourceRequestResult { url: string, type?: string, audioUrl?: string }
 const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, hasLoweredQuality = false, forceToggleSource = false): Promise<MusicUrlResult | null> => {
   // if (cancelDelayRetry) cancelDelayRetry()
   return new Promise<MusicUrlResult | null>((resolve, reject) => {
@@ -137,32 +142,36 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   let resolvedQuality = targetQuality
   let toggleMusicInfo = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
 
-  return (!forceToggleSource && toggleMusicInfo ? getMusicUrl({
-    musicInfo: toggleMusicInfo,
-    quality: targetQuality,
-    isRefresh,
-    allowToggleSource: false,
-    onResolvedQuality: quality => { resolvedQuality = quality },
-  }) : Promise.reject(new Error('not found'))).catch(async() => {
-    return getMusicUrl({
-      musicInfo,
-      quality: targetQuality,
-      isRefresh,
-      allowToggleSource: shouldToggleSourceOnError(),
-      forceToggleSource,
-      onResolvedQuality: quality => { resolvedQuality = quality },
-      onToggleSource(mInfo) {
-        if (diffCurrentMusicInfo(musicInfo)) return
-        setAllStatus(window.i18n.t('toggle_source_try'))
-      },
-    })
-  }).then(url => {
+  const isVideo = biliPlaybackMode.value === 'video' && onlineMusicInfo?.source === 'bili'
+  const sourceRequest: Promise<SourceRequestResult> = isVideo
+    ? getVideoUrl(toOldMusicInfo(onlineMusicInfo), biliVideoQuality.value, { isRefresh }).promise as Promise<SourceRequestResult>
+    : (!forceToggleSource && toggleMusicInfo ? getMusicUrl({
+        musicInfo: toggleMusicInfo,
+        quality: targetQuality,
+        isRefresh,
+        allowToggleSource: false,
+        onResolvedQuality: quality => { resolvedQuality = quality },
+      }) : Promise.reject(new Error('not found'))).catch(async() => {
+        return getMusicUrl({
+          musicInfo,
+          quality: targetQuality,
+          isRefresh,
+          allowToggleSource: shouldToggleSourceOnError(),
+          forceToggleSource,
+          onResolvedQuality: quality => { resolvedQuality = quality },
+          onToggleSource(mInfo) {
+            if (diffCurrentMusicInfo(musicInfo)) return
+            setAllStatus(window.i18n.t('toggle_source_try'))
+          },
+        })
+      }).then(url => ({ url }))
+  return sourceRequest.then(result => {
     if (window.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) return null
 
-    const quality = onlineMusicInfo
+    const quality = result.type ?? (onlineMusicInfo
       ? (resolvedQuality ?? getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo))
-      : appSetting['player.playQuality']
-    return { url, quality }
+      : appSetting['player.playQuality'])
+    return { url: result.url, quality, audioUrl: result.audioUrl, isVideo }
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   }).catch(err => {
     // console.log('err', err.message)
@@ -213,11 +222,15 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       }
       return
     }
-    const { url, quality } = result
+    const { url, quality, audioUrl, isVideo } = result
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     // 记录当前播放音质，用于在主界面显示。
     if (musicInfo.id == playMusicInfo.musicInfo?.id) {
       setPlayQuality(getMusicQualityLabel(musicInfo, quality))
+    }
+    if (isVideo) {
+      await setResource(url, undefined, undefined, audioUrl)
+      return
     }
     if (appSetting['player.playEngine'] === 'audirvana') {
       const audirvanaFilePath = buildAudirvanaFilePath(musicInfo)
@@ -725,6 +738,7 @@ export const play = () => {
     return
   }
   clearShouldPlayAfterLoad()
+  if (isBiliVideoActive()) setPlayerPlaying(true)
   // renderer 端兜底：如果主进程没有正确恢复暂停位置，先把进度 seek 回去再播放。
   if (rendererPausedAt > 0) {
     const resumeTime = rendererPausedAt
@@ -740,6 +754,7 @@ export const play = () => {
 export const pause = () => {
   clearShouldPlayAfterLoad()
   rendererPausedAt = getCurrentTime()
+  if (isBiliVideoActive()) setPlayerPlaying(false)
   setPause()
 }
 

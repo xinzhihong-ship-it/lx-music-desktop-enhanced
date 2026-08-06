@@ -16,15 +16,21 @@ export interface MpvPathInfo {
   source: MpvPathSource
 }
 
-type MpvEventName = 'started' | 'loaded' | 'playing' | 'pause' | 'stopped' | 'ended' | 'error' | 'timeUpdate' | 'duration' | 'seeked'
+type MpvEventName = 'started' | 'loaded' | 'playing' | 'pause' | 'stopped' | 'ended' | 'error' | 'timeUpdate' | 'duration' | 'seeked' | 'doubleClick'
 
 interface MpvIpcResponse {
   request_id?: number
   error?: string
   data?: unknown
   event?: string
+  args?: unknown[]
   name?: string
   reason?: string
+}
+
+export interface MpvControllerOptions {
+  video?: boolean
+  windowId?: string
 }
 
 const isWin = process.platform == 'win32'
@@ -142,6 +148,8 @@ let instanceCounter = 0
 
 export class MpvController {
   readonly instanceId = ++instanceCounter
+  private readonly isVideo: boolean
+  private readonly videoWindowId: string | null
   private process: ChildProcess | null = null
   private socket: net.Socket | null = null
   private ipcPath = ''
@@ -165,6 +173,13 @@ export class MpvController {
   pausedAt = 0
   loadedUrl = ''
   private cachedVolume: number | null = null
+  private cachedAudioDevice: string | null = null
+  private videoInputConfPath = ''
+
+  constructor(options: MpvControllerOptions = {}) {
+    this.isVideo = options.video === true
+    this.videoWindowId = options.windowId ?? null
+  }
 
   async ensureStarted(): Promise<MpvPathInfo> {
     if (this.socket && this.process && !this.process.killed) {
@@ -224,6 +239,9 @@ export class MpvController {
       if (this.cachedVolume != null) {
         await this.command(['set_property', 'volume', this.cachedVolume]).catch(err => log.warn(err))
       }
+      if (this.cachedAudioDevice != null) {
+        await this.command(['set_property', 'audio-device', this.cachedAudioDevice]).catch(err => log.warn(err))
+      }
       this.sendEvent('started', mpvPath)
       this.cachedPathInfo = mpvPath
       return mpvPath
@@ -246,13 +264,34 @@ export class MpvController {
 
     const args = [
       '--idle=yes',
-      '--no-video',
-      '--force-window=no',
-      '--audio-display=no',
+      ...(this.isVideo
+        ? [
+            '--config=no',
+            '--force-window=yes',
+            '--no-border',
+            '--title-bar=no',
+            '--show-in-taskbar=no',
+            '--audio-display=no',
+            '--keepaspect=yes',
+            '--osd-level=0',
+            '--osc=no',
+            `--wid=${this.videoWindowId ?? '0'}`,
+          ]
+        : [
+            '--no-video',
+            '--force-window=no',
+            '--audio-display=no',
+          ]),
       `--input-ipc-server=${this.ipcPath}`,
       '--hr-seek=yes',
       '--audio-exclusive=no',
     ]
+
+    if (this.isVideo) {
+      this.videoInputConfPath = path.join(os.tmpdir(), `lx-music-video-${process.pid}-${this.instanceId}.conf`)
+      fs.writeFileSync(this.videoInputConfPath, 'MOUSE_BTN0_DBL script-message lx-video-double-click\n')
+      args.push(`--input-conf=${this.videoInputConfPath}`)
+    }
 
     if (global.lx.appSetting['player.mpv.bitPerfectMode']) {
       args.push('--replaygain=no', '--af-clr')
@@ -354,6 +393,9 @@ export class MpvController {
     }
 
     switch (message.event) {
+      case 'client-message':
+        if (this.isVideo && message.args?.includes('lx-video-double-click')) this.sendEvent('doubleClick')
+        break
       case 'file-loaded':
         this.hasFileLoaded = true
         // loaded / duration 事件推迟到 loadUrl 完成所有初始化（pause、seek 0）后再发送，
@@ -533,7 +575,7 @@ export class MpvController {
     return false
   }
 
-  async loadUrl(url: string, options?: { emitLoaded?: boolean }): Promise<void> {
+  async loadUrl(url: string, options?: { emitLoaded?: boolean, audioUrl?: string }): Promise<void> {
     await this.ensureStarted()
     this.loadedUrl = url
     log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
@@ -582,6 +624,9 @@ export class MpvController {
       }
     }
     await fileLoaded
+    if (this.isVideo && options?.audioUrl) {
+      await this.command(['audio-add', options.audioUrl, 'select']).catch(err => log.warn('mpv video audio-add failed:', err))
+    }
     // 文件加载完成后立即置为暂停，使 pause 属性从 false/undefined 变为 true，
     // 从而触发 property-change 事件；同时避免 MPV 在加载后进入 playback-restart
     // 并误报 playing 事件。
@@ -657,6 +702,12 @@ export class MpvController {
     await this.command(['set_property', 'volume', volume])
   }
 
+  async setAudioDevice(device: string): Promise<void> {
+    this.cachedAudioDevice = device || 'auto'
+    if (!this.socket) return
+    await this.command(['set_property', 'audio-device', this.cachedAudioDevice])
+  }
+
   async getPosition(): Promise<number> {
     if (!this.socket) return 0
     return (await this.command<number | null>(['get_property', 'time-pos'])) ?? 0
@@ -726,6 +777,10 @@ export class MpvController {
     if (this.process && !this.process.killed) this.process.kill()
     this.process = null
     this.cachedPathInfo = null
+    if (this.videoInputConfPath) {
+      await fs.promises.unlink(this.videoInputConfPath).catch(() => {})
+      this.videoInputConfPath = ''
+    }
     // 保持 isDestroyed=true，避免退出事件被误转发给 renderer 造成播放状态混乱。
   }
 
@@ -750,18 +805,33 @@ export class MpvController {
 
   sendEvent(name: MpvEventName, data?: unknown) {
     if (this.isDestroyed && name !== 'error') return
-    const eventNames: Record<MpvEventName, string> = {
-      started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_started,
-      loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_loaded,
-      playing: WIN_MAIN_RENDERER_EVENT_NAME.mpv_playing,
-      pause: WIN_MAIN_RENDERER_EVENT_NAME.mpv_pause_event,
-      stopped: WIN_MAIN_RENDERER_EVENT_NAME.mpv_stopped,
-      ended: WIN_MAIN_RENDERER_EVENT_NAME.mpv_ended,
-      error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_error,
-      timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_timeUpdate,
-      duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_duration,
-      seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_seeked,
-    }
+    const eventNames: Record<MpvEventName, string> = this.isVideo
+      ? {
+          started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_started,
+          loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_loaded,
+          playing: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_playing,
+          pause: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_pause_event,
+          stopped: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_stopped,
+          ended: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_ended,
+          error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_error,
+          timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_timeUpdate,
+          duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_duration,
+          seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_seeked,
+          doubleClick: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_doubleClick,
+        }
+      : {
+          started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_started,
+          loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_loaded,
+          playing: WIN_MAIN_RENDERER_EVENT_NAME.mpv_playing,
+          pause: WIN_MAIN_RENDERER_EVENT_NAME.mpv_pause_event,
+          stopped: WIN_MAIN_RENDERER_EVENT_NAME.mpv_stopped,
+          ended: WIN_MAIN_RENDERER_EVENT_NAME.mpv_ended,
+          error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_error,
+          timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_timeUpdate,
+          duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_duration,
+          seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_seeked,
+          doubleClick: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_doubleClick,
+        }
     // 仅对状态变化类事件保留调试日志，避免 timeUpdate/duration 刷屏。
     if (name !== 'timeUpdate' && name !== 'duration') {
       log.info(`[MpvController sendEvent] instance=${this.instanceId} name=${name} isDestroyed=${this.isDestroyed}`)

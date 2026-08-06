@@ -155,7 +155,10 @@ export const biliGet = async(url, params = {}, { signed = false, raw = false } =
   if (statusCode != 200) throw new Error(`bili request failed (${statusCode})`)
   const data = typeof body == 'string' ? JSON.parse(body) : body
   if (raw) return data
-  if (data?.code !== 0) throw new Error(`bili api error (${data?.code}: ${data?.message || 'unknown'})`)
+  if (data?.code !== 0) {
+    console.error('[bili api error]', { endpoint: url, params, code: data?.code, message: data?.message })
+    throw new Error(`bili api error (${data?.code}: ${data?.message || 'unknown'})`)
+  }
   return data?.data ?? data
 }
 

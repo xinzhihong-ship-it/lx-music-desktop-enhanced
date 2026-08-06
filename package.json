@@ -62,6 +62,7 @@
     "build:renderer": "cross-env NODE_ENV=production webpack --config build-config/renderer/webpack.config.prod.js --progress",
     "build:renderer-lyric": "cross-env NODE_ENV=production webpack --config build-config/renderer-lyric/webpack.config.prod.js --progress",
     "build:renderer-scripts": "cross-env NODE_ENV=production webpack --config build-config/renderer-scripts/webpack.config.prod.js --progress",
+    "build:native:mpv-video": "node build-config/build-mpv-video.js",
     "lint": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly src",
     "lint:fix": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly --fix src",
     "test:music-recognition": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/musicRecognitionDecision.test.mjs",

@@ -94,6 +94,7 @@ dd(:aria-label="$t('setting__play_mediaDevice_title')")
 import { ref, onBeforeUnmount, onMounted, watch, computed } from '@common/utils/vueTools'
 import { hasInitedAdvancedAudioFeatures, setMediaDeviceId } from '@renderer/plugins/player'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
+import * as mpvVideoPlayer from '@renderer/plugins/player/mpvVideo'
 import { dialog } from '@renderer/plugins/Dialog'
 import showTip from '@renderer/plugins/Tips/Tips'
 import { useI18n } from '@renderer/plugins/i18n'
@@ -301,6 +302,11 @@ export default {
       if (isMpvEngine()) {
         log.info('[SettingPlay] mediaDeviceId changed to:', mediaDeviceId.value, 'isPlay:', isPlay.value)
         updateSetting({ 'player.mediaDeviceId': mediaDeviceId.value })
+        if (!mpvVideoPlayer.isEmpty()) {
+          void mpvVideoPlayer.setAudioDevice(mediaDeviceId.value).catch(err => {
+            log.error('[SettingPlay] video audio device update failed:', err)
+          })
+        }
         // 正在播放或已有曲目加载（暂停中）时才需要 restart 让新设备立即生效；
         // --audio-device 是 mpv 启动参数，不重启进程不会应用。
         // mpv 进程未启动（无曲目）时只需保存，下次播放自动用新设备。

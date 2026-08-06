@@ -43,6 +43,7 @@ const options = {
     'node_modules/bufferutil',
     'node_modules/utf-8-validate',
     'build/Release/qrc_decode.node',
+    'build/Release/lx_mpv_video.node',
     'dist/**/*',
     '!dist/**/index-dev.js',
   ],

@@ -1,13 +1,13 @@
 <template lang="pug">
 transition(enter-active-class="animated slideInRight" leave-active-class="animated slideOutDown" @after-enter="handleAfterEnter" @after-leave="handleAfterLeave")
-  div(v-if="isShowPlayerDetail" :class="[$style.container, { fullscreen: isFullscreen }]" @contextmenu="handleContextMenu")
+  div(v-if="isShowPlayerDetail" :class="[$style.container, { fullscreen: isFullscreen, [$style.videoOnlyFullscreen]: isVideoOnlyFullscreen }]" @contextmenu="handleContextMenu")
     div(:class="$style.bg")
     //- div(:class="$style.bg" :style="bgStyle")
     //- div(:class="$style.bg2")
-    ControlBtnsLeftHeader(v-if="appSetting['common.controlBtnPosition'] == 'left'")
-    ControlBtnsRightHeader(v-else)
+    ControlBtnsLeftHeader(v-if="!isVideoOnlyFullscreen && appSetting['common.controlBtnPosition'] == 'left'")
+    ControlBtnsRightHeader(v-else-if="!isVideoOnlyFullscreen")
     div(:class="[$style.main, {[$style.showComment]: isShowPlayComment}]")
-      div.left(:class="$style.left")
+      div.left(v-if="!isVideoOnlyFullscreen" :class="$style.left")
         //- div(:class="$style.info")
         div(:class="$style.info")
           img(v-if="musicInfo.pic" :class="$style.img" :src="musicInfo.pic")
@@ -17,25 +17,32 @@ transition(enter-active-class="animated slideInRight" leave-active-class="animat
             p(v-if="musicInfo.album") {{ $t('player__music_album') }}{{ musicInfo.album }}
             p(:class="$style.quality")
               play-quality-tag
+            div(v-if="canSwitchBiliMode" :class="$style.biliControls")
+              button(type="button" :class="[$style.modeButton, { [$style.active]: biliPlaybackMode === 'audio' }]" @click.stop="switchBiliMode('audio')") 音频
+              button(type="button" :class="[$style.modeButton, { [$style.active]: biliPlaybackMode === 'video' }]" @click.stop="switchBiliMode('video')") 视频
+              select(v-if="biliPlaybackMode === 'video'" v-model="biliVideoQuality" :class="$style.qualitySelect" aria-label="视频画质" @click.stop @change.stop="reloadBiliVideo")
+                option(v-for="quality in biliVideoQualityOptions" :key="quality" :value="quality") {{ quality === 'auto' ? '自动' : quality }}
 
       transition(enter-active-class="animated fadeIn" leave-active-class="animated fadeOut")
-        LyricPlayer(v-if="visibled")
-      music-comment(v-if="visibled" :class="$style.comment" :show="isShowPlayComment" :music-info="playMusicInfo.musicInfo" @close="hideComment")
+        VideoStage(v-if="isBiliVideo" :fullscreen="isVideoOnlyFullscreen" @toggle-fullscreen="toggleVideoFullscreen")
+        LyricPlayer(v-else-if="visibled")
+      music-comment(v-if="visibled && !isVideoOnlyFullscreen" :class="$style.comment" :show="isShowPlayComment" :music-info="playMusicInfo.musicInfo" @close="hideComment")
     transition(enter-active-class="animated fadeIn" leave-active-class="animated fadeOut")
-      play-bar(v-if="visibled")
+      play-bar(v-if="visibled" :class="isVideoOnlyFullscreen ? $style.videoFullscreenPlayBar : undefined")
     transition(enter-active-class="animated-slow fadeIn" leave-active-class="animated-slow fadeOut")
-      common-audio-visualizer(v-if="appSetting['player.audioVisualization'] && visibled")
+      common-audio-visualizer(v-if="appSetting['player.audioVisualization'] && visibled && !isVideoOnlyFullscreen")
 </template>
 
 
 <script>
-import { ref, watch } from '@common/utils/vueTools'
+import { computed, ref, watch } from '@common/utils/vueTools'
 import { isFullscreen } from '@renderer/store'
 import {
   isShowPlayerDetail,
   isShowPlayComment,
   musicInfo,
   playMusicInfo,
+  isPlay,
 } from '@renderer/store/player/state'
 import {
   setShowPlayerDetail,
@@ -51,6 +58,10 @@ import { registerAutoHideMounse, unregisterAutoHideMounse } from './autoHideMoun
 import { appSetting } from '@renderer/store/setting'
 import { closeWindow, maxWindow, minWindow, setFullScreen } from '@renderer/utils/ipc'
 import PlayQualityTag from '../PlayBar/PlayQualityTag.vue'
+import VideoStage from './VideoStage.vue'
+import { setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
+import { setStop } from '@renderer/plugins/player'
+import { biliPlaybackMode, biliVideoQuality, biliVideoQualityOptions, isBiliMusic, isBiliVideoActive } from '@renderer/store/player/biliVideo'
 
 export default {
   name: 'CorePlayDetail',
@@ -61,9 +72,37 @@ export default {
     PlayBar,
     MusicComment,
     PlayQualityTag,
+    VideoStage,
   },
   setup() {
     const visibled = ref(false)
+    const isVideoOnlyFullscreen = ref(false)
+    const canSwitchBiliMode = computed(() => isBiliMusic(playMusicInfo.musicInfo))
+    const isBiliVideo = computed(() => isBiliVideoActive())
+
+    const reloadBiliVideo = async(mode = biliPlaybackMode.value) => {
+      if (!playMusicInfo.musicInfo || !canSwitchBiliMode.value) return
+      const nextMode = mode === 'audio' || mode === 'video' ? mode : biliPlaybackMode.value
+      const shouldPlay = isPlay.value
+      if (nextMode === 'audio') isVideoOnlyFullscreen.value = false
+      // 先停掉旧模式，避免新 URL 请求失败时旧音频继续播放。
+      await setStop()
+      window.app_event.pause()
+      biliPlaybackMode.value = nextMode
+      setShouldPlayAfterLoad(shouldPlay)
+      setMusicUrl(playMusicInfo.musicInfo, true)
+    }
+    const switchBiliMode = mode => {
+      if (!canSwitchBiliMode.value || biliPlaybackMode.value === mode) return
+      void reloadBiliVideo(mode)
+    }
+    const toggleVideoFullscreen = async() => {
+      if (!isBiliVideo.value) return
+      const fullscreen = await setFullScreen(!isVideoOnlyFullscreen.value)
+      isVideoOnlyFullscreen.value = fullscreen
+      isFullscreen.value = fullscreen
+      if (fullscreen) unregisterAutoHideMounse()
+    }
 
     let clickTime = 0
 
@@ -84,7 +123,7 @@ export default {
     }
 
     const handleAfterEnter = () => {
-      if (isFullscreen.value) registerAutoHideMounse()
+      if (isFullscreen.value && !isVideoOnlyFullscreen.value) registerAutoHideMounse()
 
       visibled.value = true
     }
@@ -93,12 +132,19 @@ export default {
       setShowPlayLrcSelectContentLrc(false)
       hideComment(false)
       visibled.value = false
+      isVideoOnlyFullscreen.value = false
 
       unregisterAutoHideMounse()
     }
 
+    watch(isBiliVideo, active => {
+      if (!active) isVideoOnlyFullscreen.value = false
+    })
+
     watch(isFullscreen, isFullscreen => {
-      (isFullscreen ? registerAutoHideMounse : unregisterAutoHideMounse)()
+      if (isFullscreen && !isVideoOnlyFullscreen.value) registerAutoHideMounse()
+      else unregisterAutoHideMounse()
+      if (!isFullscreen) isVideoOnlyFullscreen.value = false
     })
 
 
@@ -114,12 +160,16 @@ export default {
       handleAfterEnter,
       handleAfterLeave,
       visibled,
+      isVideoOnlyFullscreen,
       isFullscreen,
-      fullscreenExit() {
-        void setFullScreen(false).then((fullscreen) => {
-          isFullscreen.value = fullscreen
-        })
-      },
+      isBiliVideo,
+      canSwitchBiliMode,
+      biliPlaybackMode,
+      biliVideoQuality,
+      biliVideoQualityOptions,
+      switchBiliMode,
+      reloadBiliVideo,
+      toggleVideoFullscreen,
       min() {
         minWindow()
       },
@@ -163,6 +213,51 @@ export default {
   * {
     box-sizing: border-box;
   }
+}
+.videoOnlyFullscreen {
+  .bg {
+    display: none;
+  }
+  .main {
+    margin: 0;
+  }
+}
+.videoFullscreenPlayBar {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100px;
+  background: rgba(0, 0, 0, .72);
+  color: #fff;
+  --color-font: #fff;
+  --color-font-label: #fff;
+  --color-button-font: #fff;
+}
+.biliControls {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+.modeButton,
+.qualitySelect {
+  height: 24px;
+  margin-right: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--color-font);
+  background: var(--color-primary-light-900-alpha-200);
+  cursor: pointer;
+}
+.modeButton.active {
+  color: var(--color-primary);
+}
+.qualitySelect {
+  max-width: 94px;
+  outline: none;
 }
 .bg {
   position: absolute;

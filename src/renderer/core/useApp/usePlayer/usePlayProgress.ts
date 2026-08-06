@@ -4,6 +4,7 @@ import { throttle } from '@common/utils'
 import { savePlayInfo } from '@renderer/utils/ipc'
 import { onTimeupdate, getCurrentTime, getDuration, setCurrentTime, setPlay, onVisibilityChange } from '@renderer/plugins/player'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
+import * as mpvVideoPlayer from '@renderer/plugins/player/mpvVideo'
 import { clearPendingSeek } from '@renderer/plugins/player/mpv'
 import { playProgress, setNowPlayTime, setMaxplayTime } from '@renderer/store/player/playProgress'
 import { musicInfo, playMusicInfo, playInfo, isPlay } from '@renderer/store/player/state'
@@ -12,6 +13,7 @@ import { appSetting } from '@renderer/store/setting'
 import { playNext, setShouldPlayAfterSeek } from '@renderer/core/player'
 import { updateListMusics } from '@renderer/store/list/action'
 import { shouldSkipOnError } from '@renderer/core/player/errorStrategy'
+import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 
 const delaySavePlayInfo = throttle(savePlayInfo, 2000)
 
@@ -86,7 +88,7 @@ export default () => {
 
     // 内置引擎 / Audirvana 在拖动进度条后，某些情况下会被停在暂停状态，
     // 如果拖动前正在播放，则主动调用 play() 恢复。
-    if ((appSetting['player.playEngine'] == 'electron' || appSetting['player.playEngine'] == 'audirvana') && wasPlaying) {
+    if ((appSetting['player.playEngine'] == 'electron' || appSetting['player.playEngine'] == 'audirvana' || isBiliVideoActive()) && wasPlaying) {
       setPlay()
     }
   }
@@ -216,7 +218,10 @@ export default () => {
   watch(() => appSetting['player.playEngine'], subscribeTimeupdate)
 
   const rOnMpvDuration = mpvPlayer.onDuration((dur: number) => {
-    setMaxplayTime(dur)
+    if (!isBiliVideoActive() && appSetting['player.playEngine'] == 'mpv') setMaxplayTime(dur)
+  })
+  const rOnMpvVideoDuration = mpvVideoPlayer.onDuration((dur: number) => {
+    if (isBiliVideoActive()) setMaxplayTime(dur)
   })
 
   let currentPlayTime = 0
@@ -233,6 +238,7 @@ export default () => {
   onBeforeUnmount(() => {
     rOnTimeupdate?.()
     rOnMpvDuration()
+    rOnMpvVideoDuration()
     rVisibilityChange()
     // window.app_event.off('play', handlePlay)
     window.app_event.off('pause', handlePause)

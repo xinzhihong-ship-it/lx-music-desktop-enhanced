@@ -3,6 +3,7 @@ const fsPromises = require('fs').promises
 const path = require('path')
 const { Arch } = require('electron-builder')
 const nodeAbi = require('node-abi')
+const { buildMpvVideoNative } = require('./build-mpv-video')
 
 const better_sqlite3_fileNameMap = {
   [Arch.x64]: 'linux-x64',
@@ -56,6 +57,7 @@ module.exports = async(context) => {
   const electronVersion = context.packager?.info?._framework?.version ?? require('../package.json').devDependencies.electron.replace(/^[^\d]*?(\d+)/, '$1')
   const electronNodeAbi = nodeAbi.getAbi(electronVersion, 'electron')
   await replaceQrcDecodeLib(electronNodeAbi, electronPlatformName, arch)
+  if (electronPlatformName === 'darwin' && (arch === Arch.arm64 || (arch === Arch.x64 && process.arch === 'x64'))) buildMpvVideoNative()
   if (electronPlatformName !== 'linux' || process.env.FORCE) return
   const bindingFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp')
   const bindingBakFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp.bak')

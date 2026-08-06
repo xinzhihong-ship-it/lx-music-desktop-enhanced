@@ -52,6 +52,7 @@ import useSoundEffect from "./useSoundEffect";
 import useMaxOutputChannelCount from "./useMaxOutputChannelCount";
 import { setPowerSaveBlocker } from "@renderer/core/player/utils";
 import usePreloadNextMusic from "./usePreloadNextMusic";
+import { isBiliVideoActive } from "@renderer/store/player/biliVideo";
 
 export default () => {
 	const t = useI18n();
@@ -128,6 +129,9 @@ export default () => {
 			// 避免 seek 期间 isPlay 被浏览器临时置为 false 而误暂停。
 			playerSetPlay();
 			clearShouldPlayAfterSeek();
+		} else if (isBiliVideoActive()) {
+			if (!isPlay.value) setPause();
+			else playerSetPlay();
 		} else if (
 			appSetting["player.playEngine"] == "mpv" ||
 			appSetting["player.playEngine"] == "audirvana"

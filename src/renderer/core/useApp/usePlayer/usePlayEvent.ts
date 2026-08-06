@@ -7,6 +7,7 @@ import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { isPlayErrorHandlingEnabled, shouldLowerQualityOnError, shouldSkipOnError, shouldToggleSourceOnError } from '@renderer/core/player/errorStrategy'
 import { getLowerPlayQuality, getPlayQuality, QUALITY_RANK } from '@renderer/core/music/utils'
+import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 
 export default () => {
   const t = useI18n()
@@ -68,13 +69,13 @@ export default () => {
 
   const handleLoadstart = () => {
     if (window.lx.isPlayedStop) return
-    if (appSetting['player.playEngine'] === 'audirvana') return
+    if (appSetting['player.playEngine'] === 'audirvana' && !isBiliVideoActive()) return
     if (isPlayErrorHandlingEnabled()) startLoadingTimeout()
     setAllStatus(t('player__loading'))
   }
 
   const handleLoadeddata = () => {
-    if (appSetting['player.playEngine'] === 'audirvana') return
+    if (appSetting['player.playEngine'] === 'audirvana' && !isBiliVideoActive()) return
     // 文件已加载完成，清除“加载中”状态；
     // 若随后进入播放，handlePlaying 会再次清空；若保持暂停，也不应继续显示加载中。
     setAllStatus('')
