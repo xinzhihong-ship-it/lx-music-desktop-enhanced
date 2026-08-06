@@ -56,8 +56,9 @@ let videoHostReady: Promise<void> | null = null
 const useNativeMacVideo = process.platform === 'darwin'
 const useNativeWindowsVideoHost = process.platform === 'win32'
 const requireNative = <T>(modulePath: string): T => {
-  // Use Node's runtime require so webpack does not bundle the native module path.
-  const nodeRequire = module.require.bind(module)
+  // webpack must not turn the user-selectable native module path into a context import.
+  // eslint-disable-next-line no-eval
+  const nodeRequire = eval('require') as NodeRequire
   return nodeRequire(modulePath) as T
 }
 
