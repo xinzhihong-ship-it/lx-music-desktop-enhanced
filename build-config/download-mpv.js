@@ -69,9 +69,14 @@ const download = async (url, dest) => {
 const getGitHubLatestAssetUrl = async (repo, pattern) => {
   const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`
   console.log(`Fetching latest release: ${apiUrl}`)
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
   const resp = await needle('get', apiUrl, {
     follow_max: 5,
-    headers: { Accept: 'application/vnd.github+json' },
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'lx-music-desktop-build',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   })
   if (resp.statusCode !== 200) {
     throw new Error(`GitHub API failed: ${apiUrl} (status ${resp.statusCode})`)

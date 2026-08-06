@@ -83,9 +83,15 @@ const withMpvResources = async(baseOptions, mpvPlatform, mpvArch) => {
       await downloadMpv(mpvPlatform, mpvArch)
     } catch (err) {
       console.error(`[download mpv] ${err.message}`)
-      // 继续打包：用户可能已经手动放置了 mpv 二进制
+      // 允许手动放置内置二进制；支持自动下载的 Windows 架构在下方校验
     }
     const mpvResourcePath = `./resources/mpv/${mpvPlatform}-${mpvArch}`
+    const mpvBinaryPath = path.join(mpvResourcePath, 'mpv.exe')
+    if (
+      mpvPlatform === 'win32' &&
+      (mpvArch === 'x64' || mpvArch === 'arm64') &&
+      !fs.existsSync(mpvBinaryPath)
+    ) throw new Error(`Missing MPV runtime for ${mpvPlatform}-${mpvArch}: ${mpvBinaryPath}`)
     if (fs.existsSync(mpvResourcePath)) {
       buildOptions.extraResources = [
         ...buildOptions.extraResources,
