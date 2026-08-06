@@ -315,10 +315,8 @@ export class MpvController {
       log.info('No extraArgs in config, using default audio device')
     }
 
-    // Windows 的 --wid 使用外部 HWND；原生 D3D11 对嵌入窗口和现代显卡更稳定。
-    if (this.isVideo && isWin) {
-      args.push('--vo=gpu', '--gpu-api=d3d11', '--gpu-context=d3d11', '--d3d11-output-mode=window', '--d3d11-flip=no')
-    }
+    // Windows 的 --wid 嵌入 Chromium 宿主时，使用传统 Direct3D 窗口输出避免 D3D11 swapchain 黑屏。
+    if (this.isVideo && isWin) args.push('--vo=direct3d')
 
     log.info(`mpv final args: ${args.join(' ')}`)
     return args

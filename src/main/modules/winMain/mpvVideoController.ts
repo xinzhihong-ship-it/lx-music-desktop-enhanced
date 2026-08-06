@@ -47,9 +47,8 @@ let removeHostWindowListeners: (() => void) | null = null
 let videoHostReady: Promise<void> | null = null
 const useNativeMacVideo = process.platform === 'darwin'
 const requireNative = (modulePath: string): NativeMpvVideo => {
-  // webpack must not turn the user-selectable native module path into a context import.
-  // eslint-disable-next-line no-eval
-  const nodeRequire = eval('require') as NodeRequire
+  // Use Node's runtime require so webpack does not bundle the native module path.
+  const nodeRequire = module.require.bind(module)
   return nodeRequire(modulePath) as NativeMpvVideo
 }
 
