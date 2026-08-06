@@ -315,9 +315,6 @@ export class MpvController {
       log.info('No extraArgs in config, using default audio device')
     }
 
-    // Windows 的 --wid 嵌入 Chromium 宿主时，使用传统 Direct3D 窗口输出避免 D3D11 swapchain 黑屏。
-    if (this.isVideo && isWin) args.push('--vo=direct3d')
-
     log.info(`mpv final args: ${args.join(' ')}`)
     return args
   }

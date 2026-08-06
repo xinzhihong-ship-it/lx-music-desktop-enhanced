@@ -3,7 +3,7 @@ const fsPromises = require('fs').promises
 const path = require('path')
 const { Arch } = require('electron-builder')
 const nodeAbi = require('node-abi')
-const { buildMpvVideoNative } = require('./build-mpv-video')
+const { buildMpvVideoNative, buildMpvWindowNative } = require('./build-mpv-video')
 
 const better_sqlite3_fileNameMap = {
   [Arch.x64]: 'linux-x64',
@@ -26,6 +26,12 @@ const qrc_decode_fileNameMap = {
     [Arch.x64]: 'darwin-x64',
     [Arch.arm64]: 'darwin-arm64',
   },
+}
+
+const mpvWindowArchMap = {
+  [Arch.x64]: 'x64',
+  [Arch.ia32]: 'ia32',
+  [Arch.arm64]: 'arm64',
 }
 
 const replaceSqliteLib = async(electronNodeAbi, arch) => {
@@ -62,6 +68,11 @@ module.exports = async(context) => {
     const sameArchitecture = targetArch === process.arch
     if (!sameArchitecture) throw new Error(`macOS 视频原生桥不能交叉编译：目标 ${targetArch || arch}，当前构建进程 ${process.arch}`)
     if (!buildMpvVideoNative()) throw new Error('macOS 视频原生桥构建失败：请先安装对应架构的 mpv（brew install mpv）')
+  }
+  if (electronPlatformName === 'win32') {
+    const targetArch = mpvWindowArchMap[arch]
+    if (!targetArch) throw new Error(`Windows 视频宿主桥不支持目标架构：${arch}`)
+    if (!buildMpvWindowNative(targetArch)) throw new Error('Windows 视频宿主桥构建失败')
   }
   if (electronPlatformName !== 'linux' || process.env.FORCE) return
   const bindingFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp')

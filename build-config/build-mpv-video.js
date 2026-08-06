@@ -7,6 +7,10 @@ const sourceDir = path.join(root, 'native/mpv-video')
 const sourceFile = path.join(sourceDir, 'build/Release/lx_mpv_video.node')
 const targetFile = path.join(root, 'build/Release/lx_mpv_video.node')
 const runtimeDir = path.join(root, 'build/Release/mpv-libs')
+const windowSourceDir = path.join(root, 'native/mpv-window')
+const windowSourceFile = path.join(windowSourceDir, 'build/Release/lx_mpv_window.node')
+const windowTargetFile = path.join(root, 'build/Release/lx_mpv_window.node')
+const nodeGyp = path.join(root, 'node_modules/node-gyp/bin/node-gyp.js')
 
 const getDylibDependencies = (filePath) => execFileSync('otool', ['-L', filePath], { encoding: 'utf8' })
   .split(/\r?\n/)
@@ -71,7 +75,6 @@ const buildMpvVideoNative = () => {
     console.warn(`[mpv video] native bridge skipped: libmpv not found at ${mpvPrefix}`)
     return false
   }
-  const nodeGyp = path.join(root, 'node_modules/node-gyp/bin/node-gyp.js')
   const result = spawnSync(process.execPath, [nodeGyp, 'rebuild', '--directory', sourceDir, '--', `-Dmpv_prefix=${mpvPrefix}`], {
     cwd: root,
     stdio: 'inherit',
@@ -85,6 +88,22 @@ const buildMpvVideoNative = () => {
   return true
 }
 
-if (require.main === module) buildMpvVideoNative()
+const buildMpvWindowNative = arch => {
+  if (process.platform !== 'win32') return false
+  const result = spawnSync(process.execPath, [nodeGyp, 'rebuild', '--directory', windowSourceDir, `--arch=${arch}`], {
+    cwd: root,
+    stdio: 'inherit',
+  })
+  if (result.status !== 0 || !fs.existsSync(windowSourceFile)) throw new Error('Windows MPV video host build failed')
+  fs.mkdirSync(path.dirname(windowTargetFile), { recursive: true })
+  fs.copyFileSync(windowSourceFile, windowTargetFile)
+  console.log(`[mpv video] Windows host ready: ${windowTargetFile}`)
+  return true
+}
 
-module.exports = { buildMpvVideoNative }
+if (require.main === module) {
+  if (process.platform === 'win32') buildMpvWindowNative(process.arch)
+  else buildMpvVideoNative()
+}
+
+module.exports = { buildMpvVideoNative, buildMpvWindowNative }

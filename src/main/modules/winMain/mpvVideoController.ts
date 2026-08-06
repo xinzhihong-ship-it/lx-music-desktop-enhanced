@@ -20,6 +20,13 @@ interface NativeMpvVideo {
   destroy: () => void
 }
 
+interface NativeMpvWindow {
+  create: (parentHandle: Buffer) => string
+  setBounds: (bounds: Electron.Rectangle) => void
+  setVisible: (visible: boolean) => void
+  destroy: () => void
+}
+
 type VideoEventName = 'started' | 'loaded' | 'playing' | 'pause' | 'stopped' | 'ended' | 'error' | 'timeUpdate' | 'duration' | 'seeked' | 'doubleClick'
 
 const isBiliCdn = (url: string) => /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
@@ -34,6 +41,7 @@ const getBiliCookie = () => {
 }
 
 let native: NativeMpvVideo | null = null
+let nativeWindowHost: NativeMpvWindow | null = null
 let initialized = false
 let pollTimer: NodeJS.Timeout | null = null
 let loading = false
@@ -46,10 +54,11 @@ let videoHostParent: BrowserWindow | null = null
 let removeHostWindowListeners: (() => void) | null = null
 let videoHostReady: Promise<void> | null = null
 const useNativeMacVideo = process.platform === 'darwin'
-const requireNative = (modulePath: string): NativeMpvVideo => {
+const useNativeWindowsVideoHost = process.platform === 'win32'
+const requireNative = <T>(modulePath: string): T => {
   // Use Node's runtime require so webpack does not bundle the native module path.
   const nodeRequire = module.require.bind(module)
-  return nodeRequire(modulePath) as NativeMpvVideo
+  return nodeRequire(modulePath) as T
 }
 
 const getExternalWindowId = (handle: Buffer) => {
@@ -58,6 +67,10 @@ const getExternalWindowId = (handle: Buffer) => {
 }
 
 const syncExternalVideoBounds = () => {
+  if (nativeWindowHost) {
+    nativeWindowHost.setBounds(bounds)
+    return
+  }
   if (!videoHostWindow || videoHostWindow.isDestroyed() || !videoHostParent || videoHostParent.isDestroyed()) return
   const contentBounds = videoHostParent.getContentBounds()
   videoHostWindow.setBounds({
@@ -68,40 +81,64 @@ const syncExternalVideoBounds = () => {
   }, false)
 }
 
+const setExternalVideoVisible = (visible: boolean) => {
+  if (nativeWindowHost) {
+    nativeWindowHost.setBounds(bounds)
+    nativeWindowHost.setVisible(visible)
+    return
+  }
+  if (!videoHostWindow || videoHostWindow.isDestroyed()) return
+  syncExternalVideoBounds()
+  if (visible) videoHostWindow.showInactive()
+  else videoHostWindow.hide()
+}
+
 const ensureExternalVideoPlayer = () => {
-  if (processPlayer && videoHostWindow && !videoHostWindow.isDestroyed()) return processPlayer
+  if (processPlayer) return processPlayer
   if (process.platform === 'linux' && !process.env.DISPLAY) {
     throw new Error('Linux 视频嵌入需要 X11；当前 Wayland 会话暂不支持 MPV --wid')
   }
   const parent = getBrowserWindow()
   if (!parent) throw new Error('主窗口尚未创建')
   videoHostParent = parent
-  videoHostWindow = new BrowserWindow({
-    parent,
-    show: false,
-    frame: false,
-    transparent: false,
-    backgroundColor: '#000000',
-    hasShadow: false,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    closable: false,
-    skipTaskbar: true,
-    webPreferences: { sandbox: true },
-  })
-  videoHostWindow.setMenuBarVisibility(false)
-  videoHostReady = videoHostWindow.loadURL('about:blank')
+
+  let windowId: string
+  if (useNativeWindowsVideoHost) {
+    nativeWindowHost = getNativeWindowHost()
+    windowId = nativeWindowHost.create(parent.getNativeWindowHandle())
+    nativeWindowHost.setBounds(bounds)
+    nativeWindowHost.setVisible(false)
+    log.info(`[MpvVideoController] using native Windows video host: ${windowId}`)
+  } else {
+    videoHostWindow = new BrowserWindow({
+      parent,
+      show: false,
+      frame: false,
+      transparent: false,
+      backgroundColor: '#000000',
+      hasShadow: false,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      closable: false,
+      skipTaskbar: true,
+      webPreferences: { sandbox: true },
+    })
+    videoHostWindow.setMenuBarVisibility(false)
+    videoHostReady = videoHostWindow.loadURL('about:blank')
+    windowId = getExternalWindowId(videoHostWindow.getNativeWindowHandle())
+  }
   removeHostWindowListeners = () => {
     parent.off('move', syncExternalVideoBounds)
     parent.off('resize', syncExternalVideoBounds)
   }
   parent.on('move', syncExternalVideoBounds)
   parent.on('resize', syncExternalVideoBounds)
+
   processPlayer = new MpvController({
     video: true,
-    windowId: getExternalWindowId(videoHostWindow.getNativeWindowHandle()),
+    windowId,
   })
   syncExternalVideoBounds()
   return processPlayer
@@ -122,8 +159,29 @@ const getNative = (): NativeMpvVideo => {
       ]
   const modulePath = candidates.find(filePath => fs.existsSync(filePath))
   if (!modulePath) throw new Error('未找到 MPV 视频原生桥，请重新构建应用')
-  native = requireNative(modulePath)
-  return native
+  const nativeModule = requireNative<NativeMpvVideo>(modulePath)
+  native = nativeModule
+  return nativeModule
+}
+
+const getNativeWindowHost = (): NativeMpvWindow => {
+  if (nativeWindowHost) return nativeWindowHost
+  if (!useNativeWindowsVideoHost) throw new Error('当前平台未启用 Windows 视频宿主桥')
+  const candidates = process.env.NODE_ENV === 'development'
+    ? [
+        path.join(process.cwd(), 'native/mpv-window/build/Release/lx_mpv_window.node'),
+        path.join(process.cwd(), 'build/Release/lx_mpv_window.node'),
+      ]
+    : [
+        path.join(__dirname, '../build/Release/lx_mpv_window.node'),
+        path.join(process.resourcesPath, 'app.asar.unpacked/build/Release/lx_mpv_window.node'),
+        path.join(process.resourcesPath, 'build/Release/lx_mpv_window.node'),
+      ]
+  const modulePath = candidates.find(filePath => fs.existsSync(filePath))
+  if (!modulePath) throw new Error('未找到 Windows 视频宿主桥，请重新构建应用')
+  const nativeModule = requireNative<NativeMpvWindow>(modulePath)
+  nativeWindowHost = nativeModule
+  return nativeModule
 }
 
 const sendVideoEvent = (name: VideoEventName, data?: unknown) => {
@@ -214,7 +272,7 @@ const ensureNativeInitialized = () => {
 export const init = async() => {
   if (!useNativeMacVideo) {
     ensureExternalVideoPlayer()
-    await videoHostReady
+    if (videoHostReady) await videoHostReady
     return
   }
   ensureNativeInitialized()
@@ -227,10 +285,10 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
     currentUrl = videoUrl
     try {
       const player = ensureExternalVideoPlayer()
-      await videoHostReady
-      if (!videoHostWindow || videoHostWindow.isDestroyed()) throw new Error('视频宿主窗口已关闭')
-      syncExternalVideoBounds()
-      videoHostWindow.showInactive()
+      if (videoHostReady) await videoHostReady
+      if (!nativeWindowHost && (!videoHostWindow || videoHostWindow.isDestroyed())) throw new Error('视频宿主窗口已关闭')
+      if (nativeWindowHost) log.info(`[MpvVideoController] showing native Windows video host bounds=${JSON.stringify(bounds)}`)
+      setExternalVideoVisible(true)
       await player.loadUrl(videoUrl, { audioUrl })
     } catch (error) {
       loading = false
@@ -353,10 +411,7 @@ export const setBounds = (nextBounds: Electron.Rectangle) => {
 
 export const setVisible = (visible: boolean) => {
   if (!useNativeMacVideo) {
-    if (!videoHostWindow || videoHostWindow.isDestroyed()) return
-    syncExternalVideoBounds()
-    if (visible) videoHostWindow.showInactive()
-    else videoHostWindow.hide()
+    setExternalVideoVisible(visible)
     return
   }
   if (native && initialized) native.setVisible(visible)
@@ -365,8 +420,10 @@ export const setVisible = (visible: boolean) => {
 export const destroy = async() => {
   const nativeToDestroy = native
   const nativeWasInitialized = initialized
+  const nativeWindowHostToDestroy = nativeWindowHost
   const processPlayerToDestroy = processPlayer
   native = null
+  nativeWindowHost = null
   initialized = false
   processPlayer = null
   if (pollTimer) {
@@ -375,6 +432,7 @@ export const destroy = async() => {
   }
   if (nativeToDestroy && nativeWasInitialized) nativeToDestroy.destroy()
   await processPlayerToDestroy?.destroy()
+  nativeWindowHostToDestroy?.destroy()
   removeHostWindowListeners?.()
   removeHostWindowListeners = null
   if (videoHostWindow && !videoHostWindow.isDestroyed()) videoHostWindow.destroy()
