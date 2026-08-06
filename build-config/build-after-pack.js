@@ -5,6 +5,34 @@ const { promisify } = require('util')
 
 const execFileAsync = promisify(execFile)
 
+const findFiles = async(dir, extension) => {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
+  const files = []
+  for (const entry of entries) {
+    const entryPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) files.push(...await findFiles(entryPath, extension))
+    else if (entry.name.endsWith(extension)) files.push(entryPath)
+  }
+  return files
+}
+
+const signMpvNativeFiles = async(appPath) => {
+  const nativeDir = path.join(appPath, 'Contents/Resources/app.asar.unpacked/build/Release')
+  const candidateFiles = [
+    path.join(nativeDir, 'lx_mpv_video.node'),
+    ...await findFiles(path.join(nativeDir, 'mpv-libs'), '.dylib'),
+  ]
+  for (const filePath of candidateFiles) {
+    await fs.access(filePath)
+    await execFileAsync('codesign', [
+      '--force',
+      '--sign', '-',
+      '--options', 'runtime',
+      filePath,
+    ])
+  }
+}
+
 const signMacAppForLocalUse = async(appPath) => {
   const entitlements = path.resolve(__dirname, '../resources/entitlements.mac.plist')
   const audioTeePath = path.join(appPath, 'Contents/Resources/bin/music-recognition/audiotee')
@@ -15,6 +43,7 @@ const signMacAppForLocalUse = async(appPath) => {
     '--entitlements', entitlements,
     audioTeePath,
   ])
+  await signMpvNativeFiles(appPath)
   await execFileAsync('codesign', [
     '--force',
     '--deep',
