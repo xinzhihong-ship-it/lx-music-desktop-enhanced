@@ -1,6 +1,7 @@
 /* eslint-disable no-template-curly-in-string */
 
 const fs = require('fs')
+const path = require('path')
 const builder = require('electron-builder')
 const beforePack = require('./build-before-pack')
 const afterPack = require('./build-after-pack')
