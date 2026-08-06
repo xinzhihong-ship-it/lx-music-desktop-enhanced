@@ -21,7 +21,7 @@ interface NativeMpvVideo {
 }
 
 interface NativeMpvWindow {
-  create: (parentHandle: Buffer) => string
+  create: (parentHandle: Buffer, onDoubleClick: () => void) => string
   setBounds: (bounds: Electron.Rectangle) => void
   setVisible: (visible: boolean) => void
   destroy: () => void
@@ -53,6 +53,7 @@ let videoHostWindow: BrowserWindow | null = null
 let videoHostParent: BrowserWindow | null = null
 let removeHostWindowListeners: (() => void) | null = null
 let videoHostReady: Promise<void> | null = null
+let externalVideoVisible = false
 const useNativeMacVideo = process.platform === 'darwin'
 const useNativeWindowsVideoHost = process.platform === 'win32'
 const requireNative = <T>(modulePath: string): T => {
@@ -106,9 +107,9 @@ const ensureExternalVideoPlayer = () => {
   let windowId: string
   if (useNativeWindowsVideoHost) {
     nativeWindowHost = getNativeWindowHost()
-    windowId = nativeWindowHost.create(parent.getNativeWindowHandle())
+    windowId = nativeWindowHost.create(parent.getNativeWindowHandle(), () => { sendVideoEvent('doubleClick') })
     nativeWindowHost.setBounds(bounds)
-    nativeWindowHost.setVisible(false)
+    nativeWindowHost.setVisible(externalVideoVisible)
     log.info(`[MpvVideoController] using native Windows video host: ${windowId}`)
   } else {
     videoHostWindow = new BrowserWindow({
@@ -289,7 +290,7 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
       if (videoHostReady) await videoHostReady
       if (!nativeWindowHost && (!videoHostWindow || videoHostWindow.isDestroyed())) throw new Error('视频宿主窗口已关闭')
       if (nativeWindowHost) log.info(`[MpvVideoController] showing native Windows video host bounds=${JSON.stringify(bounds)}`)
-      setExternalVideoVisible(true)
+      setExternalVideoVisible(externalVideoVisible)
       await player.loadUrl(videoUrl, { audioUrl })
     } catch (error) {
       loading = false
@@ -412,6 +413,7 @@ export const setBounds = (nextBounds: Electron.Rectangle) => {
 
 export const setVisible = (visible: boolean) => {
   if (!useNativeMacVideo) {
+    externalVideoVisible = visible
     setExternalVideoVisible(visible)
     return
   }
@@ -440,6 +442,7 @@ export const destroy = async() => {
   videoHostWindow = null
   videoHostParent = null
   videoHostReady = null
+  externalVideoVisible = false
   loading = false
   hasFileLoaded = false
   currentUrl = ''

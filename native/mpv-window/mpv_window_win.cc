@@ -16,8 +16,55 @@ namespace {
 constexpr wchar_t kWindowClassName[] = L"LXMusicMpvVideoHost";
 HWND g_parent = nullptr;
 HWND g_window = nullptr;
+napi_env g_callbackEnv = nullptr;
+napi_ref g_doubleClickCallback = nullptr;
+
+void clearDoubleClickCallback() {
+  if (g_doubleClickCallback && g_callbackEnv) {
+    napi_delete_reference(g_callbackEnv, g_doubleClickCallback);
+  }
+  g_doubleClickCallback = nullptr;
+  g_callbackEnv = nullptr;
+}
+
+bool setDoubleClickCallback(napi_env env, napi_value callback) {
+  clearDoubleClickCallback();
+  if (!callback) return true;
+
+  napi_valuetype callbackType;
+  if (napi_typeof(env, callback, &callbackType) != napi_ok ||
+      callbackType != napi_function) {
+    napi_throw_type_error(env, nullptr, "double click callback must be a function");
+    return false;
+  }
+  g_callbackEnv = env;
+  if (napi_create_reference(env, callback, 1, &g_doubleClickCallback) != napi_ok) {
+    g_callbackEnv = nullptr;
+    napi_throw_error(env, nullptr, "failed to retain double click callback");
+    return false;
+  }
+  return true;
+}
+
+void notifyDoubleClick() {
+  if (!g_doubleClickCallback || !g_callbackEnv) return;
+  napi_handle_scope scope;
+  if (napi_open_handle_scope(g_callbackEnv, &scope) != napi_ok) return;
+  napi_value callback;
+  napi_value global;
+  napi_value result;
+  if (napi_get_reference_value(g_callbackEnv, g_doubleClickCallback, &callback) == napi_ok &&
+      napi_get_global(g_callbackEnv, &global) == napi_ok) {
+    napi_call_function(g_callbackEnv, global, callback, 0, nullptr, &result);
+  }
+  napi_close_handle_scope(g_callbackEnv, scope);
+}
 
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+  if (message == WM_LBUTTONDBLCLK) {
+    notifyDoubleClick();
+    return 0;
+  }
   if (message == WM_ERASEBKGND) return 1;
   return DefWindowProcW(window, message, wParam, lParam);
 }
@@ -54,6 +101,7 @@ HWND readWindowHandle(void* data, size_t length) {
 bool registerWindowClass(napi_env env) {
   WNDCLASSEXW windowClass{};
   windowClass.cbSize = sizeof(windowClass);
+  windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
   windowClass.lpfnWndProc = windowProc;
   windowClass.hInstance = GetModuleHandleW(nullptr);
   windowClass.lpszClassName = kWindowClassName;
@@ -65,8 +113,8 @@ bool registerWindowClass(napi_env env) {
 }
 
 napi_value create(napi_env env, napi_callback_info info) {
-  size_t argc = 1;
-  napi_value argv[1];
+  size_t argc = 2;
+  napi_value argv[2];
   if (napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr) != napi_ok ||
       argc < 1) {
     napi_throw_type_error(env, nullptr, "create requires a parent window handle");
@@ -81,8 +129,10 @@ napi_value create(napi_env env, napi_callback_info info) {
     napi_throw_error(env, nullptr, "parent window handle is not valid");
     return nullptr;
   }
+  napi_value callback = argc >= 2 ? argv[1] : nullptr;
 
   if (g_window && IsWindow(g_window) && g_parent == parent) {
+    if (!setDoubleClickCallback(env, callback)) return nullptr;
     char handle[32];
     std::snprintf(handle, sizeof(handle), "%llu",
              static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_window)));
@@ -93,6 +143,7 @@ napi_value create(napi_env env, napi_callback_info info) {
 
   if (g_window && IsWindow(g_window)) DestroyWindow(g_window);
   g_window = nullptr;
+  clearDoubleClickCallback();
   g_parent = parent;
   if (!registerWindowClass(env)) return nullptr;
 
@@ -112,6 +163,12 @@ napi_value create(napi_env env, napi_callback_info info) {
   if (!g_window) {
     g_parent = nullptr;
     throwLastError(env, "failed to create native video host window");
+    return nullptr;
+  }
+  if (!setDoubleClickCallback(env, callback)) {
+    DestroyWindow(g_window);
+    g_window = nullptr;
+    g_parent = nullptr;
     return nullptr;
   }
 
@@ -199,6 +256,7 @@ napi_value destroy(napi_env env, napi_callback_info info) {
   if (g_window && IsWindow(g_window)) DestroyWindow(g_window);
   g_window = nullptr;
   g_parent = nullptr;
+  clearDoubleClickCallback();
   return nullptr;
 }
 
