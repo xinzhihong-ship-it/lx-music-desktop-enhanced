@@ -114,7 +114,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
-        run: find release-assets -type f -print0 | xargs -0 gh release upload "v$VERSION" --clobber
+        run: find release-assets -type f -print0 | xargs -0 -n 1 -P 3 gh release upload "v$VERSION" --clobber
   Windows:
     name: Windows
     runs-on: windows-latest
