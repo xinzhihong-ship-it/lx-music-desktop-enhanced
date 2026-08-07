@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "3.1.4-beta.1",
+  "version": "3.1.4-beta.2",
   "description": "LX Music 桌面版增强版本，支持多平台音乐、哔哩哔哩地址播放、听歌识曲与高音质稳定播放",
   "main": "./dist/main.js",
   "scripts": {

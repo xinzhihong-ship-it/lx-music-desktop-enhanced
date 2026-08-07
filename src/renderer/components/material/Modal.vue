@@ -5,7 +5,7 @@
         <div v-show="showContent" :class="[$style.modal, {[$style.filter]: filter}]" @click="bgClose && close()">
           <transition :enter-active-class="inClass" :leave-active-class="outClass" @after-enter="$emit('after-enter', $event)" @after-leave="handleAfterLeave">
             <div v-show="showContent" :class="$style.content" :style="contentStyle" @click.stop>
-              <header :class="$style.header">
+              <header v-if="!hideHeader" :class="$style.header">
                 <button v-if="closeBtn" type="button" @click="close">
                   <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 212.982 212.982" space="preserve">
                     <use xlink:href="#icon-delete" />
@@ -36,6 +36,10 @@ export default {
     closeBtn: {
       type: Boolean,
       default: true,
+    },
+    hideHeader: {
+      type: Boolean,
+      default: false,
     },
     bgClose: {
       type: Boolean,

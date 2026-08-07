@@ -16,6 +16,16 @@ interface PendingQrLogin {
   dfid: string
 }
 
+type KgPlaylistItem = Record<string, unknown>
+
+interface KgPlaylistResponse {
+  status: number
+  error?: string
+  msg?: string
+  data?: { info?: KgPlaylistItem[], list?: KgPlaylistItem[] }
+  info?: KgPlaylistItem[]
+}
+
 const pendingQrLogins = new Map<string, PendingQrLogin>()
 
 const randomHex = (length: number) => randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length)
@@ -61,11 +71,16 @@ const parseCookieString = (value: string) => {
   return cookies
 }
 
-const buildLoginResult = (userid: string, token: string, cookies: Record<string, string>, nickname?: string) => ({
+const normalizeImageUrl = (value: unknown, size = 240) => {
+  return typeof value === 'string' ? value.replace(/\{size\}/g, String(size)).replace(/^http:/, 'https:') : ''
+}
+
+const buildLoginResult = (userid: string, token: string, cookies: Record<string, string>, nickname?: string, avatar?: unknown) => ({
   account: {
     id: `kg_${userid}`,
     source: 'kg' as const,
     nickname: nickname?.trim() ? nickname : `酷狗用户 ${userid}`,
+    avatar: normalizeImageUrl(avatar, 165),
     isLogin: true,
   },
   session: {
@@ -81,7 +96,7 @@ export const loginByCookie = async(cookie: string) => {
   const token = cookies.token ?? cookies.t ?? ''
   if (!userid || !token) throw new Error('Cookie 中缺少 userid 或 token')
   const result = buildLoginResult(userid, token, cookies, cookies.nickname)
-  await getUserPlaylists(result.session)
+  result.account.avatar = await getAccountAvatar(result.session)
   return result
 }
 
@@ -151,7 +166,8 @@ export const checkQrCodeStatus = async(requestId: string): Promise<LX.Account.Qr
     KUGOU_API_MID: pending.mid,
     mid: pending.mid,
     dfid: pending.dfid,
-  }, String(data.nickname ?? data.username ?? ''))
+  }, String(data.nickname ?? data.username ?? ''), data.user_pic ?? data.user_avatar ?? data.avatar ?? data.pic)
+  result.account.avatar ||= await getAccountAvatar(result.session).catch(() => '')
   return { key: requestId, qrUrl: '', status: 'confirmed', ...result }
 }
 
@@ -160,26 +176,36 @@ const requireSession = (session: LX.Account.LoginSession | null) => {
   return session
 }
 
-export const getUserPlaylists = async(sessionValue: LX.Account.LoginSession | null): Promise<LX.Account.PlaylistInfo[]> => {
+const getPlaylistItems = async(sessionValue: LX.Account.LoginSession | null): Promise<KgPlaylistItem[]> => {
   const session = requireSession(sessionValue)
   const userid = session.tokens.userId
   const token = session.tokens.token
   const params = { ...commonParams(session), plat: 1, userid, token }
   const body = JSON.stringify({ userid, token, total_ver: 979, type: 2, page: 1, pagesize: 1000 })
-  const response = await httpFetch<any>(buildUrl('https://gateway.kugou.com/v7/get_all_list', params, ANDROID_KEY, body), {
+  const response = await httpFetch<KgPlaylistResponse>(buildUrl('https://gateway.kugou.com/v7/get_all_list', params, ANDROID_KEY, body), {
     method: 'POST',
     headers: { ...commonHeaders(params), 'Content-Type': 'application/json', 'x-router': 'cloudlist.service.kugou.com' },
     text: body,
   })
-  if (response.statusCode !== 200 || response.body?.status !== 1) throw new Error(response.body?.error || response.body?.msg || '获取酷狗歌单失败')
-  const list = response.body.data?.info ?? response.body.data?.list ?? response.body.info ?? []
-  return list.map((item: any) => ({
+  if (response.statusCode !== 200 || response.body.status !== 1) throw new Error(response.body.error || response.body.msg || '获取酷狗歌单失败')
+  return response.body.data?.info ?? response.body.data?.list ?? response.body.info ?? []
+}
+
+export const getAccountAvatar = async(sessionValue: LX.Account.LoginSession | null): Promise<string> => {
+  const list = await getPlaylistItems(sessionValue)
+  const profile = list.find(item => item.create_user_pic || item.user_avatar || item.user_pic)
+  return normalizeImageUrl(profile?.create_user_pic ?? profile?.user_avatar ?? profile?.user_pic, 165)
+}
+
+export const getUserPlaylists = async(sessionValue: LX.Account.LoginSession | null): Promise<LX.Account.PlaylistInfo[]> => {
+  const list = await getPlaylistItems(sessionValue)
+  return list.map(item => ({
     id: String(item.global_collection_id ?? item.listid ?? item.specialid ?? ''),
-    name: item.listname ?? item.specialname ?? item.name ?? '',
-    author: item.list_create_username ?? item.nickname ?? item.username ?? '',
+    name: String(item.listname ?? item.specialname ?? item.name ?? ''),
+    author: String(item.list_create_username ?? item.nickname ?? item.username ?? ''),
     play_count: String(item.playcount ?? item.total_play_count ?? 0),
-    img: item.pic ?? item.img ?? item.imgurl ?? '',
-    desc: item.intro ?? null,
+    img: normalizeImageUrl(item.pic ?? item.img ?? item.imgurl),
+    desc: typeof item.intro === 'string' ? item.intro : null,
     source: 'kg' as const,
     total: String(item.count ?? item.m_count ?? item.songcount ?? item.trackcount ?? 0),
     dirId: String(item.listid ?? ''),
@@ -190,7 +216,7 @@ export const getUserPlaylists = async(sessionValue: LX.Account.LoginSession | nu
 export const getPlaylistTrackIds = async(
   sessionValue: LX.Account.LoginSession | null,
   playlistId: string,
-  dirId?: string,
+  _dirId?: string,
 ): Promise<LX.Account.PlaylistTrackInfo[]> => {
   const session = requireSession(sessionValue)
   const pageSize = 300

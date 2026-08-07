@@ -7,6 +7,8 @@ import { sendEvent, getBrowserWindow } from './main'
 import { MpvController } from './mpvController'
 import * as accountSessions from '@main/modules/account/sessions'
 
+declare const __non_webpack_require__: (id: string) => unknown
+
 interface NativeMpvVideo {
   create: (handle: Buffer, onDoubleClick: () => void) => void
   load: (params: { videoUrl: string, audioUrl?: string, headers: string[] }) => void
@@ -56,12 +58,7 @@ let videoHostReady: Promise<void> | null = null
 let externalVideoVisible = false
 const useNativeMacVideo = process.platform === 'darwin'
 const useNativeWindowsVideoHost = process.platform === 'win32'
-const requireNative = <T>(modulePath: string): T => {
-  // webpack must not turn the user-selectable native module path into a context import.
-  // eslint-disable-next-line no-eval
-  const nodeRequire = eval('require') as NodeRequire
-  return nodeRequire(modulePath) as T
-}
+const requireNative = <T>(modulePath: string): T => __non_webpack_require__(modulePath) as T
 
 const getExternalWindowId = (handle: Buffer) => {
   if (handle.length < 4) throw new Error('未获取到视频宿主窗口句柄')

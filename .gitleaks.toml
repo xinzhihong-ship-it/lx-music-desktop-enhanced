@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known public Kugou client protocol constants"
+regexes = [
+  '''OIlwieks28dk2k092lksi2UIkp''',
+  '''NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt''',
+  '''f1f93580115bb106680d2375f8032d96''',
+  '''36164c4015e704673c588ee202b9ecb8''',
+  '''e6f3306ff7e2afb494e89fbbda0becbf''',
+]

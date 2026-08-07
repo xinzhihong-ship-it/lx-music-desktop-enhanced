@@ -346,9 +346,9 @@ jobs:
           tag="v$VERSION"
           title="LX Music 增强版 $VERSION"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --title "$title" --prerelease
+            gh release edit "$tag" --title "$title" --prerelease --notes-file RELEASE_NOTES.md
           else
-            gh release create "$tag" --target "${{ github.sha }}" --title "$title" --prerelease --generate-notes
+            gh release create "$tag" --target "${{ github.sha }}" --title "$title" --prerelease --notes-file RELEASE_NOTES.md
           fi
 
       - name: Upload release assets

@@ -9,8 +9,17 @@
           </svg>
         </button>
       </div>
+      <base-selection
+        v-if="accountOptions.length > 1"
+        :class="$style.accountSelect"
+        :model-value="selectedAccountId"
+        :list="accountOptions"
+        item-key="id"
+        item-name="name"
+        @update:model-value="handleAccountChange"
+      />
       <div class="scroll" :class="$style.accountGroups">
-        <section v-for="group in groups" :key="group.account.id" :class="$style.group">
+        <section v-for="group in visibleGroups" :key="group.account.id" :class="$style.group">
           <div :class="$style.account">
             <img v-if="group.account.avatar" :src="group.account.avatar">
             <span>
@@ -94,6 +103,7 @@ interface AccountGroup {
 }
 
 const groups = ref<AccountGroup[]>([])
+const selectedAccountId = ref('')
 const songs = ref<LX.Music.MusicInfoOnline[]>([])
 const selectedKey = ref('')
 const selectedTitle = ref('')
@@ -119,6 +129,29 @@ const statusText = computed(() => {
 })
 
 const sourceName = (source: LX.Account.Source | '') => source ? window.i18n.t(`account__source_${source}` as any) : ''
+const accountOptions = computed(() => groups.value.map(({ account }) => ({
+  id: account.id,
+  name: `${sourceName(account.source)} · ${account.nickname}`,
+})))
+const visibleGroups = computed(() => groups.value.filter(({ account }) => account.id === selectedAccountId.value))
+
+const clearSelectedPlaylist = () => {
+  selectedKey.value = ''
+  selectedTitle.value = ''
+  selectedSource.value = ''
+  selectedDestination.value = null
+  songs.value = []
+  error.value = ''
+  isLoading.value = false
+  filterText.value = ''
+}
+
+const handleAccountChange = (accountId: string | number) => {
+  const nextId = String(accountId)
+  if (nextId === selectedAccountId.value) return
+  selectedAccountId.value = nextId
+  if (!selectedKey.value.startsWith(`${nextId}:`)) clearSelectedPlaylist()
+}
 
 const loadAllPlaylists = async() => {
   await loadAccounts()
@@ -129,6 +162,9 @@ const loadAllPlaylists = async() => {
       return { account, playlists: [], error: err?.message ?? window.i18n.t('list__load_failed') }
     }
   }))
+  if (!groups.value.some(({ account }) => account.id === selectedAccountId.value)) {
+    handleAccountChange(groups.value[0]?.account.id ?? '')
+  }
 }
 
 const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
@@ -306,6 +342,12 @@ onBeforeUnmount(() => {
   cursor: pointer;
 
   svg { width: 100%; height: 100%; }
+}
+
+.accountSelect {
+  --selection-width: calc(100% - 20px);
+  flex: none;
+  margin: 8px 10px 4px;
 }
 
 .accountGroups {

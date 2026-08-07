@@ -26,7 +26,17 @@ export default () => {
   sessions.loadAccounts()
 
   mainHandle<LX.Account.PlatformAccount[]>(WIN_MAIN_RENDERER_EVENT_NAME.account_list, async() => {
-    return sessions.listAccounts()
+    const accounts = sessions.listAccounts()
+    for (const account of accounts) {
+      if (account.source !== 'kg' || account.avatar) continue
+      const session = sessions.getSession(account.id)
+      if (!session) continue
+      const avatar = await kgProvider.getAccountAvatar(session).catch(() => '')
+      if (!avatar || sessions.getSession(account.id) !== session) continue
+      account.avatar = avatar
+      sessions.saveAccount(account, session)
+    }
+    return accounts
   })
 
   mainHandle<string>(WIN_MAIN_RENDERER_EVENT_NAME.account_remove, async({ params: id }) => {
