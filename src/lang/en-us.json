@@ -666,6 +666,7 @@
   "setting__search": "Search",
   "setting__search_focus_search_box": "Automatically focus search box on startup",
   "setting__search_history": "Enable Search History",
+  "setting__search_history_limit": "Search history entries to keep ({min}–{max})",
   "setting__search_hot": "Enable Top Searches",
   "setting__sync": "Data Sync",
   "setting__sync_client_address": "Current device address: {address}",

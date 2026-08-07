@@ -1,5 +1,6 @@
 import path from 'node:path'
 import os from 'node:os'
+import { SEARCH_HISTORY_LIMIT } from '@common/utils/searchHistory'
 
 const isMac = process.platform == 'darwin'
 const isWin = process.platform == 'win32'
@@ -137,6 +138,7 @@ const defaultSetting: LX.AppSetting = {
 
   'search.isShowHotSearch': false,
   'search.isShowHistorySearch': false,
+  'search.historyLimit': SEARCH_HISTORY_LIMIT.default,
   'search.isFocusSearchBox': false,
 
   'network.proxy.enable': false,

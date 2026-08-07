@@ -634,6 +634,11 @@ declare global {
       'search.isShowHistorySearch': boolean
 
       /**
+       * 搜索历史保留数量
+       */
+      'search.historyLimit': number
+
+      /**
        * 软件启动时是否自动聚焦搜索框
        */
       'search.isFocusSearchBox': boolean

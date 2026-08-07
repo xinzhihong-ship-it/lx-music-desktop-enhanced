@@ -666,6 +666,7 @@
   "setting__search": "搜索设置",
   "setting__search_focus_search_box": "启动时自动聚焦搜索框",
   "setting__search_history": "显示历史搜索记录",
+  "setting__search_history_limit": "历史搜索记录保留数量（{min}–{max}）",
   "setting__search_hot": "显示热门搜索",
   "setting__sync": "数据同步",
   "setting__sync_client_address": "当前设备地址：{address}",
