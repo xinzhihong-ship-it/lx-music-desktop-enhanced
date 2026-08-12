@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 env:
-  IS_CI: 'true'
+  IS_CI: "true"
   GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
@@ -228,7 +228,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lx-music-desktop-mac-dmg-${{ matrix.arch }}
-          path: build/*.dmg
+          path: |
+            build/*.dmg
+            build/*.dmg.blockmap
 
       - name: Generate file MD5
         run: |
@@ -338,6 +340,25 @@ jobs:
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Generate macOS update metadata
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          arm64_dmg=$(find release-assets -name "*-$VERSION-arm64.dmg" -print -quit)
+          x64_dmg=$(find release-assets -name "*-$VERSION-x64.dmg" -print -quit)
+          test -n "$arm64_dmg" && test -n "$x64_dmg"
+          arm64_name=$(basename "$arm64_dmg")
+          x64_name=$(basename "$x64_dmg")
+          arm64_sha=$(openssl dgst -sha512 -binary "$arm64_dmg" | base64 -w0)
+          x64_sha=$(openssl dgst -sha512 -binary "$x64_dmg" | base64 -w0)
+          arm64_size=$(stat -c %s "$arm64_dmg")
+          x64_size=$(stat -c %s "$x64_dmg")
+          release_date=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          printf 'version: %s\nfiles:\n  - url: %s\n    sha512: %s\n    size: %s\n  - url: %s\n    sha512: %s\n    size: %s\npath: %s\nsha512: %s\nreleaseDate: %s\n' \
+            "$VERSION" "$arm64_name" "$arm64_sha" "$arm64_size" \
+            "$x64_name" "$x64_sha" "$x64_size" \
+            "$arm64_name" "$arm64_sha" "$release_date" \
+            > release-assets/latest-mac.yml
       - name: Create or update prerelease
         env:
           GH_TOKEN: ${{ github.token }}

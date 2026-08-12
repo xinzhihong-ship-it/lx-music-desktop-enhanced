@@ -1,997 +1,1237 @@
-import { app } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
-import fs from 'node:fs'
-import net from 'node:net'
-import os from 'node:os'
-import path from 'node:path'
-import { log } from '@common/utils'
-import { sendEvent } from '@main/modules/winMain/main'
-import * as accountSessions from '@main/modules/account/sessions'
-import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
+import { app } from "electron";
+import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { log } from "@common/utils";
+import { sendEvent } from "@main/modules/winMain/main";
+import * as accountSessions from "@main/modules/account/sessions";
+import { WIN_MAIN_RENDERER_EVENT_NAME } from "@common/ipcNames";
+import { getBundledMacMpvAppNames } from "@common/utils/mpvCompatibility";
 
-export type MpvPathSource = 'custom' | 'bundled' | 'bundled-macos26' | 'dev-bundled' | 'dev-bundled-app' | 'dev-bundled-macos26' | 'dev-bundled-x64-fallback' | 'system' | 'common-path'
+export type MpvPathSource =
+	| "custom"
+	| "bundled"
+	| "bundled-macos26"
+	| "dev-bundled"
+	| "dev-bundled-app"
+	| "dev-bundled-macos26"
+	| "dev-bundled-x64-fallback"
+	| "system"
+	| "common-path";
 
 export interface MpvPathInfo {
-  path: string
-  source: MpvPathSource
+	path: string;
+	source: MpvPathSource;
 }
 
-type MpvEventName = 'started' | 'loaded' | 'playing' | 'pause' | 'stopped' | 'ended' | 'error' | 'timeUpdate' | 'duration' | 'seeked' | 'doubleClick'
+type MpvEventName =
+	| "started"
+	| "loaded"
+	| "playing"
+	| "pause"
+	| "stopped"
+	| "ended"
+	| "error"
+	| "timeUpdate"
+	| "duration"
+	| "seeked"
+	| "doubleClick";
 
 interface MpvIpcResponse {
-  request_id?: number
-  error?: string
-  data?: unknown
-  event?: string
-  args?: unknown[]
-  name?: string
-  reason?: string
+	request_id?: number;
+	error?: string;
+	data?: unknown;
+	event?: string;
+	args?: unknown[];
+	name?: string;
+	reason?: string;
 }
 
 export interface MpvControllerOptions {
-  video?: boolean
-  windowId?: string
+	video?: boolean;
+	windowId?: string;
 }
 
-const isWin = process.platform == 'win32'
-const isMac = process.platform == 'darwin'
+const isWin = process.platform == "win32";
+const isMac = process.platform == "darwin";
 
 const sanitizeUrl = (url: string) => {
-  try {
-    const parsed = new URL(url)
-    return `${parsed.origin}${parsed.pathname}${parsed.search ? '?…' : ''}`
-  } catch {
-    return url.length > 80 ? `${url.substring(0, 80)}…` : url
-  }
-}
+	try {
+		const parsed = new URL(url);
+		return `${parsed.origin}${parsed.pathname}${parsed.search ? "?…" : ""}`;
+	} catch {
+		return url.length > 80 ? `${url.substring(0, 80)}…` : url;
+	}
+};
 
 const getBiliCookie = () => {
-  const session = accountSessions.getSessionBySource('bili')
-  if (!session) return ''
-  return Object.entries(session.cookies).map(([key, value]) => `${key}=${String(value)}`).join('; ')
-}
+	const session = accountSessions.getSessionBySource("bili");
+	if (!session) return "";
+	return Object.entries(session.cookies)
+		.map(([key, value]) => `${key}=${String(value)}`)
+		.join("; ");
+};
 
 const existsFile = (filePath: string) => {
-  try {
-    return fs.existsSync(filePath) && fs.statSync(filePath).isFile()
-  } catch {
-    return false
-  }
-}
+	try {
+		return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+	} catch {
+		return false;
+	}
+};
 
 const resolvePlatformArch = () => {
-  switch (process.platform) {
-    case 'darwin':
-      return process.arch == 'arm64' ? 'darwin-arm64' : 'darwin-x64'
-    case 'win32':
-      return process.arch == 'arm64' ? 'win32-arm64' : 'win32-x64'
-    case 'linux':
-      return process.arch == 'arm64' ? 'linux-arm64' : process.arch == 'arm' ? 'linux-armv7l' : 'linux-x64'
-    default:
-      return `${process.platform}-${process.arch}`
-  }
-}
+	switch (process.platform) {
+		case "darwin":
+			return process.arch == "arm64" ? "darwin-arm64" : "darwin-x64";
+		case "win32":
+			return process.arch == "arm64" ? "win32-arm64" : "win32-x64";
+		case "linux":
+			return process.arch == "arm64"
+				? "linux-arm64"
+				: process.arch == "arm"
+					? "linux-armv7l"
+					: "linux-x64";
+		default:
+			return `${process.platform}-${process.arch}`;
+	}
+};
 
 const getCommonPaths = () => {
-  if (isMac) {
-    return [
-      '/opt/homebrew/bin/mpv',
-      '/usr/local/bin/mpv',
-      '/Applications/mpv.app/Contents/MacOS/mpv',
-    ]
-  }
-  if (isWin) {
-    return [
-      'C:\\Program Files\\mpv\\mpv.exe',
-      'C:\\Program Files (x86)\\mpv\\mpv.exe',
-    ]
-  }
-  return [
-    '/usr/bin/mpv',
-    '/usr/local/bin/mpv',
-  ]
-}
+	if (isMac) {
+		return [
+			"/opt/homebrew/bin/mpv",
+			"/usr/local/bin/mpv",
+			"/Applications/mpv.app/Contents/MacOS/mpv",
+		];
+	}
+	if (isWin) {
+		return [
+			"C:\\Program Files\\mpv\\mpv.exe",
+			"C:\\Program Files (x86)\\mpv\\mpv.exe",
+		];
+	}
+	return ["/usr/bin/mpv", "/usr/local/bin/mpv"];
+};
 
-// macOS 26 (Tahoe) 对应 Darwin 25。mpv-macos26.app 变体是为 macOS 26+ 编译的
-// （依赖新版 libc++），旧系统无法启动；mpv.app 是兼容旧系统的版本。
-const isMacOS26OrLater = isMac && Number.parseInt(os.release(), 10) >= 25
+// macOS 26+ 不再兼容旧 x64 MPV；Apple Silicon 新系统只选择原生变体，
+// macOS 15（Darwin 24）及 x64 系统继续选择兼容旧系统的 mpv.app。
+const bundledMacMpvAppNames = getBundledMacMpvAppNames(
+	os.release(),
+	process.arch,
+);
 
 export const resolveMpvPath = (): MpvPathInfo => {
-  const customPath = global.lx.appSetting['player.mpv.path']
-  log.info(`resolveMpvPath - player.mpv.path: ${customPath}`)
-  if (customPath && existsFile(customPath)) return { path: customPath, source: 'custom' }
+	const customPath = global.lx.appSetting["player.mpv.path"];
+	log.info(`resolveMpvPath - player.mpv.path: ${customPath}`);
+	if (customPath && existsFile(customPath))
+		return { path: customPath, source: "custom" };
 
-  const exeName = isWin ? 'mpv.exe' : 'mpv'
-  const bundledPath = path.join(process.resourcesPath, 'bin', exeName)
-  if (process.env.NODE_ENV == 'production' && existsFile(bundledPath)) return { path: bundledPath, source: 'bundled' }
+	const exeName = isWin ? "mpv.exe" : "mpv";
+	const bundledPath = path.join(process.resourcesPath, "bin", exeName);
+	if (process.env.NODE_ENV == "production" && existsFile(bundledPath))
+		return { path: bundledPath, source: "bundled" };
 
-  // Production macOS: check for mpv.app bundle inside bin/
-  if (isMac && process.env.NODE_ENV == 'production') {
-    // macOS 26+ 优先使用为新系统编译的变体
-    if (isMacOS26OrLater) {
-      const variantProdPath = path.join(process.resourcesPath, 'bin', 'mpv-macos26.app', 'Contents', 'MacOS', exeName)
-      if (existsFile(variantProdPath)) return { path: variantProdPath, source: 'bundled-macos26' }
-    }
-    const appBundledProdPath = path.join(process.resourcesPath, 'bin', 'mpv.app', 'Contents', 'MacOS', exeName)
-    if (existsFile(appBundledProdPath)) return { path: appBundledProdPath, source: 'bundled' }
-  }
+	// Production macOS: only use the runtime selected for this OS and architecture.
+	if (isMac && process.env.NODE_ENV == "production") {
+		const appName = bundledMacMpvAppNames[0];
+		const appBundledProdPath = path.join(
+			process.resourcesPath,
+			"bin",
+			appName,
+			"Contents",
+			"MacOS",
+			exeName,
+		);
+		if (existsFile(appBundledProdPath)) {
+			return {
+				path: appBundledProdPath,
+				source:
+					appName == "mpv-macos26.app" ? "bundled-macos26" : "bundled",
+			};
+		}
+	}
 
-  const devBundledPath = path.join(process.cwd(), 'resources', 'mpv', resolvePlatformArch(), exeName)
-  if (existsFile(devBundledPath)) return { path: devBundledPath, source: 'dev-bundled' }
+	const devBundledPath = path.join(
+		process.cwd(),
+		"resources",
+		"mpv",
+		resolvePlatformArch(),
+		exeName,
+	);
+	if (existsFile(devBundledPath))
+		return { path: devBundledPath, source: "dev-bundled" };
 
-  // Dev fallback: check for mpv.app bundle (macOS)
-  if (isMac) {
-    // macOS 26+ 优先使用为新系统编译的变体
-    if (isMacOS26OrLater) {
-      const variantDevPath = path.join(process.cwd(), 'resources', 'mpv', resolvePlatformArch(), 'mpv-macos26.app', 'Contents', 'MacOS', exeName)
-      if (existsFile(variantDevPath)) return { path: variantDevPath, source: 'dev-bundled-macos26' }
-    }
-    const appBundlePath = path.join(process.cwd(), 'resources', 'mpv', resolvePlatformArch(), 'mpv.app', 'Contents', 'MacOS', exeName)
-    if (existsFile(appBundlePath)) return { path: appBundlePath, source: 'dev-bundled-app' }
-  }
+	// Dev fallback: only use the runtime selected for this OS and architecture.
+	if (isMac) {
+		const appName = bundledMacMpvAppNames[0];
+		const appBundlePath = path.join(
+			process.cwd(),
+			"resources",
+			"mpv",
+			resolvePlatformArch(),
+			appName,
+			"Contents",
+			"MacOS",
+			exeName,
+		);
+		if (existsFile(appBundlePath)) {
+			return {
+				path: appBundlePath,
+				source:
+					appName == "mpv-macos26.app"
+						? "dev-bundled-macos26"
+						: "dev-bundled-app",
+			};
+		}
+	}
 
-  // ARM fallback: try x64 variant (Rosetta/WSL compatibility)
-  if (process.arch == 'arm64' || process.arch == 'arm') {
-    const fallbackDir = process.platform == 'darwin' ? 'darwin-x64' : 'linux-x64'
-    const x64FallbackPath = path.join(process.cwd(), 'resources', 'mpv', fallbackDir, exeName)
-    if (existsFile(x64FallbackPath)) return { path: x64FallbackPath, source: 'dev-bundled-x64-fallback' }
-  }
+	// ARM fallback: try x64 variant (Rosetta/WSL compatibility)
+	if (process.arch == "arm64" || process.arch == "arm") {
+		const fallbackDir =
+			process.platform == "darwin" ? "darwin-x64" : "linux-x64";
+		const x64FallbackPath = path.join(
+			process.cwd(),
+			"resources",
+			"mpv",
+			fallbackDir,
+			exeName,
+		);
+		if (existsFile(x64FallbackPath))
+			return { path: x64FallbackPath, source: "dev-bundled-x64-fallback" };
+	}
 
-  for (const commonPath of getCommonPaths()) {
-    if (existsFile(commonPath)) return { path: commonPath, source: 'common-path' }
-  }
+	for (const commonPath of getCommonPaths()) {
+		if (existsFile(commonPath))
+			return { path: commonPath, source: "common-path" };
+	}
 
-  return { path: exeName, source: 'system' }
-}
+	return { path: exeName, source: "system" };
+};
 
-let instanceCounter = 0
+let instanceCounter = 0;
 
 export class MpvController {
-  readonly instanceId = ++instanceCounter
-  private readonly isVideo: boolean
-  private readonly videoWindowId: string | null
-  private process: ChildProcess | null = null
-  private socket: net.Socket | null = null
-  private ipcPath = ''
-  private requestId = 0
-  private readonly pendingRequests = new Map<number, {
-    resolve: (data: unknown) => void
-    reject: (err: Error) => void
-    timeout: NodeJS.Timeout
-  }>()
+	readonly instanceId = ++instanceCounter;
+	private readonly isVideo: boolean;
+	private readonly videoWindowId: string | null;
+	private process: ChildProcess | null = null;
+	private socket: net.Socket | null = null;
+	private ipcPath = "";
+	private requestId = 0;
+	private readonly pendingRequests = new Map<
+		number,
+		{
+			resolve: (data: unknown) => void;
+			reject: (err: Error) => void;
+			timeout: NodeJS.Timeout;
+		}
+	>();
 
-  private buffer = ''
-  private starting: Promise<MpvPathInfo> | null = null
-  private pollTimer: NodeJS.Timeout | null = null
-  private isDestroyed = false
-  private startError: Error | null = null
-  private cachedPathInfo: MpvPathInfo | null = null
-  private isPlayingState = false
-  private isLoading = false
-  hasFileLoaded = false
-  private isPaused = true
-  pausedAt = 0
-  loadedUrl = ''
-  private cachedVolume: number | null = null
-  private cachedAudioDevice: string | null = null
-  private videoInputConfPath = ''
+	private buffer = "";
+	private starting: Promise<MpvPathInfo> | null = null;
+	private pollTimer: NodeJS.Timeout | null = null;
+	private isDestroyed = false;
+	private startError: Error | null = null;
+	private cachedPathInfo: MpvPathInfo | null = null;
+	private isPlayingState = false;
+	private isLoading = false;
+	hasFileLoaded = false;
+	private isPaused = true;
+	pausedAt = 0;
+	loadedUrl = "";
+	private cachedVolume: number | null = null;
+	private cachedAudioDevice: string | null = null;
+	private videoInputConfPath = "";
 
-  constructor(options: MpvControllerOptions = {}) {
-    this.isVideo = options.video === true
-    this.videoWindowId = options.windowId ?? null
-  }
+	constructor(options: MpvControllerOptions = {}) {
+		this.isVideo = options.video === true;
+		this.videoWindowId = options.windowId ?? null;
+	}
 
-  async ensureStarted(): Promise<MpvPathInfo> {
-    if (this.socket && this.process && !this.process.killed) {
-      return this.cachedPathInfo ?? resolveMpvPath()
-    }
-    if (this.starting) return this.starting
-    this.starting = this.start().finally(() => {
-      this.starting = null
-    })
-    return this.starting
-  }
+	async ensureStarted(): Promise<MpvPathInfo> {
+		if (this.socket && this.process && !this.process.killed) {
+			return this.cachedPathInfo ?? resolveMpvPath();
+		}
+		if (this.starting) return this.starting;
+		this.starting = this.start().finally(() => {
+			this.starting = null;
+		});
+		return this.starting;
+	}
 
-  private async start(): Promise<MpvPathInfo> {
-    this.isDestroyed = false
-    this.startError = null
-    const mpvPath = resolveMpvPath()
-    const args = this.buildArgs()
-    log.info(`MpvController starting mpv instance=${this.instanceId} source=${mpvPath.source} path=${mpvPath.path}`)
+	private async start(): Promise<MpvPathInfo> {
+		this.isDestroyed = false;
+		this.startError = null;
+		const mpvPath = resolveMpvPath();
+		const args = this.buildArgs();
+		log.info(
+			`MpvController starting mpv instance=${this.instanceId} source=${mpvPath.source} path=${mpvPath.path}`,
+		);
 
-    const mpvProcess = spawn(mpvPath.path, args, {
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    this.process = mpvProcess
+		const mpvProcess = spawn(mpvPath.path, args, {
+			shell: false,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		this.process = mpvProcess;
 
-    mpvProcess.stdout?.on('data', data => {
-      log.info(`mpv stdout: ${String(data).trim()}`)
-    })
-    mpvProcess.stderr?.on('data', data => {
-      log.warn(`mpv stderr: ${String(data).trim()}`)
-    })
-    mpvProcess.once('error', err => {
-      this.startError = err
-      this.isPlayingState = false
-      this.hasFileLoaded = false
-      this.isPaused = true
-      this.rejectAll(err)
-      this.sendEvent('error', { message: err.message })
-    })
-    mpvProcess.once('exit', (code, signal) => {
-      const message = `mpv exited code=${code ?? 'null'} signal=${signal ?? 'null'}`
-      log.warn(message)
-      this.isPlayingState = false
-      this.hasFileLoaded = false
-      this.isPaused = true
-      this.cleanupSocket()
-      this.rejectAll(new Error(message))
-      if (!this.isDestroyed) this.sendEvent('error', { message })
-    })
+		mpvProcess.stdout?.on("data", (data) => {
+			log.info(`mpv stdout: ${String(data).trim()}`);
+		});
+		mpvProcess.stderr?.on("data", (data) => {
+			log.warn(`mpv stderr: ${String(data).trim()}`);
+		});
+		mpvProcess.once("error", (err) => {
+			this.startError = err;
+			this.isPlayingState = false;
+			this.hasFileLoaded = false;
+			this.isPaused = true;
+			this.rejectAll(err);
+			this.sendEvent("error", { message: err.message });
+		});
+		mpvProcess.once("exit", (code, signal) => {
+			const message = `mpv exited code=${code ?? "null"} signal=${signal ?? "null"}`;
+			log.warn(message);
+			this.isPlayingState = false;
+			this.hasFileLoaded = false;
+			this.isPaused = true;
+			this.cleanupSocket();
+			this.rejectAll(new Error(message));
+			if (!this.isDestroyed) this.sendEvent("error", { message });
+		});
 
-    try {
-      await this.waitForIpc()
-      await this.command(['observe_property', 1, 'time-pos']).catch(err => log.warn(err))
-      await this.command(['observe_property', 2, 'duration']).catch(err => log.warn(err))
-      await this.command(['observe_property', 3, 'pause']).catch(err => log.warn(err))
-      await this.command(['observe_property', 4, 'idle-active']).catch(err => log.warn(err))
-      if (this.cachedVolume != null) {
-        await this.command(['set_property', 'volume', this.cachedVolume]).catch(err => log.warn(err))
-      }
-      if (this.cachedAudioDevice != null) {
-        await this.command(['set_property', 'audio-device', this.cachedAudioDevice]).catch(err => log.warn(err))
-      }
-      this.sendEvent('started', mpvPath)
-      this.cachedPathInfo = mpvPath
-      return mpvPath
-    } catch (err) {
-      await this.destroy()
-      throw err
-    }
-  }
+		try {
+			await this.waitForIpc();
+			await this.command(["observe_property", 1, "time-pos"]).catch((err) =>
+				log.warn(err),
+			);
+			await this.command(["observe_property", 2, "duration"]).catch((err) =>
+				log.warn(err),
+			);
+			await this.command(["observe_property", 3, "pause"]).catch((err) =>
+				log.warn(err),
+			);
+			await this.command(["observe_property", 4, "idle-active"]).catch((err) =>
+				log.warn(err),
+			);
+			if (this.cachedVolume != null) {
+				await this.command(["set_property", "volume", this.cachedVolume]).catch(
+					(err) => log.warn(err),
+				);
+			}
+			if (this.cachedAudioDevice != null) {
+				await this.command([
+					"set_property",
+					"audio-device",
+					this.cachedAudioDevice,
+				]).catch((err) => log.warn(err));
+			}
+			this.sendEvent("started", mpvPath);
+			this.cachedPathInfo = mpvPath;
+			return mpvPath;
+		} catch (err) {
+			await this.destroy();
+			throw err;
+		}
+	}
 
-  private buildArgs(): string[] {
-    // 每个实例使用独立的 IPC 路径，避免 restartMpvController 时新旧进程竞争同一 socket/pipe。
-    this.ipcPath = isWin
-      ? `\\\\.\\pipe\\lx-music-mpv-${process.pid}-${this.instanceId}`
-      : path.join(os.tmpdir(), `lx-music-mpv-${process.pid}-${this.instanceId}.sock`)
-    if (!isWin) {
-      try {
-        fs.unlinkSync(this.ipcPath)
-      } catch {}
-    }
+	private buildArgs(): string[] {
+		// 每个实例使用独立的 IPC 路径，避免 restartMpvController 时新旧进程竞争同一 socket/pipe。
+		this.ipcPath = isWin
+			? `\\\\.\\pipe\\lx-music-mpv-${process.pid}-${this.instanceId}`
+			: path.join(
+					os.tmpdir(),
+					`lx-music-mpv-${process.pid}-${this.instanceId}.sock`,
+				);
+		if (!isWin) {
+			try {
+				fs.unlinkSync(this.ipcPath);
+			} catch {}
+		}
 
-    const args = [
-      '--idle=yes',
-      ...(this.isVideo
-        ? [
-            '--config=no',
-            isWin ? '--force-window=immediate' : '--force-window=yes',
-            '--no-border',
-            '--title-bar=no',
-            '--show-in-taskbar=no',
-            '--audio-display=no',
-            '--keepaspect=yes',
-            '--osd-level=0',
-            '--osc=no',
-            `--wid=${this.videoWindowId ?? '0'}`,
-          ]
-        : [
-            '--no-video',
-            '--force-window=no',
-            '--audio-display=no',
-          ]),
-      `--input-ipc-server=${this.ipcPath}`,
-      '--hr-seek=yes',
-      '--audio-exclusive=no',
-    ]
+		const args = [
+			"--idle=yes",
+			...(this.isVideo
+				? [
+						"--config=no",
+						isWin ? "--force-window=immediate" : "--force-window=yes",
+						"--no-border",
+						"--title-bar=no",
+						"--show-in-taskbar=no",
+						"--audio-display=no",
+						"--keepaspect=yes",
+						"--osd-level=0",
+						"--osc=no",
+						`--wid=${this.videoWindowId ?? "0"}`,
+					]
+				: ["--no-video", "--force-window=no", "--audio-display=no"]),
+			`--input-ipc-server=${this.ipcPath}`,
+			"--hr-seek=yes",
+			"--audio-exclusive=no",
+		];
 
-    if (this.isVideo) {
-      this.videoInputConfPath = path.join(os.tmpdir(), `lx-music-video-${process.pid}-${this.instanceId}.conf`)
-      fs.writeFileSync(this.videoInputConfPath, 'MOUSE_BTN0_DBL script-message lx-video-double-click\n')
-      args.push(`--input-conf=${this.videoInputConfPath}`)
-    }
+		if (this.isVideo) {
+			this.videoInputConfPath = path.join(
+				os.tmpdir(),
+				`lx-music-video-${process.pid}-${this.instanceId}.conf`,
+			);
+			fs.writeFileSync(
+				this.videoInputConfPath,
+				"MOUSE_BTN0_DBL script-message lx-video-double-click\n",
+			);
+			args.push(`--input-conf=${this.videoInputConfPath}`);
+		}
 
-    if (global.lx.appSetting['player.mpv.bitPerfectMode']) {
-      args.push('--replaygain=no', '--af-clr')
-    }
+		if (global.lx.appSetting["player.mpv.bitPerfectMode"]) {
+			args.push("--replaygain=no", "--af-clr");
+		}
 
-    // 输出设备由 player.mediaDeviceId 单独控制，不污染 player.mpv.extraArgs
-    const mediaDeviceId = global.lx.appSetting['player.mediaDeviceId']
-    if (mediaDeviceId && mediaDeviceId !== 'default' && mediaDeviceId !== 'Default' && mediaDeviceId !== 'communications') {
-      args.push(`--audio-device=${mediaDeviceId}`)
-    }
+		// 输出设备由 player.mediaDeviceId 单独控制，不污染 player.mpv.extraArgs
+		const mediaDeviceId = global.lx.appSetting["player.mediaDeviceId"];
+		if (
+			mediaDeviceId &&
+			mediaDeviceId !== "default" &&
+			mediaDeviceId !== "Default" &&
+			mediaDeviceId !== "communications"
+		) {
+			args.push(`--audio-device=${mediaDeviceId}`);
+		}
 
-    const extraArgs = global.lx.appSetting['player.mpv.extraArgs']
-    log.info(`mpv extraArgs from config: ${JSON.stringify(extraArgs)}`)
-    log.info(`mpv appSetting keys: ${Object.keys(global.lx.appSetting).filter(k => k.includes('mpv')).join(', ')}`)
+		const extraArgs = global.lx.appSetting["player.mpv.extraArgs"];
+		log.info(`mpv extraArgs from config: ${JSON.stringify(extraArgs)}`);
+		log.info(
+			`mpv appSetting keys: ${Object.keys(global.lx.appSetting)
+				.filter((k) => k.includes("mpv"))
+				.join(", ")}`,
+		);
 
-    // 使用配置中的参数，过滤掉由本代码统一处理的 --audio-device
-    if (Array.isArray(extraArgs) && extraArgs.length > 0) {
-      args.push(...extraArgs.filter(arg => typeof arg == 'string' && arg.length && !arg.startsWith('--audio-device=')))
-      log.info('Using extraArgs from config')
-    } else {
-      log.info('No extraArgs in config, using default audio device')
-    }
+		// 使用配置中的参数，过滤掉由本代码统一处理的 --audio-device
+		if (Array.isArray(extraArgs) && extraArgs.length > 0) {
+			args.push(
+				...extraArgs.filter(
+					(arg) =>
+						typeof arg == "string" &&
+						arg.length &&
+						!arg.startsWith("--audio-device="),
+				),
+			);
+			log.info("Using extraArgs from config");
+		} else {
+			log.info("No extraArgs in config, using default audio device");
+		}
 
-    log.info(`mpv final args: ${args.join(' ')}`)
-    return args
-  }
+		log.info(`mpv final args: ${args.join(" ")}`);
+		return args;
+	}
 
-  private async waitForIpc(): Promise<void> {
-    const startTime = Date.now()
-    while (Date.now() - startTime < 15000) {
-      if (this.startError) throw this.startError
-      if (this.process?.exitCode != null) throw new Error('mpv exited before IPC became ready')
-      try {
-        await this.connectIpc()
-        return
-      } catch {
-        await new Promise(resolve => setTimeout(resolve, 100))
-      }
-    }
-    throw new Error('mpv IPC connect timeout')
-  }
+	private async waitForIpc(): Promise<void> {
+		const startTime = Date.now();
+		while (Date.now() - startTime < 15000) {
+			if (this.startError) throw this.startError;
+			if (this.process?.exitCode != null)
+				throw new Error("mpv exited before IPC became ready");
+			try {
+				await this.connectIpc();
+				return;
+			} catch {
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+		}
+		throw new Error("mpv IPC connect timeout");
+	}
 
-  private async connectIpc(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const socket = net.createConnection(this.ipcPath)
-      const onError = (err: Error) => {
-        socket.destroy()
-        reject(err)
-      }
-      socket.once('error', onError)
-      socket.once('connect', () => {
-        socket.off('error', onError)
-        this.socket = socket
-        socket.setEncoding('utf8')
-        socket.on('data', data => {
-          this.handleData(String(data))
-        })
-        socket.on('error', err => {
-          this.rejectAll(err)
-          this.sendEvent('error', { message: err.message })
-        })
-        socket.on('close', () => {
-          this.socket = null
-        })
-        resolve()
-      })
-    })
-  }
+	private async connectIpc(): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const socket = net.createConnection(this.ipcPath);
+			const onError = (err: Error) => {
+				socket.destroy();
+				reject(err);
+			};
+			socket.once("error", onError);
+			socket.once("connect", () => {
+				socket.off("error", onError);
+				this.socket = socket;
+				socket.setEncoding("utf8");
+				socket.on("data", (data) => {
+					this.handleData(String(data));
+				});
+				socket.on("error", (err) => {
+					this.rejectAll(err);
+					this.sendEvent("error", { message: err.message });
+				});
+				socket.on("close", () => {
+					this.socket = null;
+				});
+				resolve();
+			});
+		});
+	}
 
-  private handleData(data: string) {
-    this.buffer += data
-    let index = this.buffer.indexOf('\n')
-    while (index > -1) {
-      const line = this.buffer.slice(0, index).trim()
-      this.buffer = this.buffer.slice(index + 1)
-      if (line) this.handleMessage(line)
-      index = this.buffer.indexOf('\n')
-    }
-  }
+	private handleData(data: string) {
+		this.buffer += data;
+		let index = this.buffer.indexOf("\n");
+		while (index > -1) {
+			const line = this.buffer.slice(0, index).trim();
+			this.buffer = this.buffer.slice(index + 1);
+			if (line) this.handleMessage(line);
+			index = this.buffer.indexOf("\n");
+		}
+	}
 
-  private handleMessage(line: string) {
-    let message: MpvIpcResponse
-    try {
-      message = JSON.parse(line) as MpvIpcResponse
-    } catch (err) {
-      log.warn(`mpv invalid ipc message: ${line}`)
-      return
-    }
+	private handleMessage(line: string) {
+		let message: MpvIpcResponse;
+		try {
+			message = JSON.parse(line) as MpvIpcResponse;
+		} catch (err) {
+			log.warn(`mpv invalid ipc message: ${line}`);
+			return;
+		}
 
-    if (message.request_id != null) {
-      const pending = this.pendingRequests.get(message.request_id)
-      if (pending) {
-        clearTimeout(pending.timeout)
-        this.pendingRequests.delete(message.request_id)
-        if (message.error && message.error != 'success') pending.reject(new Error(message.error))
-        else pending.resolve(message.data)
-      }
-      return
-    }
+		if (message.request_id != null) {
+			const pending = this.pendingRequests.get(message.request_id);
+			if (pending) {
+				clearTimeout(pending.timeout);
+				this.pendingRequests.delete(message.request_id);
+				if (message.error && message.error != "success")
+					pending.reject(new Error(message.error));
+				else pending.resolve(message.data);
+			}
+			return;
+		}
 
-    switch (message.event) {
-      case 'client-message':
-        if (this.isVideo && message.args?.includes('lx-video-double-click')) this.sendEvent('doubleClick')
-        break
-      case 'file-loaded':
-        this.hasFileLoaded = true
-        // loaded / duration 事件推迟到 loadUrl 完成所有初始化（pause、seek 0）后再发送，
-        // 避免 renderer 在待恢复 seek 还没应用前就进入播放。
-        if (this.fileLoadedResolve) this.fileLoadedResolve()
-        break
-      case 'playback-restart':
-        // 只有在真正有文件在播放时才上报 playing，避免空闲/加载状态误报。
-        if (!this.isLoading && this.hasFileLoaded && !this.isPaused && !this.isPlayingState) {
-          this.sendEvent('playing')
-          this.isPlayingState = true
-          this.startPolling()
-        }
-        break
-      case 'end-file':
-        if (this.isLoading && message.reason == 'replaced') break
-        this.isLoading = false
-        this.hasFileLoaded = false
-        this.stopPolling()
-        this.isPlayingState = false
-        this.pausedAt = 0
-        if (message.reason == 'eof') {
-          this.sendEvent('ended')
-        } else if (message.reason == 'error') {
-          const detail = message.error ? `: ${message.error}` : ''
-          const error = new Error(`mpv playback error${detail}`)
-          if (this.fileLoadedReject) this.fileLoadedReject(error)
-          else this.sendEvent('error', { message: error.message })
-        } else {
-          this.sendEvent('stopped')
-        }
-        break
-      case 'property-change':
-        this.handlePropertyChange(message.name, message.data)
-        break
-    }
-  }
+		switch (message.event) {
+			case "client-message":
+				if (this.isVideo && message.args?.includes("lx-video-double-click"))
+					this.sendEvent("doubleClick");
+				break;
+			case "file-loaded":
+				this.hasFileLoaded = true;
+				// loaded / duration 事件推迟到 loadUrl 完成所有初始化（pause、seek 0）后再发送，
+				// 避免 renderer 在待恢复 seek 还没应用前就进入播放。
+				if (this.fileLoadedResolve) this.fileLoadedResolve();
+				break;
+			case "playback-restart":
+				// 只有在真正有文件在播放时才上报 playing，避免空闲/加载状态误报。
+				if (
+					!this.isLoading &&
+					this.hasFileLoaded &&
+					!this.isPaused &&
+					!this.isPlayingState
+				) {
+					this.sendEvent("playing");
+					this.isPlayingState = true;
+					this.startPolling();
+				}
+				break;
+			case "end-file":
+				if (this.isLoading && message.reason == "replaced") break;
+				this.isLoading = false;
+				this.hasFileLoaded = false;
+				this.stopPolling();
+				this.isPlayingState = false;
+				this.pausedAt = 0;
+				if (message.reason == "eof") {
+					this.sendEvent("ended");
+				} else if (message.reason == "error") {
+					const detail = message.error ? `: ${message.error}` : "";
+					const error = new Error(`mpv playback error${detail}`);
+					if (this.fileLoadedReject) this.fileLoadedReject(error);
+					else this.sendEvent("error", { message: error.message });
+				} else {
+					this.sendEvent("stopped");
+				}
+				break;
+			case "property-change":
+				this.handlePropertyChange(message.name, message.data);
+				break;
+		}
+	}
 
-  private handlePropertyChange(name?: string, data?: unknown) {
-    // 进程正在销毁时，旧实例的事件不应再转发给 renderer，避免无感切换时
-    // 旧进程退出的 pause/stopped 事件把播放状态覆盖成暂停。
-    if (this.isDestroyed) return
-    switch (name) {
-      case 'time-pos':
-        if (typeof data == 'number') {
-          if (this.isLoading || !this.hasFileLoaded) break
-          this.sendEvent('timeUpdate', data)
-          if (!this.isPaused && !this.isPlayingState) {
-            this.sendEvent('playing')
-            this.isPlayingState = true
-            this.startPolling()
-          }
-        }
-        break
-      case 'duration':
-        if (!this.isLoading && this.hasFileLoaded && typeof data == 'number') this.sendEvent('duration', data)
-        break
-      case 'pause':
-        this.isPaused = !!data
-        if (this.isLoading || !this.hasFileLoaded) break
-        if (data) {
-          this.sendEvent('pause')
-          this.isPlayingState = false
-          this.stopPolling()
-        } else {
-          // MPV 在空闲/未加载文件时 pause 也可能为 false，
-          // 必须确认已有文件加载完成才上报 playing，否则会出现“假播放”。
-          if (this.hasFileLoaded && !this.isPlayingState) {
-            this.sendEvent('playing')
-            this.isPlayingState = true
-            this.startPolling()
-          }
-        }
-        break
-      case 'idle-active':
-        if (data) {
-          const wasLoaded = this.hasFileLoaded
-          this.hasFileLoaded = false
-          this.isPaused = true
-          this.stopPolling()
-          this.isPlayingState = false
-          if (!this.isLoading && wasLoaded) this.sendEvent('stopped')
-        }
-        break
-    }
-  }
+	private handlePropertyChange(name?: string, data?: unknown) {
+		// 进程正在销毁时，旧实例的事件不应再转发给 renderer，避免无感切换时
+		// 旧进程退出的 pause/stopped 事件把播放状态覆盖成暂停。
+		if (this.isDestroyed) return;
+		switch (name) {
+			case "time-pos":
+				if (typeof data == "number") {
+					if (this.isLoading || !this.hasFileLoaded) break;
+					this.sendEvent("timeUpdate", data);
+					if (!this.isPaused && !this.isPlayingState) {
+						this.sendEvent("playing");
+						this.isPlayingState = true;
+						this.startPolling();
+					}
+				}
+				break;
+			case "duration":
+				if (!this.isLoading && this.hasFileLoaded && typeof data == "number")
+					this.sendEvent("duration", data);
+				break;
+			case "pause":
+				this.isPaused = !!data;
+				if (this.isLoading || !this.hasFileLoaded) break;
+				if (data) {
+					this.sendEvent("pause");
+					this.isPlayingState = false;
+					this.stopPolling();
+				} else {
+					// MPV 在空闲/未加载文件时 pause 也可能为 false，
+					// 必须确认已有文件加载完成才上报 playing，否则会出现“假播放”。
+					if (this.hasFileLoaded && !this.isPlayingState) {
+						this.sendEvent("playing");
+						this.isPlayingState = true;
+						this.startPolling();
+					}
+				}
+				break;
+			case "idle-active":
+				if (data) {
+					const wasLoaded = this.hasFileLoaded;
+					this.hasFileLoaded = false;
+					this.isPaused = true;
+					this.stopPolling();
+					this.isPlayingState = false;
+					if (!this.isLoading && wasLoaded) this.sendEvent("stopped");
+				}
+				break;
+		}
+	}
 
-  private async command<T = unknown>(command: unknown[]): Promise<T> {
-    if (!this.socket) return Promise.reject(new Error('mpv IPC is not connected'))
-    const request_id = ++this.requestId
-    const payload = JSON.stringify({ command, request_id }) + '\n'
-    return new Promise<T>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(request_id)
-        reject(new Error('mpv IPC request timeout'))
-      }, 5000)
-      this.pendingRequests.set(request_id, {
-        resolve: data => {
-          resolve(data as T)
-        },
-        reject,
-        timeout,
-      })
-      this.socket!.write(payload, err => {
-        if (!err) return
-        clearTimeout(timeout)
-        this.pendingRequests.delete(request_id)
-        reject(err)
-      })
-    })
-  }
+	private async command<T = unknown>(command: unknown[]): Promise<T> {
+		if (!this.socket)
+			return Promise.reject(new Error("mpv IPC is not connected"));
+		const request_id = ++this.requestId;
+		const payload = JSON.stringify({ command, request_id }) + "\n";
+		return new Promise<T>((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				this.pendingRequests.delete(request_id);
+				reject(new Error("mpv IPC request timeout"));
+			}, 5000);
+			this.pendingRequests.set(request_id, {
+				resolve: (data) => {
+					resolve(data as T);
+				},
+				reject,
+				timeout,
+			});
+			this.socket!.write(payload, (err) => {
+				if (!err) return;
+				clearTimeout(timeout);
+				this.pendingRequests.delete(request_id);
+				reject(err);
+			});
+		});
+	}
 
-  private fileLoadedResolve: (() => void) | null = null
-  private fileLoadedReject: ((err: Error) => void) | null = null
-  private fileLoadedPromise: Promise<void> | null = null
+	private fileLoadedResolve: (() => void) | null = null;
+	private fileLoadedReject: ((err: Error) => void) | null = null;
+	private fileLoadedPromise: Promise<void> | null = null;
 
-  private async isFileReady(url: string): Promise<boolean> {
-    const [path, duration, idleActive] = await Promise.all([
-      this.command<string | null>(['get_property', 'path']).catch(() => null),
-      this.command<number | null>(['get_property', 'duration']).catch(() => null),
-      this.command<boolean | null>(['get_property', 'idle-active']).catch(() => null),
-    ])
-    return path === url && idleActive !== true && typeof duration == 'number' && duration > 0
-  }
+	private async isFileReady(url: string): Promise<boolean> {
+		const [path, duration, idleActive] = await Promise.all([
+			this.command<string | null>(["get_property", "path"]).catch(() => null),
+			this.command<number | null>(["get_property", "duration"]).catch(
+				() => null,
+			),
+			this.command<boolean | null>(["get_property", "idle-active"]).catch(
+				() => null,
+			),
+		]);
+		return (
+			path === url &&
+			idleActive !== true &&
+			typeof duration == "number" &&
+			duration > 0
+		);
+	}
 
-  private async waitForFileLoaded(url: string): Promise<void> {
-    // 文件可能在注册等待前就已加载完成（file-loaded 与 loadfile 响应同块到达时被提前处理），
-    // 此时直接返回，避免重复等待。
-    if (this.hasFileLoaded) return
-    if (this.fileLoadedPromise) return this.fileLoadedPromise
-    this.fileLoadedPromise = new Promise((resolve, reject) => {
-      this.fileLoadedResolve = () => {
-        this.fileLoadedResolve = null
-        this.fileLoadedReject = null
-        this.fileLoadedPromise = null
-        resolve()
-      }
-      this.fileLoadedReject = (err: Error) => {
-        this.fileLoadedResolve = null
-        this.fileLoadedReject = null
-        this.fileLoadedPromise = null
-        this.isLoading = false
-        reject(err)
-      }
-      const rejectOnTimeout = () => {
-        if (!this.fileLoadedReject) return
-        const timeoutErr = new Error('mpv file-load timeout')
-        this.fileLoadedReject(timeoutErr)
-      }
-      // 长视频/直播流可能先开始推进，再延迟发出 file-loaded；先用 MPV 的
-      // path + duration 确认同一 URL 已可播放，避免把真实播放误判成超时。
-      setTimeout(() => {
-        if (!this.fileLoadedReject) return
-        void this.isFileReady(url).then(isReady => {
-          if (!this.fileLoadedReject) return
-          if (isReady) {
-            this.hasFileLoaded = true
-            this.fileLoadedResolve?.()
-          } else {
-            setTimeout(rejectOnTimeout, 10000)
-          }
-        }).catch(() => {
-          if (this.fileLoadedReject) setTimeout(rejectOnTimeout, 10000)
-        })
-      }, 10000)
-    })
-    return this.fileLoadedPromise
-  }
+	private async waitForFileLoaded(url: string): Promise<void> {
+		// 文件可能在注册等待前就已加载完成（file-loaded 与 loadfile 响应同块到达时被提前处理），
+		// 此时直接返回，避免重复等待。
+		if (this.hasFileLoaded) return;
+		if (this.fileLoadedPromise) return this.fileLoadedPromise;
+		this.fileLoadedPromise = new Promise((resolve, reject) => {
+			this.fileLoadedResolve = () => {
+				this.fileLoadedResolve = null;
+				this.fileLoadedReject = null;
+				this.fileLoadedPromise = null;
+				resolve();
+			};
+			this.fileLoadedReject = (err: Error) => {
+				this.fileLoadedResolve = null;
+				this.fileLoadedReject = null;
+				this.fileLoadedPromise = null;
+				this.isLoading = false;
+				reject(err);
+			};
+			const rejectOnTimeout = () => {
+				if (!this.fileLoadedReject) return;
+				const timeoutErr = new Error("mpv file-load timeout");
+				this.fileLoadedReject(timeoutErr);
+			};
+			// 长视频/直播流可能先开始推进，再延迟发出 file-loaded；先用 MPV 的
+			// path + duration 确认同一 URL 已可播放，避免把真实播放误判成超时。
+			setTimeout(() => {
+				if (!this.fileLoadedReject) return;
+				void this.isFileReady(url)
+					.then((isReady) => {
+						if (!this.fileLoadedReject) return;
+						if (isReady) {
+							this.hasFileLoaded = true;
+							this.fileLoadedResolve?.();
+						} else {
+							setTimeout(rejectOnTimeout, 10000);
+						}
+					})
+					.catch(() => {
+						if (this.fileLoadedReject) setTimeout(rejectOnTimeout, 10000);
+					});
+			}, 10000);
+		});
+		return this.fileLoadedPromise;
+	}
 
-  private async waitForProperty<T>(name: string, expected: T, timeout = 2000): Promise<boolean> {
-    const start = Date.now()
-    while (Date.now() - start < timeout) {
-      const value = await this.command<T>(['get_property', name]).catch(() => null)
-      if (value === expected) return true
-      await new Promise(resolve => setTimeout(resolve, 50))
-    }
-    return false
-  }
+	private async waitForProperty<T>(
+		name: string,
+		expected: T,
+		timeout = 2000,
+	): Promise<boolean> {
+		const start = Date.now();
+		while (Date.now() - start < timeout) {
+			const value = await this.command<T>(["get_property", name]).catch(
+				() => null,
+			);
+			if (value === expected) return true;
+			await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+		return false;
+	}
 
-  async loadUrl(url: string, options?: { emitLoaded?: boolean, audioUrl?: string }): Promise<void> {
-    await this.ensureStarted()
-    this.loadedUrl = url
-    log.info(`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`)
-    // 从切换开始就屏蔽旧文件的状态事件；否则设置请求头期间旧音频仍在推进，
-    // renderer 会先收到旧的 time-pos/playing，再被新文件的 loaded 状态覆盖。
-    this.hasFileLoaded = false
-    this.isLoading = true
-    this.isPaused = true
-    this.isPlayingState = false
-    this.stopPolling()
-    // B 站 CDN 校验 Referer，其他地址不带，避免向无关主机泄漏来源
-    const isBiliCdn = /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
-    await this.command(['set_property', 'referrer', isBiliCdn ? 'https://www.bilibili.com/' : ''])
-      .catch(err => log.warn('set referrer failed:', err))
-    await this.command(['set_property', 'user-agent', isBiliCdn
-      ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
-      : 'libmpv']).catch(err => log.warn('set user-agent failed:', err))
-    const biliCookie = isBiliCdn ? getBiliCookie() : ''
-    await this.command(['set_property', 'http-header-fields', isBiliCdn
-      ? [
-          'Referer: https://www.bilibili.com/',
-          'Origin: https://www.bilibili.com',
-          ...(biliCookie ? [`Cookie: ${biliCookie}`] : []),
-        ]
-      : []])
-      .catch(err => log.warn('set http-header-fields failed:', err))
-    // 必须在发 loadfile 之前就注册 file-loaded 等待：两者在同一条 IPC 流上，
-    // 若 file-loaded 与命令响应在同一个数据块到达，事件会在 promise 注册前被处理并丢弃，
-    // 导致 waitForFileLoaded 把仍在播放的流误判为超时（表现为切歌偶发失败）。
-    const fileLoaded = this.waitForFileLoaded(url)
-    try {
-      await this.command(['loadfile', url, 'replace'])
-    } catch (err: any) {
-      // loadfile 已失败，吞掉 file-loaded 等待后续的超时，避免未处理的 rejection
-      fileLoaded.catch(() => {})
-      // 某些 MPV 启动状态下会把 replace 标志误解析为 index 参数，
-      // 重试一次不带 flags（replace 是默认值）。
-      const msg = err?.message ?? ''
-      if (msg.includes('invalid parameter') || msg.includes('incompatible type')) {
-        log.warn(`loadfile with replace failed (${msg}), retrying without flags`)
-        await new Promise(resolve => setTimeout(resolve, 200))
-        await this.command(['loadfile', url])
-      } else {
-        this.isLoading = false
-        throw err
-      }
-    }
-    await fileLoaded
-    if (this.isVideo && options?.audioUrl) {
-      await this.command(['audio-add', options.audioUrl, 'select']).catch(err => log.warn('mpv video audio-add failed:', err))
-    }
-    // 文件加载完成后立即置为暂停，使 pause 属性从 false/undefined 变为 true，
-    // 从而触发 property-change 事件；同时避免 MPV 在加载后进入 playback-restart
-    // 并误报 playing 事件。
-    await this.command(['set_property', 'pause', true]).catch(() => {})
-    // 等待 pause=true 真正生效后再返回，避免 renderer 紧接着调用 play() 时
-    // 与 pause=true 命令竞争，导致播放/暂停状态错乱。
-    const paused = await this.waitForProperty('pause', true)
-    this.isPaused = paused
-    this.isPlayingState = false
-    this.stopPolling()
-    // 新文件加载后必须回到 0:00，且要清除上一首残留的 pausedAt，
-    // 否则紧接着的 play() 会把新文件 seek 到上一首的暂停位置。
-    this.pausedAt = 0
-    await this.command(['seek', 0, 'absolute', 'exact']).catch(() => {})
-    this.isLoading = false
-    // restart 场景下由调用方在 play() 成功后再通知 renderer，
-    // 避免 renderer 在切换期间误发 pause 覆盖新实例的播放命令。
-    if (options?.emitLoaded !== false) {
-      this.sendEvent('loaded')
-      void this.getDuration().then(duration => {
-        this.sendEvent('duration', duration)
-      }).catch(() => {})
-    }
-  }
+	async loadUrl(
+		url: string,
+		options?: { emitLoaded?: boolean; audioUrl?: string },
+	): Promise<void> {
+		await this.ensureStarted();
+		this.loadedUrl = url;
+		log.info(
+			`[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`,
+		);
+		// 从切换开始就屏蔽旧文件的状态事件；否则设置请求头期间旧音频仍在推进，
+		// renderer 会先收到旧的 time-pos/playing，再被新文件的 loaded 状态覆盖。
+		this.hasFileLoaded = false;
+		this.isLoading = true;
+		this.isPaused = true;
+		this.isPlayingState = false;
+		this.stopPolling();
+		// B 站 CDN 校验 Referer，其他地址不带，避免向无关主机泄漏来源
+		const isBiliCdn =
+			/^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url);
+		await this.command([
+			"set_property",
+			"referrer",
+			isBiliCdn ? "https://www.bilibili.com/" : "",
+		]).catch((err) => log.warn("set referrer failed:", err));
+		await this.command([
+			"set_property",
+			"user-agent",
+			isBiliCdn
+				? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+				: "libmpv",
+		]).catch((err) => log.warn("set user-agent failed:", err));
+		const biliCookie = isBiliCdn ? getBiliCookie() : "";
+		await this.command([
+			"set_property",
+			"http-header-fields",
+			isBiliCdn
+				? [
+						"Referer: https://www.bilibili.com/",
+						"Origin: https://www.bilibili.com",
+						...(biliCookie ? [`Cookie: ${biliCookie}`] : []),
+					]
+				: [],
+		]).catch((err) => log.warn("set http-header-fields failed:", err));
+		// 必须在发 loadfile 之前就注册 file-loaded 等待：两者在同一条 IPC 流上，
+		// 若 file-loaded 与命令响应在同一个数据块到达，事件会在 promise 注册前被处理并丢弃，
+		// 导致 waitForFileLoaded 把仍在播放的流误判为超时（表现为切歌偶发失败）。
+		const fileLoaded = this.waitForFileLoaded(url);
+		try {
+			await this.command(["loadfile", url, "replace"]);
+		} catch (err: any) {
+			// loadfile 已失败，吞掉 file-loaded 等待后续的超时，避免未处理的 rejection
+			fileLoaded.catch(() => {});
+			// 某些 MPV 启动状态下会把 replace 标志误解析为 index 参数，
+			// 重试一次不带 flags（replace 是默认值）。
+			const msg = err?.message ?? "";
+			if (
+				msg.includes("invalid parameter") ||
+				msg.includes("incompatible type")
+			) {
+				log.warn(
+					`loadfile with replace failed (${msg}), retrying without flags`,
+				);
+				await new Promise((resolve) => setTimeout(resolve, 200));
+				await this.command(["loadfile", url]);
+			} else {
+				this.isLoading = false;
+				throw err;
+			}
+		}
+		await fileLoaded;
+		if (this.isVideo && options?.audioUrl) {
+			await this.command(["audio-add", options.audioUrl, "select"]).catch(
+				(err) => log.warn("mpv video audio-add failed:", err),
+			);
+		}
+		// 文件加载完成后立即置为暂停，使 pause 属性从 false/undefined 变为 true，
+		// 从而触发 property-change 事件；同时避免 MPV 在加载后进入 playback-restart
+		// 并误报 playing 事件。
+		await this.command(["set_property", "pause", true]).catch(() => {});
+		// 等待 pause=true 真正生效后再返回，避免 renderer 紧接着调用 play() 时
+		// 与 pause=true 命令竞争，导致播放/暂停状态错乱。
+		const paused = await this.waitForProperty("pause", true);
+		this.isPaused = paused;
+		this.isPlayingState = false;
+		this.stopPolling();
+		// 新文件加载后必须回到 0:00，且要清除上一首残留的 pausedAt，
+		// 否则紧接着的 play() 会把新文件 seek 到上一首的暂停位置。
+		this.pausedAt = 0;
+		await this.command(["seek", 0, "absolute", "exact"]).catch(() => {});
+		this.isLoading = false;
+		// restart 场景下由调用方在 play() 成功后再通知 renderer，
+		// 避免 renderer 在切换期间误发 pause 覆盖新实例的播放命令。
+		if (options?.emitLoaded !== false) {
+			this.sendEvent("loaded");
+			void this.getDuration()
+				.then((duration) => {
+					this.sendEvent("duration", duration);
+				})
+				.catch(() => {});
+		}
+	}
 
-  async play(): Promise<void> {
-    await this.ensureStarted()
-    // 恢复/开始播放前先把位置对齐到目标（暂停位置或 0），再解除暂停。
-    // 这样可以避免 MPV 在加载后从错误位置先播一小段，然后又被 seek 拉回头。
-    const target = this.pausedAt > 0 ? this.pausedAt : 0
-    this.pausedAt = 0
-    await this.command(['seek', target, 'absolute', 'exact']).catch(() => {})
-    await this.command(['set_property', 'pause', false])
-    // 轮询由 pause=false 的 property-change 启动，避免在真正恢复前误报 pause。
-  }
+	async play(): Promise<void> {
+		await this.ensureStarted();
+		// 恢复/开始播放前先把位置对齐到目标（暂停位置或 0），再解除暂停。
+		// 这样可以避免 MPV 在加载后从错误位置先播一小段，然后又被 seek 拉回头。
+		const target = this.pausedAt > 0 ? this.pausedAt : 0;
+		this.pausedAt = 0;
+		await this.command(["seek", target, "absolute", "exact"]).catch(() => {});
+		await this.command(["set_property", "pause", false]);
+		// 轮询由 pause=false 的 property-change 启动，避免在真正恢复前误报 pause。
+	}
 
-  async pause(): Promise<void> {
-    await this.ensureStarted()
-    // 先立即发送暂停命令，避免等待 get_position 造成 UI 反应慢；
-    // 恢复播放时使用 exact seek，即使 pausedAt 是包边界也能精确对齐。
-    await this.command(['set_property', 'pause', true])
-    // 立刻把内部状态置为暂停，避免 pause property-change 回来前，
-    // 轮询/time-pos 误发 playing 导致播放按钮闪烁。
-    this.isPaused = true
-    this.isPlayingState = false
-    this.stopPolling()
-    this.pausedAt = await this.getPosition().catch(() => 0)
-  }
+	async pause(): Promise<void> {
+		await this.ensureStarted();
+		// 先立即发送暂停命令，避免等待 get_position 造成 UI 反应慢；
+		// 恢复播放时使用 exact seek，即使 pausedAt 是包边界也能精确对齐。
+		await this.command(["set_property", "pause", true]);
+		// 立刻把内部状态置为暂停，避免 pause property-change 回来前，
+		// 轮询/time-pos 误发 playing 导致播放按钮闪烁。
+		this.isPaused = true;
+		this.isPlayingState = false;
+		this.stopPolling();
+		this.pausedAt = await this.getPosition().catch(() => 0);
+	}
 
-  async stop(): Promise<void> {
-    if (!this.socket) return
-    this.isLoading = false
-    this.hasFileLoaded = false
-    this.isPaused = true
-    this.isPlayingState = false
-    this.pausedAt = 0
-    await this.command(['stop']).catch(() => {})
-    this.stopPolling()
-    this.sendEvent('stopped')
-  }
+	async stop(): Promise<void> {
+		if (!this.socket) return;
+		this.isLoading = false;
+		this.hasFileLoaded = false;
+		this.isPaused = true;
+		this.isPlayingState = false;
+		this.pausedAt = 0;
+		await this.command(["stop"]).catch(() => {});
+		this.stopPolling();
+		this.sendEvent("stopped");
+	}
 
-  async seek(seconds: number): Promise<void> {
-    await this.ensureStarted()
-    // 使用 absolute+exact seek，配合 --hr-seek=yes，避免按关键帧 seek 造成的回退/前进偏移。
-    await this.command(['seek', seconds, 'absolute', 'exact'])
-    this.pausedAt = seconds
-    this.sendEvent('seeked')
-  }
+	async seek(seconds: number): Promise<void> {
+		await this.ensureStarted();
+		// 使用 absolute+exact seek，配合 --hr-seek=yes，避免按关键帧 seek 造成的回退/前进偏移。
+		await this.command(["seek", seconds, "absolute", "exact"]);
+		this.pausedAt = seconds;
+		this.sendEvent("seeked");
+	}
 
-  async setVolume(volume: number): Promise<void> {
-    this.cachedVolume = volume
-    if (!this.socket) return
-    await this.command(['set_property', 'volume', volume])
-  }
+	async setVolume(volume: number): Promise<void> {
+		this.cachedVolume = volume;
+		if (!this.socket) return;
+		await this.command(["set_property", "volume", volume]);
+	}
 
-  async setAudioDevice(device: string): Promise<void> {
-    this.cachedAudioDevice = device || 'auto'
-    if (!this.socket) return
-    await this.command(['set_property', 'audio-device', this.cachedAudioDevice])
-  }
+	async setAudioDevice(device: string): Promise<void> {
+		this.cachedAudioDevice = device || "auto";
+		if (!this.socket) return;
+		await this.command([
+			"set_property",
+			"audio-device",
+			this.cachedAudioDevice,
+		]);
+	}
 
-  async getPosition(): Promise<number> {
-    if (!this.socket) return 0
-    return (await this.command<number | null>(['get_property', 'time-pos'])) ?? 0
-  }
+	async getPosition(): Promise<number> {
+		if (!this.socket) return 0;
+		return (
+			(await this.command<number | null>(["get_property", "time-pos"])) ?? 0
+		);
+	}
 
-  async getDuration(): Promise<number> {
-    if (!this.socket) return 0
-    return (await this.command<number | null>(['get_property', 'duration'])) ?? 0
-  }
+	async getDuration(): Promise<number> {
+		if (!this.socket) return 0;
+		return (
+			(await this.command<number | null>(["get_property", "duration"])) ?? 0
+		);
+	}
 
-  async getPaused(): Promise<boolean> {
-    if (!this.socket) return true
-    return (await this.command<boolean | null>(['get_property', 'pause'])) ?? true
-  }
+	async getPaused(): Promise<boolean> {
+		if (!this.socket) return true;
+		return (
+			(await this.command<boolean | null>(["get_property", "pause"])) ?? true
+		);
+	}
 
-  async getPath(): Promise<string | null> {
-    if (!this.socket) return null
-    return await this.command<string | null>(['get_property', 'path']).catch(() => null)
-  }
+	async getPath(): Promise<string | null> {
+		if (!this.socket) return null;
+		return await this.command<string | null>(["get_property", "path"]).catch(
+			() => null,
+		);
+	}
 
-  private startPolling() {
-    if (this.pollTimer) return
-    this.pollTimer = setInterval(() => {
-      if (!this.socket || this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
-      void this.getPosition().then(position => {
-        if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
-        this.sendEvent('timeUpdate', position)
-      }).catch(() => {})
-      void this.getDuration().then(duration => {
-        if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
-        this.sendEvent('duration', duration)
-      }).catch(() => {})
-      void this.getPaused().then(paused => {
-        if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return
+	private startPolling() {
+		if (this.pollTimer) return;
+		this.pollTimer = setInterval(() => {
+			if (
+				!this.socket ||
+				this.isDestroyed ||
+				this.isLoading ||
+				!this.hasFileLoaded
+			)
+				return;
+			void this.getPosition()
+				.then((position) => {
+					if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return;
+					this.sendEvent("timeUpdate", position);
+				})
+				.catch(() => {});
+			void this.getDuration()
+				.then((duration) => {
+					if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return;
+					this.sendEvent("duration", duration);
+				})
+				.catch(() => {});
+			void this.getPaused()
+				.then((paused) => {
+					if (this.isDestroyed || this.isLoading || !this.hasFileLoaded) return;
 
-        // 定期同步暂停状态，避免 property-change 事件丢失导致 UI 与实际状态不一致。
-        if (paused) {
-          if (this.isPlayingState) {
-            this.isPlayingState = false
-            this.sendEvent('pause')
-          }
-        } else if (this.hasFileLoaded && !this.isPlayingState) {
-          this.isPlayingState = true
-          this.sendEvent('playing')
-        }
-      }).catch(() => {})
-    }, 1000)
-  }
+					// 定期同步暂停状态，避免 property-change 事件丢失导致 UI 与实际状态不一致。
+					if (paused) {
+						if (this.isPlayingState) {
+							this.isPlayingState = false;
+							this.sendEvent("pause");
+						}
+					} else if (this.hasFileLoaded && !this.isPlayingState) {
+						this.isPlayingState = true;
+						this.sendEvent("playing");
+					}
+				})
+				.catch(() => {});
+		}, 1000);
+	}
 
-  private stopPolling() {
-    if (!this.pollTimer) return
-    clearInterval(this.pollTimer)
-    this.pollTimer = null
-  }
+	private stopPolling() {
+		if (!this.pollTimer) return;
+		clearInterval(this.pollTimer);
+		this.pollTimer = null;
+	}
 
-  async destroy(): Promise<void> {
-    this.isDestroyed = true
-    this.isLoading = false
-    this.isPlayingState = false
-    this.hasFileLoaded = false
-    this.isPaused = true
-    this.stopPolling()
-    if (this.socket) {
-      await this.command(['quit']).catch(() => {})
-    }
-    this.cleanupSocket()
-    if (this.process && !this.process.killed) this.process.kill()
-    this.process = null
-    this.cachedPathInfo = null
-    if (this.videoInputConfPath) {
-      await fs.promises.unlink(this.videoInputConfPath).catch(() => {})
-      this.videoInputConfPath = ''
-    }
-    // 保持 isDestroyed=true，避免退出事件被误转发给 renderer 造成播放状态混乱。
-  }
+	async destroy(): Promise<void> {
+		this.isDestroyed = true;
+		this.isLoading = false;
+		this.isPlayingState = false;
+		this.hasFileLoaded = false;
+		this.isPaused = true;
+		this.stopPolling();
+		if (this.socket) {
+			await this.command(["quit"]).catch(() => {});
+		}
+		this.cleanupSocket();
+		if (this.process && !this.process.killed) this.process.kill();
+		this.process = null;
+		this.cachedPathInfo = null;
+		if (this.videoInputConfPath) {
+			await fs.promises.unlink(this.videoInputConfPath).catch(() => {});
+			this.videoInputConfPath = "";
+		}
+		// 保持 isDestroyed=true，避免退出事件被误转发给 renderer 造成播放状态混乱。
+	}
 
-  private cleanupSocket() {
-    this.stopPolling()
-    this.socket?.destroy()
-    this.socket = null
-    if (!isWin && this.ipcPath) {
-      try {
-        fs.unlinkSync(this.ipcPath)
-      } catch {}
-    }
-  }
+	private cleanupSocket() {
+		this.stopPolling();
+		this.socket?.destroy();
+		this.socket = null;
+		if (!isWin && this.ipcPath) {
+			try {
+				fs.unlinkSync(this.ipcPath);
+			} catch {}
+		}
+	}
 
-  private rejectAll(err: Error) {
-    for (const [requestId, pending] of this.pendingRequests) {
-      clearTimeout(pending.timeout)
-      pending.reject(err)
-      this.pendingRequests.delete(requestId)
-    }
-  }
+	private rejectAll(err: Error) {
+		for (const [requestId, pending] of this.pendingRequests) {
+			clearTimeout(pending.timeout);
+			pending.reject(err);
+			this.pendingRequests.delete(requestId);
+		}
+	}
 
-  sendEvent(name: MpvEventName, data?: unknown) {
-    if (this.isDestroyed && name !== 'error') return
-    const eventNames: Record<MpvEventName, string> = this.isVideo
-      ? {
-          started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_started,
-          loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_loaded,
-          playing: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_playing,
-          pause: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_pause_event,
-          stopped: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_stopped,
-          ended: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_ended,
-          error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_error,
-          timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_timeUpdate,
-          duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_duration,
-          seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_seeked,
-          doubleClick: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_doubleClick,
-        }
-      : {
-          started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_started,
-          loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_loaded,
-          playing: WIN_MAIN_RENDERER_EVENT_NAME.mpv_playing,
-          pause: WIN_MAIN_RENDERER_EVENT_NAME.mpv_pause_event,
-          stopped: WIN_MAIN_RENDERER_EVENT_NAME.mpv_stopped,
-          ended: WIN_MAIN_RENDERER_EVENT_NAME.mpv_ended,
-          error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_error,
-          timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_timeUpdate,
-          duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_duration,
-          seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_seeked,
-          doubleClick: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_doubleClick,
-        }
-    // 仅对状态变化类事件保留调试日志，避免 timeUpdate/duration 刷屏。
-    if (name !== 'timeUpdate' && name !== 'duration') {
-      log.info(`[MpvController sendEvent] instance=${this.instanceId} name=${name} isDestroyed=${this.isDestroyed}`)
-    }
-    sendEvent(eventNames[name], data)
-  }
+	sendEvent(name: MpvEventName, data?: unknown) {
+		if (this.isDestroyed && name !== "error") return;
+		const eventNames: Record<MpvEventName, string> = this.isVideo
+			? {
+					started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_started,
+					loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_loaded,
+					playing: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_playing,
+					pause: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_pause_event,
+					stopped: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_stopped,
+					ended: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_ended,
+					error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_error,
+					timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_timeUpdate,
+					duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_duration,
+					seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_seeked,
+					doubleClick: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_doubleClick,
+				}
+			: {
+					started: WIN_MAIN_RENDERER_EVENT_NAME.mpv_started,
+					loaded: WIN_MAIN_RENDERER_EVENT_NAME.mpv_loaded,
+					playing: WIN_MAIN_RENDERER_EVENT_NAME.mpv_playing,
+					pause: WIN_MAIN_RENDERER_EVENT_NAME.mpv_pause_event,
+					stopped: WIN_MAIN_RENDERER_EVENT_NAME.mpv_stopped,
+					ended: WIN_MAIN_RENDERER_EVENT_NAME.mpv_ended,
+					error: WIN_MAIN_RENDERER_EVENT_NAME.mpv_error,
+					timeUpdate: WIN_MAIN_RENDERER_EVENT_NAME.mpv_timeUpdate,
+					duration: WIN_MAIN_RENDERER_EVENT_NAME.mpv_duration,
+					seeked: WIN_MAIN_RENDERER_EVENT_NAME.mpv_seeked,
+					doubleClick: WIN_MAIN_RENDERER_EVENT_NAME.mpv_video_doubleClick,
+				};
+		// 仅对状态变化类事件保留调试日志，避免 timeUpdate/duration 刷屏。
+		if (name !== "timeUpdate" && name !== "duration") {
+			log.info(
+				`[MpvController sendEvent] instance=${this.instanceId} name=${name} isDestroyed=${this.isDestroyed}`,
+			);
+		}
+		sendEvent(eventNames[name], data);
+	}
 
-  /**
-   * 运行 mpv --audio-device=help 获取可用设备列表
-   */
-  static async listAudioDevices(): Promise<Array<{ id: string, name: string }>> {
-    const mpvPath = resolveMpvPath()
-    log.info(`[listAudioDevices] mpv path: ${mpvPath.path} source: ${mpvPath.source}`)
-    return new Promise((resolve) => {
-      // 仅枚举设备，不加载用户配置，不初始化视频/窗口，避免 probing 时抢占音频设备
-      const proc = spawn(mpvPath.path, ['--no-config', '--no-video', '--force-window=no', '--audio-device=help'], {
-        shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      let output = ''
-      let settled = false
-      let timeout: ReturnType<typeof setTimeout> | null = null
-      const finish = (devices: Array<{ id: string, name: string }>) => {
-        if (settled) return
-        settled = true
-        if (timeout != null) clearTimeout(timeout)
-        resolve(devices)
-      }
-      proc.stdout?.on('data', (data) => { output += String(data) })
-      proc.stderr?.on('data', (data) => { output += String(data) })
-      proc.on('close', (code) => {
-        if (settled) return
-        log.info(`[listAudioDevices] mpv exited code=${code ?? 'null'} output length=${output.length}`)
-        const devices: Array<{ id: string, name: string }> = [{ id: 'auto', name: '默认设备' }]
-        // macOS 上 mpv 会同时列出 coreaudio 与 avfoundation 两套驱动，
-        // 造成同一物理设备重复出现；按名称去重，并优先保留 avfoundation（mpv 默认驱动）
-        const deviceMap = new Map<string, string>()
-        for (const line of output.split('\n')) {
-          const match = line.match(/^\s*'([^']+)'\s*\(([^)]+)\)/)
-          if (!match || match[1] === 'auto') continue
-          const id = match[1]
-          const name = match[2]
-          const existingId = deviceMap.get(name)
-          if (!existingId) {
-            deviceMap.set(name, id)
-          } else if (isMac && id.startsWith('avfoundation/') && !existingId.startsWith('avfoundation/')) {
-            deviceMap.set(name, id)
-          }
-        }
-        for (const [name, id] of deviceMap) {
-          devices.push({ id, name })
-        }
-        log.info(`[listAudioDevices] parsed devices: ${JSON.stringify(devices)}`)
-        finish(devices)
-      })
-      proc.on('error', (err) => {
-        if (settled) return
-        log.warn(`[listAudioDevices] mpv spawn error: ${err.message}`)
-        finish([])
-      })
-      timeout = setTimeout(() => {
-        if (settled) return
-        log.warn('[listAudioDevices] mpv timeout')
-        proc.kill()
-        finish([])
-      }, 5000)
-    })
-  }
+	/**
+	 * 运行 mpv --audio-device=help 获取可用设备列表
+	 */
+	static async listAudioDevices(): Promise<
+		Array<{ id: string; name: string }>
+	> {
+		const mpvPath = resolveMpvPath();
+		log.info(
+			`[listAudioDevices] mpv path: ${mpvPath.path} source: ${mpvPath.source}`,
+		);
+		return new Promise((resolve) => {
+			// 仅枚举设备，不加载用户配置，不初始化视频/窗口，避免 probing 时抢占音频设备
+			const proc = spawn(
+				mpvPath.path,
+				[
+					"--no-config",
+					"--no-video",
+					"--force-window=no",
+					"--audio-device=help",
+				],
+				{
+					shell: false,
+					stdio: ["ignore", "pipe", "pipe"],
+				},
+			);
+			let output = "";
+			let settled = false;
+			let timeout: ReturnType<typeof setTimeout> | null = null;
+			const finish = (devices: Array<{ id: string; name: string }>) => {
+				if (settled) return;
+				settled = true;
+				if (timeout != null) clearTimeout(timeout);
+				resolve(devices);
+			};
+			proc.stdout?.on("data", (data) => {
+				output += String(data);
+			});
+			proc.stderr?.on("data", (data) => {
+				output += String(data);
+			});
+			proc.on("close", (code) => {
+				if (settled) return;
+				log.info(
+					`[listAudioDevices] mpv exited code=${code ?? "null"} output length=${output.length}`,
+				);
+				const devices: Array<{ id: string; name: string }> = [
+					{ id: "auto", name: "默认设备" },
+				];
+				// macOS 上 mpv 会同时列出 coreaudio 与 avfoundation 两套驱动，
+				// 造成同一物理设备重复出现；按名称去重，并优先保留 avfoundation（mpv 默认驱动）
+				const deviceMap = new Map<string, string>();
+				for (const line of output.split("\n")) {
+					const match = line.match(/^\s*'([^']+)'\s*\(([^)]+)\)/);
+					if (!match || match[1] === "auto") continue;
+					const id = match[1];
+					const name = match[2];
+					const existingId = deviceMap.get(name);
+					if (!existingId) {
+						deviceMap.set(name, id);
+					} else if (
+						isMac &&
+						id.startsWith("avfoundation/") &&
+						!existingId.startsWith("avfoundation/")
+					) {
+						deviceMap.set(name, id);
+					}
+				}
+				for (const [name, id] of deviceMap) {
+					devices.push({ id, name });
+				}
+				log.info(
+					`[listAudioDevices] parsed devices: ${JSON.stringify(devices)}`,
+				);
+				finish(devices);
+			});
+			proc.on("error", (err) => {
+				if (settled) return;
+				log.warn(`[listAudioDevices] mpv spawn error: ${err.message}`);
+				finish([]);
+			});
+			timeout = setTimeout(() => {
+				if (settled) return;
+				log.warn("[listAudioDevices] mpv timeout");
+				proc.kill();
+				finish([]);
+			}, 5000);
+		});
+	}
 }
 
-let activeMpvController = new MpvController()
-export const getMpvController = () => activeMpvController
+let activeMpvController = new MpvController();
+export const getMpvController = () => activeMpvController;
 const setActiveMpvController = (controller: MpvController) => {
-  activeMpvController = controller
-}
+	activeMpvController = controller;
+};
 
 export interface MpvRestartState {
-  url?: string
-  time?: number
-  playing?: boolean
+	url?: string;
+	time?: number;
+	playing?: boolean;
 }
 
-const doRestartMpvController = async(state: MpvRestartState): Promise<void> => {
-  const oldController = activeMpvController
-  const newController = new MpvController()
-  // renderer 端的 currentUrl 可能因 HMR 等原因丢失，优先使用 main process 记录的 URL
-  let url = state.url && state.url.length > 0 ? state.url : oldController.loadedUrl
-  log.info(`[restartMpvController] start old=${oldController.instanceId} new=${newController.instanceId} rendererUrl=${state.url ? sanitizeUrl(state.url) : '<none>'} loadedUrl=${oldController.loadedUrl ? sanitizeUrl(oldController.loadedUrl) : '<none>'} time=${state.time} playing=${state.playing}`)
-  if (!url && oldController.hasFileLoaded) {
-    const pathFromMpv = await oldController.getPath().catch(() => null)
-    log.info(`[restartMpvController] fallback path from mpv: ${pathFromMpv ? sanitizeUrl(pathFromMpv) : '<none>'}`)
-    if (pathFromMpv) url = pathFromMpv
-  }
+const doRestartMpvController = async (
+	state: MpvRestartState,
+): Promise<void> => {
+	const oldController = activeMpvController;
+	const newController = new MpvController();
+	// renderer 端的 currentUrl 可能因 HMR 等原因丢失，优先使用 main process 记录的 URL
+	let url =
+		state.url && state.url.length > 0 ? state.url : oldController.loadedUrl;
+	log.info(
+		`[restartMpvController] start old=${oldController.instanceId} new=${newController.instanceId} rendererUrl=${state.url ? sanitizeUrl(state.url) : "<none>"} loadedUrl=${oldController.loadedUrl ? sanitizeUrl(oldController.loadedUrl) : "<none>"} time=${state.time} playing=${state.playing}`,
+	);
+	if (!url && oldController.hasFileLoaded) {
+		const pathFromMpv = await oldController.getPath().catch(() => null);
+		log.info(
+			`[restartMpvController] fallback path from mpv: ${pathFromMpv ? sanitizeUrl(pathFromMpv) : "<none>"}`,
+		);
+		if (pathFromMpv) url = pathFromMpv;
+	}
 
-  try {
-    await newController.ensureStarted()
-    log.info(`[restartMpvController] new controller ${newController.instanceId} started`)
-    if (url) {
-      // 先不通知 renderer loaded，等 play() 成功后再补发，避免切换期间 renderer 侧
-      // handleCanplay 调用 setPause 与新实例的 play 命令竞争。
-      await newController.loadUrl(url, { emitLoaded: false })
-      log.info(`[restartMpvController] new controller ${newController.instanceId} loaded url`)
-      // 把目标恢复位置记录到 pausedAt，play() 内部会精确 seek 到该位置
-      if (state.time && state.time > 0) {
-        newController.pausedAt = state.time
-      }
-      // 在新实例加载完成后立即接管，避免 loaded 事件触发的 renderer 侧 setPause
-      // 被错误地发给旧实例；此时新实例已是 pause 状态，再多一次 pause 也无害。
-      setActiveMpvController(newController)
-      log.info(`[restartMpvController] switched to new controller ${newController.instanceId} before play`)
-      if (state.playing) {
-        await newController.play()
-        log.info(`[restartMpvController] new controller ${newController.instanceId} playing`)
-        // 等待 loadUrl 阶段排队的 pause=true 事件被处理，并确认播放状态
-        await new Promise(resolve => setTimeout(resolve, 100))
-        const isPaused = await newController.getPaused().catch(() => true)
-        if (isPaused) {
-          log.warn(`[restartMpvController] controller ${newController.instanceId} still paused, replaying`)
-          await newController.play()
-        }
-      }
-      // 播放命令生效后再通知 renderer，保证状态同步不会把新实例暂停。
-      newController.sendEvent('loaded')
-      void newController.getDuration().then(duration => {
-        newController.sendEvent('duration', duration)
-      }).catch(() => {})
-    } else {
-      // 新进程准备就绪后再接管，避免中间状态没有可用控制器
-      setActiveMpvController(newController)
-      log.info(`[restartMpvController] switched to new controller ${newController.instanceId}`)
-    }
-  } catch (err) {
-    // 新进程启动失败，回退到旧进程，避免 active controller 指向被销毁的实例
-    log.error('[restartMpvController] new controller failed:', err)
-    await newController.destroy()
-    if (getMpvController() === newController) {
-      setActiveMpvController(oldController)
-      log.info(`[restartMpvController] rolled back to old controller ${oldController.instanceId}`)
-    }
-    throw err
-  }
+	try {
+		await newController.ensureStarted();
+		log.info(
+			`[restartMpvController] new controller ${newController.instanceId} started`,
+		);
+		if (url) {
+			// 先不通知 renderer loaded，等 play() 成功后再补发，避免切换期间 renderer 侧
+			// handleCanplay 调用 setPause 与新实例的 play 命令竞争。
+			await newController.loadUrl(url, { emitLoaded: false });
+			log.info(
+				`[restartMpvController] new controller ${newController.instanceId} loaded url`,
+			);
+			// 把目标恢复位置记录到 pausedAt，play() 内部会精确 seek 到该位置
+			if (state.time && state.time > 0) {
+				newController.pausedAt = state.time;
+			}
+			// 在新实例加载完成后立即接管，避免 loaded 事件触发的 renderer 侧 setPause
+			// 被错误地发给旧实例；此时新实例已是 pause 状态，再多一次 pause 也无害。
+			setActiveMpvController(newController);
+			log.info(
+				`[restartMpvController] switched to new controller ${newController.instanceId} before play`,
+			);
+			if (state.playing) {
+				await newController.play();
+				log.info(
+					`[restartMpvController] new controller ${newController.instanceId} playing`,
+				);
+				// 等待 loadUrl 阶段排队的 pause=true 事件被处理，并确认播放状态
+				await new Promise((resolve) => setTimeout(resolve, 100));
+				const isPaused = await newController.getPaused().catch(() => true);
+				if (isPaused) {
+					log.warn(
+						`[restartMpvController] controller ${newController.instanceId} still paused, replaying`,
+					);
+					await newController.play();
+				}
+			}
+			// 播放命令生效后再通知 renderer，保证状态同步不会把新实例暂停。
+			newController.sendEvent("loaded");
+			void newController
+				.getDuration()
+				.then((duration) => {
+					newController.sendEvent("duration", duration);
+				})
+				.catch(() => {});
+		} else {
+			// 新进程准备就绪后再接管，避免中间状态没有可用控制器
+			setActiveMpvController(newController);
+			log.info(
+				`[restartMpvController] switched to new controller ${newController.instanceId}`,
+			);
+		}
+	} catch (err) {
+		// 新进程启动失败，回退到旧进程，避免 active controller 指向被销毁的实例
+		log.error("[restartMpvController] new controller failed:", err);
+		await newController.destroy();
+		if (getMpvController() === newController) {
+			setActiveMpvController(oldController);
+			log.info(
+				`[restartMpvController] rolled back to old controller ${oldController.instanceId}`,
+			);
+		}
+		throw err;
+	}
 
-  // 旧进程在新进程成功接管后再销毁，实现无感切换
-  if (getMpvController() === newController) {
-    log.info(`[restartMpvController] destroying old controller ${oldController.instanceId}`)
-    await oldController.destroy()
-  }
-  log.info('[restartMpvController] done')
-}
+	// 旧进程在新进程成功接管后再销毁，实现无感切换
+	if (getMpvController() === newController) {
+		log.info(
+			`[restartMpvController] destroying old controller ${oldController.instanceId}`,
+		);
+		await oldController.destroy();
+	}
+	log.info("[restartMpvController] done");
+};
 
 // 串行化 restart：快速连续切换输出设备/参数时多个 restart 交错，
 // setActiveMpvController / destroy 顺序会错乱，导致 active 指向旧设备的实例或新实例被误销毁，
 // 表现为切换卡住、要切好几次才到目标设备。
-let restartQueue: Promise<void> = Promise.resolve()
-export const restartMpvController = async(state: MpvRestartState): Promise<void> => {
-  const run = restartQueue.then(async() => doRestartMpvController(state))
-  restartQueue = run.catch(() => {})
-  return run
-}
+let restartQueue: Promise<void> = Promise.resolve();
+export const restartMpvController = async (
+	state: MpvRestartState,
+): Promise<void> => {
+	const run = restartQueue.then(async () => doRestartMpvController(state));
+	restartQueue = run.catch(() => {});
+	return run;
+};
 
-app.on('before-quit', () => {
-  void getMpvController().destroy()
-})
+app.on("before-quit", () => {
+	void getMpvController().destroy();
+});

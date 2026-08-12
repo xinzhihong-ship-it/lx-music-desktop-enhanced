@@ -21,18 +21,17 @@ const tar = require('tar')
 const RESOURCES_DIR = path.join(__dirname, '..', 'resources', 'mpv')
 const TEMP_DIR = path.join(__dirname, '..', 'build', 'mpv-downloads')
 
-// 可配置的下载源。版本号更新时在这里改即可。
+// 可配置的下载源。macOS 26 构建使用 mpv 官方滚动发布，避免把二进制提交到仓库。
 const SOURCES = {
   darwin: {
-    // stolendata 的 macOS 构建通常是通用二进制（x64 + arm64），放在同一个 mpv.app 里。
-    // 该构建用于兼容旧版 macOS，是默认的 mpv.app。
+    // stolendata 构建用于兼容旧版 macOS，是默认的 mpv.app。
     url: 'https://laboratory.stolendata.net/~djinn/mpv_osx/mpv-0.39.0.tar.gz',
     archiveType: 'tar.gz',
-    // 可选：为 macOS 26+ 编译的 mpv 变体（依赖新版系统 libc++，旧系统无法启动）。
-    // 没有固定公开源，默认留空；填入 tar.gz 地址后会自动下载为 mpv-macos26.app，
-    // 也可以手动把 mpv.app 放到 resources/mpv/darwin-<arch>/mpv-macos26.app。
-    // 运行时仅当系统为 macOS 26+ 时才优先使用该变体。
-    macos26Url: '',
+    macos26: {
+      repo: 'mpv-player/mpv',
+      release: 'git-release',
+      assetNamePattern: /macos-26-arm\.zip$/,
+    },
   },
   win32: {
     // 使用 GitHub latest release API 动态获取 shinchiro 构建的下载地址。
@@ -66,9 +65,11 @@ const download = async (url, dest) => {
   console.log(`Saved: ${dest} (${fs.statSync(dest).size} bytes)`)
 }
 
-const getGitHubLatestAssetUrl = async (repo, pattern) => {
-  const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`
-  console.log(`Fetching latest release: ${apiUrl}`)
+const getGitHubReleaseAssetUrl = async (repo, release, pattern) => {
+  const apiUrl = release === 'latest'
+    ? `https://api.github.com/repos/${repo}/releases/latest`
+    : `https://api.github.com/repos/${repo}/releases/tags/${release}`
+  console.log(`Fetching release: ${apiUrl}`)
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
   const resp = await needle('get', apiUrl, {
     follow_max: 5,
@@ -81,13 +82,15 @@ const getGitHubLatestAssetUrl = async (repo, pattern) => {
   if (resp.statusCode !== 200) {
     throw new Error(`GitHub API failed: ${apiUrl} (status ${resp.statusCode})`)
   }
-  const release = typeof resp.body === 'string' ? JSON.parse(resp.body) : resp.body
-  const asset = release.assets?.find(a => pattern.test(a.name))
+  const releaseInfo = typeof resp.body === 'string' ? JSON.parse(resp.body) : resp.body
+  const asset = releaseInfo.assets?.find(assetInfo => pattern.test(assetInfo.name))
   if (!asset) {
-    throw new Error(`No matching asset found in ${repo} release. Assets: ${release.assets?.map(a => a.name).join(', ')}`)
+    throw new Error(`No matching asset found in ${repo} release ${release}. Assets: ${releaseInfo.assets?.map(assetInfo => assetInfo.name).join(', ')}`)
   }
   return asset.browser_download_url
 }
+
+const getGitHubLatestAssetUrl = (repo, pattern) => getGitHubReleaseAssetUrl(repo, 'latest', pattern)
 
 const extractTarGz = async (archivePath, outDir) => {
   ensureDir(outDir)
@@ -184,29 +187,42 @@ const downloadDarwin = async (arch) => {
     console.log(`[darwin-${arch}] Installed mpv to ${path.join(targetDir, 'mpv.app')}`)
   }
 
-  // 可选的 macOS 26+ 变体
-  if (source.macos26Url) {
+  // Apple Silicon macOS 26+ 变体来自 mpv 官方滚动发布。其 ZIP 内包含 mpv.tar.gz。
+  if (arch === 'arm64') {
     const variantBinaryPath = path.join(targetDir, 'mpv-macos26.app', 'Contents', 'MacOS', 'mpv')
     if (fs.existsSync(variantBinaryPath)) {
       console.log(`[darwin-${arch}] macOS 26+ variant already exists, skipping.`)
       return
     }
     ensureDir(TEMP_DIR)
-    const archivePath = path.join(TEMP_DIR, `mpv-macos26-darwin-${arch}.tar.gz`)
-    await download(source.macos26Url, archivePath)
+    const assetUrl = await getGitHubReleaseAssetUrl(
+      source.macos26.repo,
+      source.macos26.release,
+      source.macos26.assetNamePattern,
+    )
+    const zipPath = path.join(TEMP_DIR, `mpv-macos26-darwin-${arch}.zip`)
+    const zipExtractDir = path.join(TEMP_DIR, `extract-macos26-zip-darwin-${arch}`)
+    await download(assetUrl, zipPath)
+    fs.rmSync(zipExtractDir, { recursive: true, force: true })
+    ensureDir(zipExtractDir)
+    execFileSync('ditto', ['-x', '-k', zipPath, zipExtractDir])
 
+    const nestedArchivePath = path.join(zipExtractDir, 'mpv.tar.gz')
+    if (!fs.existsSync(nestedArchivePath)) {
+      throw new Error(`[darwin-${arch}] mpv.tar.gz not found in macOS 26 asset.`)
+    }
     const extractDir = path.join(TEMP_DIR, `extract-macos26-darwin-${arch}`)
-    await extractTarGz(archivePath, extractDir)
-
+    fs.rmSync(extractDir, { recursive: true, force: true })
+    await extractTarGz(nestedArchivePath, extractDir)
     const appBundleDir = findDir(extractDir, 'mpv.app')
     if (!appBundleDir) {
-      throw new Error(`[darwin-${arch}] mpv.app not found in macOS 26+ variant archive.`)
+      throw new Error(`[darwin-${arch}] mpv.app not found in macOS 26 asset.`)
     }
 
     ensureDir(targetDir)
     fs.rmSync(path.join(targetDir, 'mpv-macos26.app'), { recursive: true, force: true })
     fs.renameSync(appBundleDir, path.join(targetDir, 'mpv-macos26.app'))
-    console.log(`[darwin-${arch}] Installed macOS 26+ variant to ${path.join(targetDir, 'mpv-macos26.app')}`)
+    console.log(`[darwin-${arch}] Installed official macOS 26+ variant to ${path.join(targetDir, 'mpv-macos26.app')}`)
   }
 }
 
