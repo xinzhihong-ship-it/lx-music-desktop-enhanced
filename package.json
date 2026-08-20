@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "3.1.4-beta.5",
+  "version": "3.1.4-beta.6",
   "description": "LX Music 桌面版增强版本，支持多平台音乐、哔哩哔哩地址播放、听歌识曲与高音质稳定播放",
   "main": "./dist/main.js",
   "scripts": {
@@ -67,6 +67,7 @@
     "lint:fix": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly --fix src",
     "test:music-recognition": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/musicRecognitionDecision.test.mjs",
     "test:issue6": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue6.test.mjs",
+    "test:issue16": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue16.test.mjs",
     "test:webdav": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/webdavSync.test.mjs",
     "test:audio-conversion": "node --test tests/audioConversion.test.mjs",
     "postinstall": "electron-builder install-app-deps",

@@ -4,6 +4,7 @@ import { SPLIT_CHAR } from '@common/constants'
 import { filterFileName, sortInsert, similar, arrPushByPosition, arrShuffle } from '@common/utils/common'
 import { joinPath, saveStrToFile } from '@common/utils/nodejs'
 import { createLocalMusicInfo } from '@renderer/utils/music'
+import { filterDuplicateMusicRows } from '@renderer/utils/filterMusicRows'
 
 
 /**
@@ -195,52 +196,14 @@ export const sortListMusicInfo = async(list: LX.Music.MusicInfo[], sortType: Sor
   return list
 }
 
-const variantRxp = /(\(|（).+(\)|）)/g
-const variantRxp2 = /\s|'|\.|,|，|&|"|、|\(|\)|（|）|`|~|-|<|>|\||\/|\]|\[/g
 /**
  * 过滤列表内重复的歌曲
  * @param list 歌曲列表
  * @param isFilterVariant 是否过滤 Live Explicit 等歌曲名
  * @returns
  */
-export const filterDuplicateMusic = async(list: LX.Music.MusicInfo[], isFilterVariant: boolean = true) => {
-  type ListMapValue = Array<{ id: string, index: number, musicInfo: LX.Music.MusicInfo }>
-  const listMap = new Map<string, ListMapValue>()
-  const duplicateList = new Set<string>()
-  const handleFilter = (name: string, index: number, musicInfo: LX.Music.MusicInfo) => {
-    if (listMap.has(name)) {
-      const targetMusicInfo = listMap.get(name)
-      targetMusicInfo!.push({
-        id: musicInfo.id,
-        index,
-        musicInfo,
-      })
-      duplicateList.add(name)
-    } else {
-      listMap.set(name, [{
-        id: musicInfo.id,
-        index,
-        musicInfo,
-      }])
-    }
-  }
-  if (isFilterVariant) {
-    list.forEach((musicInfo, index) => {
-      let musicInfoName = musicInfo.name.toLowerCase().replace(variantRxp, '').replace(variantRxp2, '')
-      musicInfoName ||= musicInfo.name.toLowerCase().replace(/\s+/g, '')
-      handleFilter(musicInfoName, index, musicInfo)
-    })
-  } else {
-    list.forEach((musicInfo, index) => {
-      const musicInfoName = musicInfo.name.toLowerCase().trim()
-      handleFilter(musicInfoName, index, musicInfo)
-    })
-  }
-  // console.log(duplicateList)
-  const duplicateNames = Array.from(duplicateList)
-  duplicateNames.sort((a, b) => a.localeCompare(b))
-  return duplicateNames.map(name => listMap.get(name)!).flat()
-}
+export const filterDuplicateMusic = async(list: LX.Music.MusicInfo[], isFilterVariant: boolean = true) =>
+  filterDuplicateMusicRows(list, isFilterVariant)
 
 export const searchListMusic = (list: LX.Music.MusicInfo[], text: string) => {
   const fullMathNameResults = new Set<LX.Music.MusicInfo>()

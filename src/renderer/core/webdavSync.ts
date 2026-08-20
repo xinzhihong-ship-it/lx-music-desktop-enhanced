@@ -236,10 +236,20 @@ export const uploadWebDAVSettings = async() => {
   const lock = Symbol('webdav-upload-settings')
   syncLocks.add(lock)
   try {
-    const timestamp = Date.now()
-    const settings: SettingsFile = { version: '2', lastModified: timestamp, data: getCloudSettings() }
-    const apis: UserApisFile = { version: '2', lastModified: timestamp, data: await getUserApiData() }
-    await Promise.all([upload('settings.json', settings), upload('user_apis.json', apis)])
+    const settings: SettingsFile = { version: '2', lastModified: Date.now(), data: getCloudSettings() }
+    await upload('settings.json', settings)
+  } finally {
+    syncLocks.delete(lock)
+  }
+}
+
+export const uploadWebDAVUserApis = async() => {
+  if (syncLocks.size) throw new Error(t('setting__webdav_syncing'))
+  const lock = Symbol('webdav-upload-user-apis')
+  syncLocks.add(lock)
+  try {
+    const apis: UserApisFile = { version: '2', lastModified: Date.now(), data: await getUserApiData() }
+    await upload('user_apis.json', apis)
   } finally {
     syncLocks.delete(lock)
   }
@@ -250,40 +260,49 @@ export const downloadWebDAVSettings = async() => {
   const lock = Symbol('webdav-download-settings')
   syncLocks.add(lock)
   try {
-    const [settingsRemote, apisRemote] = await Promise.all([download('settings.json'), download('user_apis.json')])
-    if (!settingsRemote && !apisRemote) throw new Error(t('setting__webdav_remote_missing'))
+    const settingsRemote = await download('settings.json')
+    if (!settingsRemote) throw new Error(t('setting__webdav_remote_missing'))
     await createLocalBackup()
 
-    if (settingsRemote) {
-      const parsed = JSON.parse(settingsRemote.content) as SettingsFile
-      if (!parsed?.data || typeof parsed.data != 'object') throw new Error(t('setting__webdav_invalid_data'))
-      const protectedKeys = new Set([
-        'common.isAgreePact',
-        'network.gitcodeMusicAccessToken',
-        'sync.webdav.password',
-        'sync.webdav.enable',
-        'sync.webdav.autoSync',
-        'sync.webdav.url',
-        'sync.webdav.username',
-        'sync.webdav.path',
-        'sync.webdav.lastListEtag',
-        'sync.webdav.lastListHash',
-        'sync.webdav.lastSyncTime',
-      ])
-      const setting = preserveAgreement(
-        Object.fromEntries(Object.entries(parsed.data).filter(([key]) => key in appSetting && !protectedKeys.has(key))) as Partial<LX.AppSetting>,
-        appSetting['common.isAgreePact'],
-      )
-      Object.assign(appSetting, setting)
-      updateSetting(setting)
-    }
+    const parsed = JSON.parse(settingsRemote.content) as SettingsFile
+    if (!parsed?.data || typeof parsed.data != 'object') throw new Error(t('setting__webdav_invalid_data'))
+    const protectedKeys = new Set([
+      'common.isAgreePact',
+      'network.gitcodeMusicAccessToken',
+      'sync.webdav.password',
+      'sync.webdav.enable',
+      'sync.webdav.autoSync',
+      'sync.webdav.url',
+      'sync.webdav.username',
+      'sync.webdav.path',
+      'sync.webdav.lastListEtag',
+      'sync.webdav.lastListHash',
+      'sync.webdav.lastSyncTime',
+    ])
+    const setting = preserveAgreement(
+      Object.fromEntries(Object.entries(parsed.data).filter(([key]) => key in appSetting && !protectedKeys.has(key))) as Partial<LX.AppSetting>,
+      appSetting['common.isAgreePact'],
+    )
+    Object.assign(appSetting, setting)
+    updateSetting(setting)
+  } finally {
+    syncLocks.delete(lock)
+  }
+}
 
-    if (apisRemote) {
-      const parsed = JSON.parse(apisRemote.content) as UserApisFile
-      if (!parsed?.data) throw new Error(t('setting__webdav_invalid_data'))
-      userApi.list = await overwriteUserApiData(parsed.data)
-      if (userApi.list.some(api => api.id == appSetting['common.apiSource'])) await setUserApi(appSetting['common.apiSource'])
-    }
+export const downloadWebDAVUserApis = async() => {
+  if (syncLocks.size) throw new Error(t('setting__webdav_syncing'))
+  const lock = Symbol('webdav-download-user-apis')
+  syncLocks.add(lock)
+  try {
+    const apisRemote = await download('user_apis.json')
+    if (!apisRemote) throw new Error(t('setting__webdav_remote_missing'))
+    await createLocalBackup()
+
+    const parsed = JSON.parse(apisRemote.content) as UserApisFile
+    if (!parsed?.data) throw new Error(t('setting__webdav_invalid_data'))
+    userApi.list = await overwriteUserApiData(parsed.data)
+    if (userApi.list.some(api => api.id == appSetting['common.apiSource'])) await setUserApi(appSetting['common.apiSource'])
   } finally {
     syncLocks.delete(lock)
   }

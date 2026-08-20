@@ -56,6 +56,9 @@ dd
       base-btn.btn(min :disabled="!!busy" @click="confirmRun('uploadSettings', 'setting__webdav_upload_settings_confirm', uploadWebDAVSettings, 'setting__webdav_upload_success')") {{ $t('setting__webdav_upload_settings') }}
       base-btn.btn(min :disabled="!!busy" @click="confirmRun('downloadSettings', 'setting__webdav_download_settings_confirm', downloadWebDAVSettings, 'setting__webdav_download_success')") {{ $t('setting__webdav_download_settings') }}
     .p(:class="$style.buttons")
+      base-btn.btn(min :disabled="!!busy" @click="confirmRun('uploadUserApis', 'setting__webdav_upload_sources_confirm', uploadWebDAVUserApis, 'setting__webdav_upload_success')") {{ $t('setting__webdav_upload_sources') }}
+      base-btn.btn(min :disabled="!!busy" @click="confirmRun('downloadUserApis', 'setting__webdav_download_sources_confirm', downloadWebDAVUserApis, 'setting__webdav_download_success')") {{ $t('setting__webdav_download_sources') }}
+    .p(:class="$style.buttons")
       base-btn.btn(min :disabled="!!busy" @click="confirmRun('uploadLists', 'setting__webdav_upload_lists_confirm', uploadWebDAVLists, 'setting__webdav_upload_success')") {{ $t('setting__webdav_upload_lists') }}
       base-btn.btn(min :disabled="!!busy" @click="confirmRun('downloadLists', 'setting__webdav_download_lists_confirm', downloadWebDAVLists, 'setting__webdav_download_success')") {{ $t('setting__webdav_download_lists') }}
     .p.small {{ $t('setting__webdav_last_sync', { time: lastSyncTime }) }}
@@ -72,6 +75,8 @@ import {
   syncWebDAVLists,
   uploadWebDAVSettings,
   downloadWebDAVSettings,
+  uploadWebDAVUserApis,
+  downloadWebDAVUserApis,
   uploadWebDAVLists,
   downloadWebDAVLists,
 } from '@renderer/core/webdavSync'
