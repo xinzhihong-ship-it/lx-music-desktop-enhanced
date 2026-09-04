@@ -48,16 +48,17 @@ dd
     base-checkbox(id="setting_player_awap_lyric_trans_roma" :model-value="appSetting['player.isSwapLyricTranslationAndRoma']" :label="$t('setting__player_swap_lyric_trans_roma')" @update:model-value="updateSetting({'player.isSwapLyricTranslationAndRoma': $event})")
   .gap-top
     base-checkbox(id="setting_player_auto_skip_on_error" :model-value="appSetting['player.autoSkipOnError']" :label="$t('setting__play_auto_skip_on_error')" @update:model-value="updateSetting({'player.autoSkipOnError': $event})")
-  .gap-top(v-if="appSetting['player.autoSkipOnError']")
-    span {{ $t('setting__play_error_strategy') }}
-    base-selection.gap-left(
+  .gap-top(v-if="appSetting['player.autoSkipOnError']" :class="$style.errorSettingRow")
+    span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_strategy') }}
+    base-selection(
+      :class="$style.errorStrategySelect"
       :model-value="appSetting['player.playErrorStrategy']" :list="errorStrategyList"
       item-key="id" item-name="label"
       @update:model-value="updateSetting({'player.playErrorStrategy': $event})")
   div(v-show="appSetting['player.autoSkipOnError'] && appSetting['player.playErrorStrategy'] == 'auto'")
-    .gap-top
-      span {{ $t('setting__play_error_retry_count') }}
-      base-input.gap-left(
+    .gap-top(:class="$style.errorSettingRow")
+      span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_retry_count') }}
+      base-input(
         :class="$style.errorCountInput"
         :model-value="playErrorRetryCount"
         :aria-label="$t('setting__play_error_retry_count')"
@@ -67,9 +68,9 @@ dd
         step="1"
         @change="handlePlayErrorRetryCountChange"
         @submit="handlePlayErrorRetryCountChange")
-    .gap-top
-      span {{ $t('setting__play_error_api_source_count') }}
-      base-input.gap-left(
+    .gap-top(:class="$style.errorSettingRow")
+      span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_api_source_count') }}
+      base-input(
         :class="$style.errorCountInput"
         :model-value="playErrorApiSourceCount"
         :aria-label="$t('setting__play_error_api_source_count')"
@@ -190,7 +191,7 @@ export default {
       dom_list: domErrorStrategyList,
       dragingItemClassName: 'setting-error-strategy-dragging',
       handle: 'error-strategy-drag-handle',
-      onUpdate: moveErrorStrategy,
+      onUpdate: (newIndex, oldIndex) => { moveErrorStrategy(oldIndex, newIndex) },
     })
     const playErrorRetryCount = ref(normalizePlayErrorRetryCount(appSetting['player.playErrorRetryCount']))
     const playErrorApiSourceCount = ref(normalizePlayErrorApiSourceCount(appSetting['player.playErrorApiSourceCount']))
@@ -575,13 +576,33 @@ export default {
   line-height: 1.6;
   margin: 0;
 }
+.errorSettingRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+}
+.errorSettingLabel {
+  display: block;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.errorStrategySelect {
+  --selection-width: 220px;
+  width: 220px;
+  max-width: 100%;
+}
 .errorCountInput {
   width: 64px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .errorSettingTip {
-  margin-left: 8px;
+  display: block;
   color: var(--color-font-label);
   font-size: 12px;
+  line-height: 1.5;
 }
 .errorStrategyList {
   max-width: 520px;

@@ -19,6 +19,7 @@ export default () => {
   let apiSourceAttempts = 0
   let triedApiSourceIds = new Set<string>()
   let recoverPromise: Promise<void> | null = null
+  let recoveryGeneration = 0
 
   let loadingTimeout: NodeJS.Timeout | null = null
   let delayNextTimeout: NodeJS.Timeout | null = null
@@ -46,9 +47,13 @@ export default () => {
     clearTimeout(delayNextTimeout)
     delayNextTimeout = null
   }
-  const addDelayNextTimeout = () => {
+  const isRecoveryCurrent = (generation: number) => generation == recoveryGeneration && !window.lx.isPlayedStop
+  const addDelayNextTimeout = (generation: number) => {
+    if (!isRecoveryCurrent(generation)) return
     clearDelayNextTimeout()
     delayNextTimeout = setTimeout(() => {
+      delayNextTimeout = null
+      if (!isRecoveryCurrent(generation)) return
       if (window.lx.isPlayedStop) {
         setAllStatus('')
         return
@@ -85,17 +90,19 @@ export default () => {
     setAllStatus(t('player__buffering'))
   }
 
-  const playNextAfterFailure = () => {
+  const playNextAfterFailure = (generation: number) => {
+    if (!isRecoveryCurrent(generation)) return
     if (document.hidden) {
       console.warn('error skip to next')
       void playNext(true)
     } else {
       setAllStatus(t('player__error'))
-      setTimeout(addDelayNextTimeout)
+      setTimeout(() => { addDelayNextTimeout(generation) })
     }
   }
 
-  const recoverPlayback = async(allowRefresh: boolean, shouldResume: boolean, errCode?: number) => {
+  const recoverPlayback = async(allowRefresh: boolean, shouldResume: boolean, generation: number, errCode?: number) => {
+    if (!isRecoveryCurrent(generation)) return
     const currentMusicInfo = playMusicInfo.musicInfo
     const actions = getPlayErrorActions()
     if (!currentMusicInfo || !actions.length) {
@@ -110,6 +117,7 @@ export default () => {
     // “直接下一曲”保持原行为；其他策略先按用户设置刷新当前链接。
     if (actions[0] != 'next' && allowRefresh && errCode !== 1 && retryNum < getPlayErrorRetryCount()) {
       retryNum++
+      if (!isRecoveryCurrent(generation)) return
       if (shouldResume) setShouldPlayAfterLoad(true)
       setMusicUrl(currentMusicInfo, true)
       setAllStatus(t('player__refresh_url'))
@@ -117,6 +125,7 @@ export default () => {
     }
 
     while (actionIndex < actions.length) {
+      if (!isRecoveryCurrent(generation)) return
       switch (actions[actionIndex]) {
         case 'apiSource': {
           if (!onlineMusicInfo) {
@@ -134,14 +143,18 @@ export default () => {
             const api = userApi.list.find(api => api.id == nextId)
             triedApiSourceIds.add(nextId)
             apiSourceAttempts++
+            if (!isRecoveryCurrent(generation)) return
             setAllStatus(t('player__switch_api_source', { name: api?.name ?? nextId }))
             let initialized = false
             try {
+              if (!isRecoveryCurrent(generation)) return
               await setUserApi(nextId)
+              if (!isRecoveryCurrent(generation)) return
               initialized = await window.lx.apiInitPromise[0]
             } catch (err) {
               console.warn('switch api source failed', err)
             }
+            if (!isRecoveryCurrent(generation)) return
             if (!initialized) continue
             if (shouldResume) setShouldPlayAfterLoad(true)
             setMusicUrl(currentMusicInfo, true)
@@ -153,6 +166,7 @@ export default () => {
         case 'platform':
           actionIndex++
           if (!onlineMusicInfo) continue
+          if (!isRecoveryCurrent(generation)) return
           if (shouldResume) setShouldPlayAfterLoad(true)
           setMusicUrl(currentMusicInfo, true, { forceToggleSource: true })
           setAllStatus(t('toggle_source_try'))
@@ -165,6 +179,7 @@ export default () => {
             : getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo)
           const lowerQuality = getLowerPlayQuality(currentQuality, onlineMusicInfo)
           if (!lowerQuality) continue
+          if (!isRecoveryCurrent(generation)) return
           if (shouldResume) setShouldPlayAfterLoad(true)
           setMusicUrl(currentMusicInfo, true, { quality: lowerQuality })
           setAllStatus(t('player__lower_quality', { quality: lowerQuality }))
@@ -172,7 +187,7 @@ export default () => {
         }
         case 'next':
           actionIndex = actions.length
-          playNextAfterFailure()
+          playNextAfterFailure(generation)
           return
       }
     }
@@ -188,11 +203,12 @@ export default () => {
     // 否则首个 CDN 失败后切换备用地址会停在暂停状态，必须再次点击播放。
     const shouldResume = isPlay.value || getShouldPlayAfterLoad()
     const currentMusicId = musicInfo.id
+    const generation = ++recoveryGeneration
     // 即使 renderer 已经把 mpv 标记为空，主进程仍可能正在播放旧 URL；
     // 必须先等 stop 命令完成，再开始刷新/换源，避免两条 load 命令交叉。
     const recovery = setStop().then(async() => {
-      if (window.lx.isPlayedStop || musicInfo.id != currentMusicId) return
-      return recoverPlayback(true, shouldResume, errCode)
+      if (!isRecoveryCurrent(generation) || musicInfo.id != currentMusicId) return
+      return recoverPlayback(true, shouldResume, generation, errCode)
     })
     recoverPromise = recovery
     void recovery.catch(err => { console.warn('recover playback failed', err) }).finally(() => {
@@ -201,6 +217,7 @@ export default () => {
   }
 
   const handleSetPlayInfo = () => {
+    recoveryGeneration++
     retryNum = 0
     actionIndex = 0
     apiSourceAttempts = 0
@@ -217,8 +234,10 @@ export default () => {
   window.app_event.on('playerEmptied', handleEmpied)
   window.app_event.on('playerError', handleError)
   window.app_event.on('musicToggled', handleSetPlayInfo)
+  window.app_event.on('stop', handleSetPlayInfo)
 
   onBeforeUnmount(() => {
+    handleSetPlayInfo()
     window.app_event.off('playerLoadstart', handleLoadstart)
     window.app_event.off('playerLoadeddata', handleLoadeddata)
     window.app_event.off('playerPlaying', handlePlaying)
@@ -226,5 +245,6 @@ export default () => {
     window.app_event.off('playerEmptied', handleEmpied)
     window.app_event.off('playerError', handleError)
     window.app_event.off('musicToggled', handleSetPlayInfo)
+    window.app_event.off('stop', handleSetPlayInfo)
   })
 }
