@@ -1,20 +1,30 @@
 import { appSetting } from '@renderer/store/setting'
+import {
+  getPlayErrorActions as resolvePlayErrorActions,
+  normalizePlayErrorApiSourceCount,
+  normalizePlayErrorRetryCount,
+} from '@common/utils/playErrorStrategy'
 
 export type PlayErrorStrategy = LX.AppSetting['player.playErrorStrategy']
 
 export const isPlayErrorHandlingEnabled = () => appSetting['player.autoSkipOnError']
 
+export const getPlayErrorActions = () => isPlayErrorHandlingEnabled()
+  ? resolvePlayErrorActions(appSetting['player.playErrorStrategy'], appSetting['player.playErrorStrategyOrder'])
+  : []
+
+export const getPlayErrorRetryCount = () => normalizePlayErrorRetryCount(appSetting['player.playErrorRetryCount'])
+
+export const getPlayErrorApiSourceCount = () => normalizePlayErrorApiSourceCount(appSetting['player.playErrorApiSourceCount'])
+
 export const shouldToggleSourceOnError = () => {
-  if (!isPlayErrorHandlingEnabled()) return false
-  return appSetting['player.playErrorStrategy'] == 'auto' || appSetting['player.playErrorStrategy'] == 'source'
+  return getPlayErrorActions().includes('platform')
 }
 
 export const shouldLowerQualityOnError = () => {
-  if (!isPlayErrorHandlingEnabled()) return false
-  return appSetting['player.playErrorStrategy'] == 'auto' || appSetting['player.playErrorStrategy'] == 'quality'
+  return getPlayErrorActions().includes('quality')
 }
 
 export const shouldSkipOnError = () => {
-  if (!isPlayErrorHandlingEnabled()) return false
-  return appSetting['player.playErrorStrategy'] == 'auto' || appSetting['player.playErrorStrategy'] == 'next'
+  return getPlayErrorActions().includes('next')
 }

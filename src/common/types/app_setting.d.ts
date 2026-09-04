@@ -310,6 +310,21 @@ declare global {
       'player.playErrorStrategy': 'auto' | 'source' | 'quality' | 'next'
 
       /**
+       * 自动处理模式下的失败恢复顺序
+       */
+      'player.playErrorStrategyOrder': Array<'apiSource' | 'platform' | 'quality' | 'next'>
+
+      /**
+       * 刷新当前播放链接的重试次数
+       */
+      'player.playErrorRetryCount': number
+
+      /**
+       * 自动切换自定义音源时最多尝试的音源数
+       */
+      'player.playErrorApiSourceCount': number
+
+      /**
        * 点击相同列表内的歌曲切歌时是否清空已播放列表（随机模式下列表内所有歌曲会重新参与随机）
        */
       'player.isAutoCleanPlayedList': boolean

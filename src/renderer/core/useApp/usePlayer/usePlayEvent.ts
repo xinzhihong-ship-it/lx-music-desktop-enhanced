@@ -5,16 +5,20 @@ import { setStop } from '@renderer/plugins/player'
 import { getShouldPlayAfterLoad, playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
-import { isPlayErrorHandlingEnabled, shouldLowerQualityOnError, shouldSkipOnError, shouldToggleSourceOnError } from '@renderer/core/player/errorStrategy'
+import { getPlayErrorActions, getPlayErrorApiSourceCount, getPlayErrorRetryCount, isPlayErrorHandlingEnabled } from '@renderer/core/player/errorStrategy'
 import { getLowerPlayQuality, getPlayQuality, QUALITY_RANK } from '@renderer/core/music/utils'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
+import { getNextApiSourceId } from '@common/utils/playErrorStrategy'
+import { userApi } from '@renderer/store'
+import { setUserApi } from '@renderer/core/apiSource'
 
 export default () => {
   const t = useI18n()
   let retryNum = 0
-  let prevTimeoutId: string | null = null
-  let sourceAttempted = false
-  let qualityAttempted = false
+  let actionIndex = 0
+  let apiSourceAttempts = 0
+  let triedApiSourceIds = new Set<string>()
+  let recoverPromise: Promise<void> | null = null
 
   let loadingTimeout: NodeJS.Timeout | null = null
   let delayNextTimeout: NodeJS.Timeout | null = null
@@ -23,24 +27,10 @@ export default () => {
     clearLoadingTimeout()
     loadingTimeout = setTimeout(() => {
       if (window.lx.isPlayedStop) {
-        prevTimeoutId = null
         setAllStatus('')
         return
       }
-
-      // 如果加载超时，则尝试刷新URL
-      if (prevTimeoutId == musicInfo.id) {
-        prevTimeoutId = null
-        recoverPlayback(false, isPlay.value)
-      } else {
-        prevTimeoutId = musicInfo.id
-        if (playMusicInfo.musicInfo) {
-          // 只有当前确实在播放才保持加载后自动播放；
-          // 启动恢复或用户未主动播放时保持原有暂停状态。
-          if (isPlay.value) setShouldPlayAfterLoad(true)
-          setMusicUrl(playMusicInfo.musicInfo, true)
-        }
-      }
+      window.app_event.playerError()
     }, 25000)
   }
   const clearLoadingTimeout = () => {
@@ -95,30 +85,21 @@ export default () => {
     setAllStatus(t('player__buffering'))
   }
 
-  const finishPlaybackFailure = () => {
-    if (shouldSkipOnError()) {
-      if (document.hidden) {
-        console.warn('error skip to next')
-        void playNext(true)
-      } else {
-        setAllStatus(t('player__error'))
-        setTimeout(addDelayNextTimeout)
-      }
+  const playNextAfterFailure = () => {
+    if (document.hidden) {
+      console.warn('error skip to next')
+      void playNext(true)
     } else {
-      setAllStatus(t('player__error_stopped'))
+      setAllStatus(t('player__error'))
+      setTimeout(addDelayNextTimeout)
     }
   }
 
-  const recoverPlayback = (allowRefresh: boolean, shouldResume: boolean, errCode?: number) => {
+  const recoverPlayback = async(allowRefresh: boolean, shouldResume: boolean, errCode?: number) => {
     const currentMusicInfo = playMusicInfo.musicInfo
-    if (!currentMusicInfo) {
-      finishPlaybackFailure()
-      return
-    }
-
-    // A direct-next strategy should not spend time retrying the same URL.
-    if (appSetting['player.playErrorStrategy'] == 'next') {
-      finishPlaybackFailure()
+    const actions = getPlayErrorActions()
+    if (!currentMusicInfo || !actions.length) {
+      setAllStatus(t('player__error_stopped'))
       return
     }
 
@@ -126,7 +107,8 @@ export default () => {
       ? currentMusicInfo
       : null
 
-    if (allowRefresh && errCode !== 1 && retryNum < 1) {
+    // “直接下一曲”保持原行为；其他策略先按用户设置刷新当前链接。
+    if (actions[0] != 'next' && allowRefresh && errCode !== 1 && retryNum < getPlayErrorRetryCount()) {
       retryNum++
       if (shouldResume) setShouldPlayAfterLoad(true)
       setMusicUrl(currentMusicInfo, true)
@@ -134,51 +116,96 @@ export default () => {
       return
     }
 
-    if (!sourceAttempted && shouldToggleSourceOnError() && onlineMusicInfo) {
-      sourceAttempted = true
-      if (shouldResume) setShouldPlayAfterLoad(true)
-      setMusicUrl(currentMusicInfo, true, { forceToggleSource: true })
-      setAllStatus(t('toggle_source_try'))
-      return
-    }
-
-    if (!qualityAttempted && shouldLowerQualityOnError() && onlineMusicInfo) {
-      qualityAttempted = true
-      const currentQuality = QUALITY_RANK.includes(playQuality.value as LX.Quality)
-        ? playQuality.value as LX.Quality
-        : getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo)
-      const lowerQuality = getLowerPlayQuality(currentQuality, onlineMusicInfo)
-      if (lowerQuality) {
-        if (shouldResume) setShouldPlayAfterLoad(true)
-        setMusicUrl(currentMusicInfo, true, { quality: lowerQuality, hasLoweredQuality: true })
-        setAllStatus(t('player__lower_quality', { quality: lowerQuality }))
-        return
+    while (actionIndex < actions.length) {
+      switch (actions[actionIndex]) {
+        case 'apiSource': {
+          if (!onlineMusicInfo) {
+            actionIndex++
+            continue
+          }
+          triedApiSourceIds.add(appSetting['common.apiSource'])
+          while (apiSourceAttempts < getPlayErrorApiSourceCount()) {
+            const nextId = getNextApiSourceId(
+              appSetting['common.apiSource'],
+              triedApiSourceIds,
+              userApi.list.map(api => api.id),
+            )
+            if (!nextId) break
+            const api = userApi.list.find(api => api.id == nextId)
+            triedApiSourceIds.add(nextId)
+            apiSourceAttempts++
+            setAllStatus(t('player__switch_api_source', { name: api?.name ?? nextId }))
+            let initialized = false
+            try {
+              await setUserApi(nextId)
+              initialized = await window.lx.apiInitPromise[0]
+            } catch (err) {
+              console.warn('switch api source failed', err)
+            }
+            if (!initialized) continue
+            if (shouldResume) setShouldPlayAfterLoad(true)
+            setMusicUrl(currentMusicInfo, true)
+            return
+          }
+          actionIndex++
+          continue
+        }
+        case 'platform':
+          actionIndex++
+          if (!onlineMusicInfo) continue
+          if (shouldResume) setShouldPlayAfterLoad(true)
+          setMusicUrl(currentMusicInfo, true, { forceToggleSource: true })
+          setAllStatus(t('toggle_source_try'))
+          return
+        case 'quality': {
+          actionIndex++
+          if (!onlineMusicInfo) continue
+          const currentQuality = QUALITY_RANK.includes(playQuality.value as LX.Quality)
+            ? playQuality.value as LX.Quality
+            : getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo)
+          const lowerQuality = getLowerPlayQuality(currentQuality, onlineMusicInfo)
+          if (!lowerQuality) continue
+          if (shouldResume) setShouldPlayAfterLoad(true)
+          setMusicUrl(currentMusicInfo, true, { quality: lowerQuality })
+          setAllStatus(t('player__lower_quality', { quality: lowerQuality }))
+          return
+        }
+        case 'next':
+          actionIndex = actions.length
+          playNextAfterFailure()
+          return
       }
     }
 
-    finishPlaybackFailure()
+    setAllStatus(t('player__error_stopped'))
   }
 
   const handleError = (errCode?: number) => {
     if (!musicInfo.id) return
     clearLoadingTimeout()
-    if (window.lx.isPlayedStop) return
+    if (window.lx.isPlayedStop || recoverPromise) return
     // 首次点击播放时，MPV 可能还没发出 playing；此时仍要保留用户的播放意图，
     // 否则首个 CDN 失败后切换备用地址会停在暂停状态，必须再次点击播放。
     const shouldResume = isPlay.value || getShouldPlayAfterLoad()
-    const recover = () => {
-      if (!window.lx.isPlayedStop) recoverPlayback(true, shouldResume, errCode)
-    }
+    const currentMusicId = musicInfo.id
     // 即使 renderer 已经把 mpv 标记为空，主进程仍可能正在播放旧 URL；
     // 必须先等 stop 命令完成，再开始刷新/换源，避免两条 load 命令交叉。
-    void setStop().then(recover, recover)
+    const recovery = setStop().then(async() => {
+      if (window.lx.isPlayedStop || musicInfo.id != currentMusicId) return
+      return recoverPlayback(true, shouldResume, errCode)
+    })
+    recoverPromise = recovery
+    void recovery.catch(err => { console.warn('recover playback failed', err) }).finally(() => {
+      if (recoverPromise === recovery) recoverPromise = null
+    })
   }
 
   const handleSetPlayInfo = () => {
     retryNum = 0
-    prevTimeoutId = null
-    sourceAttempted = false
-    qualityAttempted = false
+    actionIndex = 0
+    apiSourceAttempts = 0
+    triedApiSourceIds = new Set([appSetting['common.apiSource']])
+    recoverPromise = null
     clearDelayNextTimeout()
     clearLoadingTimeout()
   }

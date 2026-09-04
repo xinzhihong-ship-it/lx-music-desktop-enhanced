@@ -54,6 +54,53 @@ dd
       :model-value="appSetting['player.playErrorStrategy']" :list="errorStrategyList"
       item-key="id" item-name="label"
       @update:model-value="updateSetting({'player.playErrorStrategy': $event})")
+  div(v-show="appSetting['player.autoSkipOnError'] && appSetting['player.playErrorStrategy'] == 'auto'")
+    .gap-top
+      span {{ $t('setting__play_error_retry_count') }}
+      base-input.gap-left(
+        :class="$style.errorCountInput"
+        :model-value="playErrorRetryCount"
+        :aria-label="$t('setting__play_error_retry_count')"
+        type="number"
+        :min="PLAY_ERROR_RETRY_COUNT.min"
+        :max="PLAY_ERROR_RETRY_COUNT.max"
+        step="1"
+        @change="handlePlayErrorRetryCountChange"
+        @submit="handlePlayErrorRetryCountChange")
+    .gap-top
+      span {{ $t('setting__play_error_api_source_count') }}
+      base-input.gap-left(
+        :class="$style.errorCountInput"
+        :model-value="playErrorApiSourceCount"
+        :aria-label="$t('setting__play_error_api_source_count')"
+        type="number"
+        :min="PLAY_ERROR_API_SOURCE_COUNT.min"
+        :max="PLAY_ERROR_API_SOURCE_COUNT.max"
+        step="1"
+        @change="handlePlayErrorApiSourceCountChange"
+        @submit="handlePlayErrorApiSourceCountChange")
+      span(:class="$style.errorSettingTip") {{ $t('setting__play_error_api_source_tip') }}
+    .gap-top
+      span {{ $t('setting__play_error_strategy_order') }}
+      ol(ref="domErrorStrategyList" :class="$style.errorStrategyList")
+        li(v-for="(item, index) in errorActionList" :key="item.id" :class="$style.errorStrategyItem")
+          button.error-strategy-drag-handle(
+            type="button"
+            :class="$style.errorStrategyDragHandle"
+            :aria-label="$t('setting__play_error_strategy_drag', { name: item.label })") ⋮⋮
+          span(:class="$style.errorStrategyName") {{ index + 1 }}. {{ item.label }}
+          button(
+            type="button"
+            :class="$style.errorStrategyMoveButton"
+            :disabled="index == 0"
+            :aria-label="$t('setting__play_error_strategy_move_up', { name: item.label })"
+            @click="moveErrorStrategy(index, index - 1)") ↑
+          button(
+            type="button"
+            :class="$style.errorStrategyMoveButton"
+            :disabled="index == errorActionList.length - 1"
+            :aria-label="$t('setting__play_error_strategy_move_down', { name: item.label })"
+            @click="moveErrorStrategy(index, index + 1)") ↓
   .gap-top
     base-checkbox(id="setting_player_lyric_s2t" :model-value="appSetting['player.isS2t']" :label="$t('setting__play_lyric_s2t')" @update:model-value="updateSetting({'player.isS2t': $event})")
   .gap-top
@@ -103,6 +150,15 @@ import { setPowerSaveBlocker } from '@renderer/core/player/utils'
 import { isPlay, playMusicInfo } from '@renderer/store/player/state'
 import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
 import { isMac, log } from '@common/utils'
+import useDrag from '@renderer/utils/compositions/useDrag'
+import {
+  movePlayErrorAction,
+  normalizePlayErrorApiSourceCount,
+  normalizePlayErrorRetryCount,
+  normalizePlayErrorStrategyOrder,
+  PLAY_ERROR_API_SOURCE_COUNT,
+  PLAY_ERROR_RETRY_COUNT,
+} from '@common/utils/playErrorStrategy'
 
 
 export default {
@@ -116,6 +172,40 @@ export default {
       { id: 'quality', label: t('setting__play_error_strategy_quality') },
       { id: 'next', label: t('setting__play_error_strategy_next') },
     ]
+    const errorActionLabels = {
+      apiSource: t('setting__play_error_action_api_source'),
+      platform: t('setting__play_error_action_platform'),
+      quality: t('setting__play_error_action_quality'),
+      next: t('setting__play_error_action_next'),
+    }
+    const errorActionList = computed(() => normalizePlayErrorStrategyOrder(appSetting['player.playErrorStrategyOrder'])
+      .map(id => ({ id, label: errorActionLabels[id] })))
+    const moveErrorStrategy = (oldIndex, newIndex) => {
+      updateSetting({
+        'player.playErrorStrategyOrder': movePlayErrorAction(appSetting['player.playErrorStrategyOrder'], oldIndex, newIndex),
+      })
+    }
+    const domErrorStrategyList = ref(null)
+    const errorStrategyDrag = useDrag({
+      dom_list: domErrorStrategyList,
+      dragingItemClassName: 'setting-error-strategy-dragging',
+      handle: 'error-strategy-drag-handle',
+      onUpdate: moveErrorStrategy,
+    })
+    const playErrorRetryCount = ref(normalizePlayErrorRetryCount(appSetting['player.playErrorRetryCount']))
+    const playErrorApiSourceCount = ref(normalizePlayErrorApiSourceCount(appSetting['player.playErrorApiSourceCount']))
+    const handlePlayErrorRetryCountChange = value => {
+      const count = normalizePlayErrorRetryCount(value)
+      playErrorRetryCount.value = count
+      if (count != appSetting['player.playErrorRetryCount']) updateSetting({ 'player.playErrorRetryCount': count })
+    }
+    const handlePlayErrorApiSourceCountChange = value => {
+      const count = normalizePlayErrorApiSourceCount(value)
+      playErrorApiSourceCount.value = count
+      if (count != appSetting['player.playErrorApiSourceCount']) updateSetting({ 'player.playErrorApiSourceCount': count })
+    }
+    watch(() => appSetting['player.playErrorRetryCount'], value => { playErrorRetryCount.value = normalizePlayErrorRetryCount(value) })
+    watch(() => appSetting['player.playErrorApiSourceCount'], value => { playErrorApiSourceCount.value = normalizePlayErrorApiSourceCount(value) })
 
     // Audirvana 仅 macOS 可用（主进程在非 mac 平台直接 reject），其他平台不展示该选项
     const playEngineList = [
@@ -289,6 +379,7 @@ export default {
     })
     // 设置项可能在组件 setup 之后才合并完成，因此在挂载后统一加载一次。
     onMounted(() => {
+      errorStrategyDrag.setDisabled(false)
       if (isMpvEngine()) void loadMpvAudioDevices()
       // 清理旧配置里被错误拆分的 --audio-device 参数
       const cleaned = cleanExtraArgs(appSetting['player.mpv.extraArgs'].join(' '))
@@ -387,6 +478,15 @@ export default {
       handleUpdateMaxOutputChannelCount,
       playQualityList,
       errorStrategyList,
+      errorActionList,
+      domErrorStrategyList,
+      moveErrorStrategy,
+      playErrorRetryCount,
+      playErrorApiSourceCount,
+      handlePlayErrorRetryCountChange,
+      handlePlayErrorApiSourceCountChange,
+      PLAY_ERROR_RETRY_COUNT,
+      PLAY_ERROR_API_SOURCE_COUNT,
       playEngineList,
       playEngine,
       handlePlayEngineChange,
@@ -474,6 +574,52 @@ export default {
   color: var(--color-font-label);
   line-height: 1.6;
   margin: 0;
+}
+.errorCountInput {
+  width: 64px;
+}
+.errorSettingTip {
+  margin-left: 8px;
+  color: var(--color-font-label);
+  font-size: 12px;
+}
+.errorStrategyList {
+  max-width: 520px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.errorStrategyItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  border-radius: @form-radius;
+  background-color: var(--color-primary-background);
+}
+.errorStrategyDragHandle,
+.errorStrategyMoveButton {
+  border: 0;
+  color: var(--color-button-font);
+  background: transparent;
+}
+.errorStrategyDragHandle {
+  cursor: grab;
+}
+.errorStrategyName {
+  flex: 1;
+}
+.errorStrategyMoveButton {
+  cursor: pointer;
+  &:disabled {
+    cursor: default;
+    opacity: .35;
+  }
+}
+:global(.setting-error-strategy-dragging) {
+  opacity: .45;
 }
 .qualityGrid {
   display: grid;

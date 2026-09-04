@@ -16,7 +16,7 @@ import {
 } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { getMusicUrl, getPicPath, getLyricInfo } from '../music/index'
-import { getLowerPlayQuality, getPlayQuality } from '../music/utils'
+import { getPlayQuality } from '../music/utils'
 import { filterList } from './utils'
 import { requestMsg } from '@renderer/utils/message'
 import { getRandom } from '@renderer/utils/index'
@@ -27,7 +27,7 @@ import { qualityList } from '@renderer/store'
 import { buildSavePath } from '@renderer/store/download/utils'
 import { createDownloadInfo } from '@renderer/worker/download/utils'
 import { joinPath } from '@common/utils/nodejs'
-import { shouldLowerQualityOnError, shouldSkipOnError, shouldToggleSourceOnError } from './errorStrategy'
+import { isPlayErrorHandlingEnabled } from './errorStrategy'
 import { getVideoUrl } from '@renderer/utils/musicSdk/bili/api'
 import { biliPlaybackMode, biliVideoQuality, isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { toOldMusicInfo } from '@renderer/utils'
@@ -71,34 +71,19 @@ const createGettingUrlId = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   const tInfo = 'progress' in musicInfo ? musicInfo.metadata.musicInfo.meta.toggleMusicInfo : musicInfo.meta.toggleMusicInfo
   return `${musicInfo.id}_${tInfo?.id ?? ''}`
 }
-const createDelayNextTimeout = (delay: number) => {
-  let timeout: NodeJS.Timeout | null
-  const clearDelayNextTimeout = () => {
-    // console.log(this.timeout)
-    if (timeout) {
-      clearTimeout(timeout)
-      timeout = null
-    }
-  }
-
-  const addDelayNextTimeout = () => {
-    clearDelayNextTimeout()
-    timeout = setTimeout(() => {
-      timeout = null
-      if (window.lx.isPlayedStop) return
-      console.warn('delay next timeout timeout', delay)
-      void playNext(true)
-    }, delay)
-  }
-
-  return {
-    clearDelayNextTimeout,
-    addDelayNextTimeout,
-  }
+let loadTimeout: NodeJS.Timeout | null = null
+const clearLoadTimeout = () => {
+  if (!loadTimeout) return
+  clearTimeout(loadTimeout)
+  loadTimeout = null
 }
-const { addDelayNextTimeout, clearDelayNextTimeout } = createDelayNextTimeout(5000)
-const { addDelayNextTimeout: addLoadTimeout, clearDelayNextTimeout: clearLoadTimeout } = createDelayNextTimeout(100000)
-const isMpvLoadError = (message: string) => /winMain_mpv_loadUrl|mpv playback error|mpv file-load timeout|mpv IPC request timeout/i.test(message)
+const addLoadTimeout = () => {
+  clearLoadTimeout()
+  loadTimeout = setTimeout(() => {
+    loadTimeout = null
+    if (!window.lx.isPlayedStop) window.app_event.playerError()
+  }, 100000)
+}
 
 /**
  * 检查音乐信息是否已更改
@@ -111,13 +96,13 @@ const diffCurrentMusicInfo = (curMusicInfo: LX.Music.MusicInfo | LX.Download.Lis
 let cancelDelayRetry: (() => void) | null = null
 interface MusicUrlResult { url: string, quality: string, audioUrl?: string, isVideo?: boolean }
 interface SourceRequestResult { url: string, type?: string, audioUrl?: string }
-const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, hasLoweredQuality = false, forceToggleSource = false): Promise<MusicUrlResult | null> => {
+const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false): Promise<MusicUrlResult | null> => {
   // if (cancelDelayRetry) cancelDelayRetry()
   return new Promise<MusicUrlResult | null>((resolve, reject) => {
     const time = getRandom(2, 6)
     setAllStatus(window.i18n.t('player__getting_url_delay_retry', { time }))
     const tiemout = setTimeout(() => {
-      getMusicPlayUrl(musicInfo, isRefresh, true, quality, hasLoweredQuality, forceToggleSource).then((result) => {
+      getMusicPlayUrl(musicInfo, isRefresh, quality, forceToggleSource).then((result) => {
         cancelDelayRetry = null
         resolve(result)
       }).catch(async(err: any) => {
@@ -132,10 +117,10 @@ const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, i
     }
   })
 }
-const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, isRetryed = false, quality?: LX.Quality, hasLoweredQuality = false, forceToggleSource = false): Promise<MusicUrlResult | null> => {
+const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false): Promise<MusicUrlResult | null> => {
   // this.musicInfo.url = await getMusicPlayUrl(targetSong, type)
   setAllStatus(window.i18n.t('player__getting_url'))
-  if (shouldSkipOnError()) addLoadTimeout()
+  if (isPlayErrorHandlingEnabled()) addLoadTimeout()
 
   const onlineMusicInfo = getOnlineMusicInfo(musicInfo)
   const targetQuality = quality
@@ -156,7 +141,8 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
           musicInfo,
           quality: targetQuality,
           isRefresh,
-          allowToggleSource: shouldToggleSourceOnError(),
+          // 播放恢复统一由 usePlayEvent 按用户排序执行，避免这里抢先换平台。
+          allowToggleSource: false,
           forceToggleSource,
           onResolvedQuality: quality => { resolvedQuality = quality },
           onToggleSource(mInfo) {
@@ -179,18 +165,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
       diffCurrentMusicInfo(musicInfo) ||
       err.message == requestMsg.cancelRequest) return null
 
-    if (err.message == requestMsg.tooManyRequests) return delayRetry(musicInfo, isRefresh, quality, hasLoweredQuality, forceToggleSource)
-
-    if (!isRetryed) return getMusicPlayUrl(musicInfo, isRefresh, true, quality, hasLoweredQuality, forceToggleSource)
-
-    if (!hasLoweredQuality && onlineMusicInfo && shouldLowerQualityOnError()) {
-      const currentQuality = targetQuality ?? getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo)
-      const lowerQuality = getLowerPlayQuality(currentQuality, onlineMusicInfo)
-      if (lowerQuality) {
-        setAllStatus(window.i18n.t('player__lower_quality', { quality: lowerQuality }))
-        return getMusicPlayUrl(musicInfo, true, true, lowerQuality, true)
-      }
-    }
+    if (err.message == requestMsg.tooManyRequests) return delayRetry(musicInfo, isRefresh, quality, forceToggleSource)
 
     throw err
   })
@@ -198,7 +173,6 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
 
 interface SetMusicUrlOptions {
   quality?: LX.Quality
-  hasLoweredQuality?: boolean
   forceToggleSource?: boolean
 }
 
@@ -208,14 +182,18 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   if (cancelDelayRetry) cancelDelayRetry()
   const requestId = ++activeUrlRequest
   gettingUrlId = createGettingUrlId(musicInfo)
-  void getMusicPlayUrl(musicInfo, isRefresh, false, options.quality, options.hasLoweredQuality, options.forceToggleSource).then(async(result) => {
+  void getMusicPlayUrl(musicInfo, isRefresh, options.quality, options.forceToggleSource).then(async(result) => {
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     if (!result) {
       // 没有获取到 URL 时，如果是用户主动播放/自动播放则按错误处理；
       // 否则（如启动预加载）清空加载状态，避免一直显示“音乐加载中...”。
       if (shouldPlayAfterLoad) {
-        setAllStatus(window.i18n.t(shouldSkipOnError() ? 'player__error' : 'player__error_stopped'))
         window.app_event.error()
+        if (isPlayErrorHandlingEnabled()) {
+          window.app_event.playerError()
+        } else {
+          setAllStatus(window.i18n.t('player__error_stopped'))
+        }
       } else {
         setAllStatus('')
         window.app_event.playerEmptied()
@@ -265,15 +243,9 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     console.log(err)
     const message = err?.message ?? String(err)
-    if (isMpvLoadError(message)) {
-      // loadUrl 失败时主进程会直接拒绝 IPC，不一定能走 mpv_error 事件；
-      // 转成统一播放器错误，交给 usePlayEvent 刷新 URL/切换备用源。
-      window.app_event.playerError()
-      return
-    }
     setAllStatus(message)
     window.app_event.error()
-    if (shouldSkipOnError()) addDelayNextTimeout()
+    if (isPlayErrorHandlingEnabled()) window.app_event.playerError()
   }).finally(() => {
     if (musicInfo === playMusicInfo.musicInfo && requestId === activeUrlRequest) {
       gettingUrlId = ''
@@ -347,7 +319,6 @@ const handlePlay = () => {
   setStop()
   window.app_event.pause()
 
-  clearDelayNextTimeout()
   clearLoadTimeout()
 
 
