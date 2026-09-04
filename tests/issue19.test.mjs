@@ -90,10 +90,23 @@ const flushPromises = () => new Promise(resolve => setImmediate(resolve))
 test('playback failure order keeps each supported action exactly once', () => {
   assert.deepEqual(
     normalizePlayErrorStrategyOrder(['quality', 'quality', 'invalid', 'next']),
-    ['quality', 'next', 'apiSource', 'platform'],
+    ['quality', 'apiSource', 'platform', 'next'],
   )
   assert.deepEqual(movePlayErrorAction(['apiSource', 'platform', 'quality', 'next'], 2, 0), [
     'quality', 'apiSource', 'platform', 'next',
+  ])
+})
+
+test('play next stays last because it terminates the recovery chain', () => {
+  assert.deepEqual(
+    normalizePlayErrorStrategyOrder(['platform', 'next', 'apiSource', 'quality']),
+    ['platform', 'apiSource', 'quality', 'next'],
+  )
+  assert.deepEqual(movePlayErrorAction(['apiSource', 'platform', 'quality', 'next'], 3, 0), [
+    'apiSource', 'platform', 'quality', 'next',
+  ])
+  assert.deepEqual(movePlayErrorAction(['apiSource', 'platform', 'quality', 'next'], 0, 3), [
+    'apiSource', 'platform', 'quality', 'next',
   ])
 })
 
@@ -246,6 +259,8 @@ test('switching songs or stopping cancels an old async recovery before it reload
 test('failure settings use vertical controls with bounded widths and correct drag indexes', async() => {
   const source = await readFile(new URL('../src/renderer/views/Setting/components/SettingPlay.vue', import.meta.url), 'utf8')
   assert.match(source, /onUpdate: \(newIndex, oldIndex\) => \{ moveErrorStrategy\(oldIndex, newIndex\) \}/)
+  assert.match(source, /filter: 'error-strategy-fixed'/)
+  assert.match(source, /:disabled="item\.id == 'next'"/)
   assert.match(source, /\.errorSettingRow \{[\s\S]*?flex-direction: column;/)
   assert.match(source, /--selection-width: 220px;/)
   assert.match(source, /\.errorCountInput \{[\s\S]*?width: 64px;/)

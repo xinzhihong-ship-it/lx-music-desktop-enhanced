@@ -84,22 +84,23 @@ dd
     .gap-top
       span {{ $t('setting__play_error_strategy_order') }}
       ol(ref="domErrorStrategyList" :class="$style.errorStrategyList")
-        li(v-for="(item, index) in errorActionList" :key="item.id" :class="$style.errorStrategyItem")
+        li(v-for="(item, index) in errorActionList" :key="item.id" :class="[$style.errorStrategyItem, item.id == 'next' && 'error-strategy-fixed']")
           button.error-strategy-drag-handle(
             type="button"
             :class="$style.errorStrategyDragHandle"
+            :disabled="item.id == 'next'"
             :aria-label="$t('setting__play_error_strategy_drag', { name: item.label })") ⋮⋮
           span(:class="$style.errorStrategyName") {{ index + 1 }}. {{ item.label }}
           button(
             type="button"
             :class="$style.errorStrategyMoveButton"
-            :disabled="index == 0"
+            :disabled="index == 0 || item.id == 'next'"
             :aria-label="$t('setting__play_error_strategy_move_up', { name: item.label })"
             @click="moveErrorStrategy(index, index - 1)") ↑
           button(
             type="button"
             :class="$style.errorStrategyMoveButton"
-            :disabled="index == errorActionList.length - 1"
+            :disabled="index >= errorActionList.length - 2"
             :aria-label="$t('setting__play_error_strategy_move_down', { name: item.label })"
             @click="moveErrorStrategy(index, index + 1)") ↓
   .gap-top
@@ -190,6 +191,7 @@ export default {
     const errorStrategyDrag = useDrag({
       dom_list: domErrorStrategyList,
       dragingItemClassName: 'setting-error-strategy-dragging',
+      filter: 'error-strategy-fixed',
       handle: 'error-strategy-drag-handle',
       onUpdate: (newIndex, oldIndex) => { moveErrorStrategy(oldIndex, newIndex) },
     })

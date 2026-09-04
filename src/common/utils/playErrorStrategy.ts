@@ -10,8 +10,8 @@ export const normalizePlayErrorStrategyOrder = (value: unknown): PlayErrorAction
   const order = Array.isArray(value)
     ? value.filter((action): action is PlayErrorAction => typeof action == 'string' && actionSet.has(action))
     : []
-  const uniqueOrder = [...new Set(order)]
-  return [...uniqueOrder, ...PLAY_ERROR_ACTIONS.filter(action => !uniqueOrder.includes(action))]
+  const uniqueOrder = [...new Set(order)].filter(action => action != 'next')
+  return [...uniqueOrder, ...PLAY_ERROR_ACTIONS.filter(action => action != 'next' && !uniqueOrder.includes(action)), 'next']
 }
 
 const normalizeCount = (value: unknown, range: { default: number, min: number, max: number }) => {
@@ -39,6 +39,7 @@ export const getPlayErrorActions = (
 export const movePlayErrorAction = (value: unknown, oldIndex: number, newIndex: number) => {
   const order = normalizePlayErrorStrategyOrder(value)
   if (oldIndex == newIndex || oldIndex < 0 || newIndex < 0 || oldIndex >= order.length || newIndex >= order.length) return order
+  if (order[oldIndex] == 'next' || newIndex == order.length - 1) return order
   const [action] = order.splice(oldIndex, 1)
   order.splice(newIndex, 0, action)
   return order
