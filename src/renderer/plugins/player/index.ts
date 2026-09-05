@@ -70,6 +70,9 @@ interface HTMLAudioElementChrome extends HTMLAudioElement {
 let audio: HTMLAudioElementChrome | null = null
 let audioContext: AudioContext
 let mediaSource: MediaElementAudioSourceNode
+// 效果处理后的音频经此隐藏元素输出：设备切换用元素级 setSinkId，
+// 绕开 AudioContext.setSinkId 在携带媒体源的上下文上永不决议的问题。
+let outputPipe: HTMLAudioElement | null = null
 let analyser: AnalyserNode
 // https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext
 // https://benzleung.gitbooks.io/web-audio-api-mini-guide/content/chapter5-1.html
@@ -201,6 +204,18 @@ const initAdvancedAudioFeatures = () => {
   // source -> analyser -> biquadFilter -> pitchShifter -> [(convolver & convolverSource)->convolverDynamicsCompressor] -> panner -> gain
   mediaSource = audioContext.createMediaElementSource(audio)
   mediaSource.connect(analyser)
+  outputPipe = new window.Audio()
+  // TS DOM 库未包含 mediaStream 声明，断言一次
+  outputPipe.srcObject = (mediaSource as MediaElementAudioSourceNode & { stream: MediaStream }).stream
+  void outputPipe.play().catch(err => {
+    console.error('effect output pipe start failed:', err)
+  })
+  const savedSinkId = appSetting['player.mediaDeviceId']
+  if (savedSinkId && savedSinkId != 'default') {
+    void outputPipe.setSinkId(savedSinkId).catch(err => {
+      console.error('apply saved media device to output pipe failed:', err)
+    })
+  }
   analyser.connect(biquads.get(`hz${freqs[0]}`)!)
   const lastBiquadFilter = (biquads.get(`hz${freqs.at(-1)!}`)!)
   lastBiquadFilter.connect(convolverSourceGainNode)
@@ -719,12 +734,10 @@ export const setCurrentTime = (time: number) => {
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
   if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
-  // Chromium 110+ 支持对 AudioContext 设置输出设备：高级音频功能激活时，
-  // WebAudio 图与 <audio> 元素一起重定向到所选设备，不再需要锁定为默认设备。
-  // 当前 TS DOM 库未包含 setSinkId 声明，这里做一次接口断言。
-  const ctx = audioContext as (AudioContext & { setSinkId: (sinkId: string) => Promise<void> }) | undefined
+  // 高级音频功能激活时输出走 outputPipe（元素级 setSinkId 即时可靠）；
+  // 图未初始化时直接设置 <audio> 元素。
+  if (outputPipe) return outputPipe.setSinkId(mediaDeviceId)
   if (audio) await audio.setSinkId(mediaDeviceId)
-  if (ctx) await ctx.setSinkId(mediaDeviceId)
 }
 
 export const setVolume = (volume: number) => {
