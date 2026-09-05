@@ -23,8 +23,7 @@
 
 <script setup>
 import { computed } from '@common/utils/vueTools'
-import { setMediaDeviceId } from '@renderer/plugins/player'
-import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/setting'
+import { appSetting, updateSetting } from '@renderer/store/setting'
 // import AddPitchShifterPresetBtn from './AddPitchShifterPresetBtn.vue'
 // import { getUserPitchShifterPresetList, removeUserPitchShifterPreset } from '@renderer/store/soundEffect'
 // import { semitones } from '@renderer/plugins/player'
@@ -35,14 +34,9 @@ import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/se
 //   speed: 25,
 // })
 
-
 const playbackRate = computed(() => appSetting['player.soundEffect.pitchShifter.playbackRate'])
 
 const handleSetPreset = async(value) => {
-  if (appSetting['player.mediaDeviceId'] != 'default') {
-    await setMediaDeviceId('default').catch(_ => _)
-    saveMediaDeviceId('default')
-  }
   updateSetting({ 'player.soundEffect.pitchShifter.playbackRate': value })
 }
 
@@ -56,7 +50,6 @@ const handleUpdatePlaybackRate = (value) => {
   void handleSetPreset(value)
 }
 
-
 // const userPresetList = ref([])
 
 // const handleRemovePreset = id => {
@@ -68,7 +61,6 @@ const handleUpdatePlaybackRate = (value) => {
 //     userPresetList.value = list
 //   })
 // })
-
 
 </script>
 

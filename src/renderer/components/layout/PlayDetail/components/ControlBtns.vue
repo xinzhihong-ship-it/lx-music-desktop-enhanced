@@ -32,7 +32,6 @@ div(:class="$style.footerLeftControlBtns")
 
 <script>
 import { ref } from '@common/utils/vueTools'
-import { useI18n } from '@renderer/plugins/i18n'
 
 import {
   isShowLrcSelectContent,
@@ -46,9 +45,7 @@ import {
 
 import useNextTogglePlay from '@renderer/utils/compositions/useNextTogglePlay'
 import useToggleDesktopLyric from '@renderer/utils/compositions/useToggleDesktopLyric'
-import { dialog } from '@renderer/plugins/Dialog'
-import { setMediaDeviceId } from '@renderer/plugins/player'
-import { appSetting, saveMediaDeviceId, setEnableAudioVisualization } from '@renderer/store/setting'
+import { appSetting, setEnableAudioVisualization } from '@renderer/store/setting'
 import PlayQueue from '../../PlayBar/PlayQueue.vue'
 
 export default {
@@ -56,7 +53,6 @@ export default {
     PlayQueue,
   },
   setup() {
-    const t = useI18n()
     // const setting = useRefGetter('setting')
     // const setAudioVisualization = useCommit('setAudioVisualization')
     // const saveMediaDeviceId = useCommit('setMediaDeviceId')
@@ -81,19 +77,8 @@ export default {
     const isShowAddMusicTo = ref(false)
     const isShowQueue = ref(false)
 
-    const toggleAudioVisualization = async() => {
-      const newSetting = !appSetting['player.audioVisualization']
-      if (newSetting && appSetting['player.mediaDeviceId'] != 'default') {
-        const confirm = await dialog.confirm({
-          message: t('setting__player_audio_visualization_tip'),
-          cancelButtonText: t('cancel_button_text'),
-          confirmButtonText: t('confirm_button_text'),
-        })
-        if (!confirm) return
-        await setMediaDeviceId('default').catch(_ => _)
-        saveMediaDeviceId('default')
-      }
-      setEnableAudioVisualization(newSetting)
+    const toggleAudioVisualization = () => {
+      setEnableAudioVisualization(!appSetting['player.audioVisualization'])
     }
 
     return {

@@ -719,8 +719,12 @@ export const setCurrentTime = (time: number) => {
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
   if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
-  if (!audio) return
-  return audio.setSinkId(mediaDeviceId)
+  // Chromium 110+ 支持对 AudioContext 设置输出设备：高级音频功能激活时，
+  // WebAudio 图与 <audio> 元素一起重定向到所选设备，不再需要锁定为默认设备。
+  // 当前 TS DOM 库未包含 setSinkId 声明，这里做一次接口断言。
+  const ctx = audioContext as (AudioContext & { setSinkId: (sinkId: string) => Promise<void> }) | undefined
+  if (audio) await audio.setSinkId(mediaDeviceId)
+  if (ctx) await ctx.setSinkId(mediaDeviceId)
 }
 
 export const setVolume = (volume: number) => {

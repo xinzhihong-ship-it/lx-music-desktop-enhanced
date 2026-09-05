@@ -142,13 +142,12 @@ dd(:aria-label="$t('setting__play_mediaDevice_title')")
 
 <script>
 import { ref, onBeforeUnmount, onMounted, watch, computed } from '@common/utils/vueTools'
-import { hasInitedAdvancedAudioFeatures, setMediaDeviceId } from '@renderer/plugins/player'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
 import * as mpvVideoPlayer from '@renderer/plugins/player/mpvVideo'
 import { dialog } from '@renderer/plugins/Dialog'
 import showTip from '@renderer/plugins/Tips/Tips'
 import { useI18n } from '@renderer/plugins/i18n'
-import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/setting'
+import { appSetting, updateSetting } from '@renderer/store/setting'
 import { setPowerSaveBlocker } from '@renderer/core/player/utils'
 import { isPlay, playMusicInfo } from '@renderer/store/player/state'
 import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
@@ -414,30 +413,9 @@ export default {
         }
         return
       }
-      // Electron 模式：走原有逻辑
-      if (hasInitedAdvancedAudioFeatures()) {
-        await dialog({
-          message: t('setting__play_media_device_error_tip'),
-          confirmButtonText: t('alert_button_text'),
-        })
-        mediaDeviceId.value = appSetting['player.mediaDeviceId']
-      } else if (appSetting['player.audioVisualization']) {
-        const confirm = await dialog.confirm({
-          message: t('setting__play_media_device_tip'),
-          cancelButtonText: t('cancel_button_text'),
-          confirmButtonText: t('confirm_button_text'),
-        })
-        if (confirm) {
-          updateSetting({
-            'player.audioVisualization': false,
-            'player.mediaDeviceId': mediaDeviceId.value,
-          })
-        } else {
-          mediaDeviceId.value = appSetting['player.mediaDeviceId']
-        }
-      } else {
-        appSetting['player.mediaDeviceId'] = mediaDeviceId.value
-      }
+      // Electron 模式：AudioContext 与 <audio> 一起重定向到所选设备（Chromium 110+），
+      // 高级音频功能激活时不再锁定默认设备。
+      appSetting['player.mediaDeviceId'] = mediaDeviceId.value
     }
 
     watch(() => appSetting['player.mediaDeviceId'], val => {
@@ -456,19 +434,6 @@ export default {
     const isMaxOutputChannelCount = ref(appSetting['player.isMaxOutputChannelCount'])
     const handleUpdateMaxOutputChannelCount = async(enabled) => {
       isMaxOutputChannelCount.value = enabled
-      if (appSetting['player.mediaDeviceId'] != 'default') {
-        const confirm = await dialog.confirm({
-          message: t('setting__play_advanced_audio_features_tip'),
-          cancelButtonText: t('cancel_button_text'),
-          confirmButtonText: t('confirm_button_text'),
-        })
-        if (!confirm) {
-          isMaxOutputChannelCount.value = false
-          return
-        }
-        await setMediaDeviceId('default').catch(_ => _)
-        saveMediaDeviceId('default')
-      }
       updateSetting({ 'player.isMaxOutputChannelCount': enabled })
     }
 
