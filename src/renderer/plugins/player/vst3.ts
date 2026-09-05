@@ -40,6 +40,7 @@ export const plainVst3Chain = (chain: LX.AppSetting['player.vst3.chain']): LX.Ap
 let node: AudioWorkletNode | null = null
 let epoch = 0
 let inFlight = 0
+let bypassSince = 0
 
 export const resetVst3Audio = (active: boolean) => {
   epoch++
@@ -92,7 +93,14 @@ export const createVst3Node = async(audioContext: AudioContext, onFault: () => v
     void ipcRenderer.invoke(IPC.vst3_process, data.inputs.map((channel: Float32Array) => Array.from(channel))).then((result) => {
       if (data.epoch !== epoch || current !== node) return
       vst3Runtime.latencyMs = result.latencySamples / audioContext.sampleRate * 1000
-      vst3Runtime.notice = result.bypassed === true
+      // 直通持续超过 4 秒才提示：冷启动突发、打开插件界面/加载预设的瞬时直通不打扰用户
+      if (result.bypassed === true) {
+        if (!bypassSince) bypassSince = Date.now()
+        vst3Runtime.notice = Date.now() - bypassSince >= 4000
+      } else if (bypassSince) {
+        bypassSince = 0
+        vst3Runtime.notice = false
+      }
       current.port.postMessage({ ...result, epoch: data.epoch, sequence: data.sequence })
     }).catch((error: Error) => {
       // A torn-down chain rejects in-flight requests; that must not pause playback.

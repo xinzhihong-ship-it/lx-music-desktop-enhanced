@@ -19,7 +19,7 @@ const syncVst3 = async() => {
     if (vst3Node && !enabled) {
       gainNode.disconnect(vst3Node)
       vst3Node = null
-      try { await closeVst3Audio() } finally { gainNode.connect(audioContext.destination) }
+      try { await closeVst3Audio() } finally { gainNode.connect(mediaStreamDest!) }
     }
     if (enabled) {
       initAdvancedAudioFeatures()
@@ -30,9 +30,9 @@ const syncVst3 = async() => {
             audio?.pause()
             window.app_event.pause()
           })
-          gainNode.disconnect(audioContext.destination)
+          gainNode.disconnect(mediaStreamDest!)
           gainNode.connect(next)
-          next.connect(audioContext.destination)
+          next.connect(mediaStreamDest!)
           // eslint-disable-next-line require-atomic-updates -- Connection changes are serialized by vst3Change.
           vst3Node = next
         }
@@ -46,7 +46,7 @@ const syncVst3 = async() => {
           vst3Node = null
         }
         try { await closeVst3Audio() } catch {}
-        gainNode.connect(audioContext.destination)
+        gainNode.connect(mediaStreamDest!)
       }
     }
     if (playing) {
@@ -73,6 +73,9 @@ let mediaSource: MediaElementAudioSourceNode
 // 效果处理后的音频经此隐藏元素输出：设备切换用元素级 setSinkId，
 // 绕开 AudioContext.setSinkId 在携带媒体源的上下文上永不决议的问题。
 let outputPipe: HTMLAudioElement | null = null
+// 图的最终输出接入流式目的地（不再走 AudioContext 默认硬件出口），
+// 由 outputPipe 播放该流，输出设备完全由 outputPipe 的 sink 决定。
+let mediaStreamDest: MediaStreamAudioDestinationNode | null = null
 let analyser: AnalyserNode
 // https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext
 // https://benzleung.gitbooks.io/web-audio-api-mini-guide/content/chapter5-1.html
@@ -204,9 +207,10 @@ const initAdvancedAudioFeatures = () => {
   // source -> analyser -> biquadFilter -> pitchShifter -> [(convolver & convolverSource)->convolverDynamicsCompressor] -> panner -> gain
   mediaSource = audioContext.createMediaElementSource(audio)
   mediaSource.connect(analyser)
+  // 最终输出接流式目的地（不走 AudioContext 默认硬件出口），由 outputPipe 播放
+  mediaStreamDest = audioContext.createMediaStreamDestination()
   outputPipe = new window.Audio()
-  // TS DOM 库未包含 mediaStream 声明，断言一次
-  outputPipe.srcObject = (mediaSource as MediaElementAudioSourceNode & { stream: MediaStream }).stream
+  outputPipe.srcObject = mediaStreamDest.stream
   void outputPipe.play().catch(err => {
     console.error('effect output pipe start failed:', err)
   })
@@ -222,7 +226,7 @@ const initAdvancedAudioFeatures = () => {
   lastBiquadFilter.connect(convolver)
   convolverDynamicsCompressor.connect(panner)
   panner.connect(gainNode)
-  gainNode.connect(audioContext.destination)
+  gainNode.connect(mediaStreamDest)
 
   // 音频输出设备改变时刷新 audio node 连接
   window.app_event.on('playerDeviceChanged', handleMediaListChange)
@@ -571,8 +575,7 @@ export const setPlay = () => {
     if (vst3Node && !await prepareVst3Audio()) return
     if (revision !== playbackRevision) return
     await audio?.play()
-  })().catch(err => {
-    console.error('audio play failed:', err)
+  })().catch(() => {
     window.app_event.pause()
   })
 }
@@ -729,6 +732,25 @@ export const setCurrentTime = (time: number) => {
       else resetVst3Audio(false)
     }).catch((err: Error) => { vst3Runtime.error = err.message })
   } else if (audio) audio.currentTime = time
+}
+
+// TEMP DEBUG: 供真机诊断音频链路状态，发布前移除
+if (typeof window !== 'undefined') {
+  (window as any).__lxAudioDebug = () => ({
+    hasAudio: !!audio,
+    audioPaused: audio ? audio.paused : null,
+    audioSinkId: audio ? (audio as any).sinkId : null,
+    hasCtx: !!audioContext,
+    ctxState: audioContext ? audioContext.state : null,
+    ctxSinkId: audioContext ? (audioContext as any).sinkId : null,
+    hasPipe: !!outputPipe,
+    pipePaused: outputPipe ? outputPipe.paused : null,
+    pipeSinkId: outputPipe ? (outputPipe as any).sinkId : null,
+    pipeSrcObject: outputPipe ? !!outputPipe.srcObject : null,
+    pipeVolume: outputPipe ? outputPipe.volume : null,
+    pipeMuted: outputPipe ? outputPipe.muted : null,
+    vst3Node: !!vst3Node,
+  })
 }
 
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {

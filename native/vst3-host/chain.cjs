@@ -101,8 +101,10 @@ class Vst3Chain {
     // instead of queueing behind the stall, so playback keeps running effect-less until
     // the main thread frees up. A dead host is still caught by request errors.
     if (this.queued >= 48) {
+      this._bypassed = true
       return Promise.resolve({ outputs: inputs, latencySamples: this.status().latencySamples, bypassed: true })
     }
+    this._bypassed = false
     return this.run(async () => {
       if (!Array.isArray(inputs) || inputs.length !== 2 || inputs.some(channel => !Array.isArray(channel)
         || channel.length !== 512 || channel.some(sample => typeof sample !== 'number' || !Number.isFinite(sample)))) {
