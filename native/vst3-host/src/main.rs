@@ -189,9 +189,10 @@ fn decode_payload(payload: &[u8], frames: usize) -> Result<Vec<Vec<f32>>, String
 }
 
 fn encode_outputs(outputs: &[Vec<f32>], frames: usize) -> Vec<u8> {
+    // 平面格式（与客户端 decodePcm 对应）：每个声道连续存放
     let mut bytes = Vec::with_capacity(frames * 2 * 4);
-    for frame in 0..frames {
-        for channel in outputs {
+    for channel in outputs {
+        for frame in 0..frames {
             bytes.extend_from_slice(&channel[frame].to_le_bytes());
         }
     }
