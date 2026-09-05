@@ -143,6 +143,26 @@ const withMpvResources = async (baseOptions, mpvPlatform, mpvArch) => {
 			},
 		];
 	}
+	// VST3 宿主由 beforePack 阶段原生构建；交叉编译目标（构建机架构不一致）不携带。
+	const vst3HostName =
+		mpvPlatform === "win32" ? "lx-vst3-host.exe" : "lx-vst3-host";
+	if (mpvArch === process.arch) {
+		if (!fs.existsSync(`./build/Release/${vst3HostName}`))
+			console.log(
+				`[vst3] host binary will be built by beforePack: ${vst3HostName}`,
+			);
+		buildOptions.extraResources = [
+			...buildOptions.extraResources,
+			{
+				from: `./build/Release/${vst3HostName}`,
+				to: `./bin/${vst3HostName}`,
+			},
+		];
+	} else {
+		console.warn(
+			`[vst3] skip host resource for ${mpvPlatform}-${mpvArch} (build arch ${process.arch})`,
+		);
+	}
 	return buildOptions;
 };
 

@@ -1,0 +1,22 @@
+[package]
+name = "lx-vst3-host"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+
+[[bin]]
+name = "lx-vst3-host"
+path = "src/main.rs"
+
+[dependencies]
+vst3-host = { git = "https://github.com/HelgeSverre/rust-vst3-host.git", rev = "49fc189177c72cf799d5034fcca81d8aacc3d7a6", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSEvent"] }
+objc2-foundation = { version = "0.3", features = ["NSDate", "NSRunLoop"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["winuser"] }

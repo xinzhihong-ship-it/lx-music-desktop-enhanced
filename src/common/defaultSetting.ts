@@ -28,6 +28,9 @@ const defaultSetting: LX.AppSetting = {
   'player.togglePlayMethod': 'listLoop',
   'player.playQuality': '128k',
   'player.playEngine': 'electron',
+  'player.vst3.directories': [],
+  'player.vst3.enabled': false,
+  'player.vst3.chain': [],
   'player.mpv.path': '',
   'player.mpv.extraArgs': [],
   'player.mpv.bitPerfectMode': true,
@@ -147,7 +150,8 @@ const defaultSetting: LX.AppSetting = {
   'network.proxy.enable': false,
   'network.proxy.host': '',
   'network.proxy.port': '',
-  'network.gitcodeMusicDatabaseUrl': 'https://api.gitcode.com/api/v5/repos/ikun_0014/music/raw/audio_database.json',
+  'network.gitcodeMusicDatabaseUrl':
+    'https://api.gitcode.com/api/v5/repos/ikun_0014/music/raw/audio_database.json',
   'network.gitcodeMusicAccessToken': '',
 
   'tray.enable': false,
@@ -180,15 +184,13 @@ const defaultSetting: LX.AppSetting = {
 
   'odc.isAutoClearSearchInput': false,
   'odc.isAutoClearSearchList': false,
-
 }
-
 
 // 使用新年皮肤
 if (new Date().getMonth() < 2) {
   defaultSetting['theme.id'] = 'happy_new_year'
-  defaultSetting['desktopLyric.style.lyricPlayedColor'] = 'rgba(255, 57, 71, 1)'
+  defaultSetting['desktopLyric.style.lyricPlayedColor'] =
+    'rgba(255, 57, 71, 1)'
 }
-
 
 export default defaultSetting

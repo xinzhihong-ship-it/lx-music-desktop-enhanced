@@ -1,7 +1,6 @@
 import type { I18n } from '../../lang/i18n'
 
 declare global {
-
   declare namespace LX {
     type AddMusicLocationType = 'top' | 'bottom'
 
@@ -91,7 +90,12 @@ declare global {
       /**
        * 切歌模式
        */
-      'player.togglePlayMethod': 'listLoop' | 'random' | 'list' | 'singleLoop' | 'none'
+      'player.togglePlayMethod':
+      | 'listLoop'
+      | 'random'
+      | 'list'
+      | 'singleLoop'
+      | 'none'
 
       /**
        * 优先播放的音质
@@ -102,6 +106,9 @@ declare global {
        * 播放引擎
        */
       'player.playEngine': 'electron' | 'mpv' | 'audirvana'
+      'player.vst3.directories': string[]
+      'player.vst3.enabled': boolean
+      'player.vst3.chain': Array<{ id: string, path: string, enabled: boolean }>
 
       /**
        * mpv 可执行文件路径
@@ -122,7 +129,6 @@ declare global {
        * 是否显示任务栏进度条
        */
       'player.isShowTaskProgess': boolean
-
 
       /**
        * 是否将歌词显示在状态栏
@@ -353,7 +359,6 @@ declare global {
        * 播放详情页-是否延迟桌面歌词滚动
        */
       'playDetail.isDelayScroll': boolean
-
 
       /**
        * 是否启用桌面歌词
@@ -734,7 +739,6 @@ declare global {
       'sync.webdav.lastListHash': string
       'sync.webdav.lastSyncTime': number
 
-
       /**
        * 是否启用开放API服务
        */
@@ -761,5 +765,4 @@ declare global {
       'odc.isAutoClearSearchList': boolean
     }
   }
-
 }

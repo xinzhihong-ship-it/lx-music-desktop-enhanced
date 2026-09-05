@@ -3,7 +3,11 @@ const fsPromises = require('fs').promises
 const path = require('path')
 const { Arch } = require('electron-builder')
 const nodeAbi = require('node-abi')
-const { buildMpvVideoNative, buildMpvWindowNative } = require('./build-mpv-video')
+const {
+  buildMpvVideoNative,
+  buildMpvWindowNative,
+} = require('./build-mpv-video')
+const { buildVst3Host } = require('./build-vst3-host')
 
 const better_sqlite3_fileNameMap = {
   [Arch.x64]: 'linux-x64',
@@ -40,43 +44,84 @@ const replaceSqliteLib = async(electronNodeAbi, arch) => {
   // https://github.com/lyswhut/lx-music-desktop/issues/1102
   // https://github.com/lyswhut/lx-music-desktop/issues/1161
   console.log('replace sqlite lib...')
-  const filePath = path.join(__dirname, `./lib/better_sqlite3_electron-v${electronNodeAbi}-${better_sqlite3_fileNameMap[arch]}.node`)
+  const filePath = path.join(
+    __dirname,
+    `./lib/better_sqlite3_electron-v${electronNodeAbi}-${better_sqlite3_fileNameMap[arch]}.node`,
+  )
   console.log(filePath)
-  const targetPath = path.join(__dirname, '../node_modules/better-sqlite3/build/Release/better_sqlite3.node')
-  await fsPromises.unlink(targetPath).catch(_ => _)
+  const targetPath = path.join(
+    __dirname,
+    '../node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+  )
+  await fsPromises.unlink(targetPath).catch((_) => _)
   await fsPromises.copyFile(filePath, targetPath)
 }
 
 const replaceQrcDecodeLib = async(electronNodeAbi, platform, arch) => {
-  console.log('replace qrc_decode lib...', platform, electronNodeAbi, qrc_decode_fileNameMap[platform][arch])
-  const filePath = path.join(__dirname, `./lib/qrc_decode_electron-v${electronNodeAbi}-${qrc_decode_fileNameMap[platform][arch]}.node`)
+  console.log(
+    'replace qrc_decode lib...',
+    platform,
+    electronNodeAbi,
+    qrc_decode_fileNameMap[platform][arch],
+  )
+  const filePath = path.join(
+    __dirname,
+    `./lib/qrc_decode_electron-v${electronNodeAbi}-${qrc_decode_fileNameMap[platform][arch]}.node`,
+  )
   const targetPath = path.join(__dirname, '../build/Release/qrc_decode.node')
   const targetDir = path.dirname(targetPath)
-  if (fs.existsSync(targetDir)) await fsPromises.unlink(targetPath).catch(_ => _)
-  else await fsPromises.mkdir(targetDir, { recursive: true })
+  if (fs.existsSync(targetDir)) { await fsPromises.unlink(targetPath).catch((_) => _) } else await fsPromises.mkdir(targetDir, { recursive: true })
   await fsPromises.copyFile(filePath, targetPath)
 }
 
-
 module.exports = async(context) => {
   const { electronPlatformName, arch } = context
-  const electronVersion = context.packager?.info?._framework?.version ?? require('../package.json').devDependencies.electron.replace(/^[^\d]*?(\d+)/, '$1')
+  const electronVersion =
+    context.packager?.info?._framework?.version ??
+    require('../package.json').devDependencies.electron.replace(
+      /^[^\d]*?(\d+)/,
+      '$1',
+    )
   const electronNodeAbi = nodeAbi.getAbi(electronVersion, 'electron')
   await replaceQrcDecodeLib(electronNodeAbi, electronPlatformName, arch)
   if (electronPlatformName === 'darwin') {
-    const targetArch = arch === Arch.arm64 ? 'arm64' : arch === Arch.x64 ? 'x64' : ''
+    const targetArch =
+      arch === Arch.arm64 ? 'arm64' : arch === Arch.x64 ? 'x64' : ''
     const sameArchitecture = targetArch === process.arch
-    if (!sameArchitecture) throw new Error(`macOS 视频原生桥不能交叉编译：目标 ${targetArch || arch}，当前构建进程 ${process.arch}`)
-    if (!buildMpvVideoNative()) throw new Error('macOS 视频原生桥构建失败：请先安装对应架构的 mpv（brew install mpv）')
+    if (!sameArchitecture) {
+      throw new Error(
+        `macOS 视频原生桥不能交叉编译：目标 ${targetArch || arch}，当前构建进程 ${process.arch}`,
+      )
+    }
+    if (!buildMpvVideoNative()) {
+      throw new Error(
+        'macOS 视频原生桥构建失败：请先安装对应架构的 mpv（brew install mpv）',
+      )
+    }
   }
   if (electronPlatformName === 'win32') {
     const targetArch = mpvWindowArchMap[arch]
-    if (!targetArch) throw new Error(`Windows 视频宿主桥不支持目标架构：${arch}`)
-    if (!buildMpvWindowNative(targetArch)) throw new Error('Windows 视频宿主桥构建失败')
+    if (!targetArch) { throw new Error(`Windows 视频宿主桥不支持目标架构：${arch}`) }
+    if (!buildMpvWindowNative(targetArch)) { throw new Error('Windows 视频宿主桥构建失败') }
+  }
+  // VST3 宿主只能原生编译：目标架构与构建机一致时打包携带，否则跳过（包内无 VST3 功能）。
+  const vst3TargetArch = arch === Arch.x64 ? 'x64' : arch === Arch.arm64 ? 'arm64' : arch === Arch.ia32 ? 'ia32' : arch === Arch.armv7l ? 'armv7l' : ''
+  if (vst3TargetArch === process.arch) {
+    buildVst3Host()
+  } else {
+    console.warn(
+      `[vst3] 目标架构 ${vst3TargetArch || arch} 与构建机 ${process.arch} 不一致，本包不携带 VST3 宿主`,
+    )
   }
   if (electronPlatformName !== 'linux' || process.env.FORCE) return
-  const bindingFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp')
-  const bindingBakFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp.bak')
+  const bindingFilePath = path.join(
+    __dirname,
+    '../node_modules/better-sqlite3/binding.gyp',
+  )
+  const bindingBakFilePath = path.join(
+    __dirname,
+    '../node_modules/better-sqlite3/binding.gyp.bak',
+  )
   switch (arch) {
     case Arch.x64:
     case Arch.arm64:

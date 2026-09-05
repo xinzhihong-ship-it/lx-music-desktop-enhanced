@@ -1,5 +1,6 @@
 <template lang="pug">
 dt#play {{ $t('setting__play') }}
+setting-vst3
 dd
   div(:class="$style.engineSection")
     h3#basic_play_engine {{ $t('setting__play_engine') }}
@@ -153,6 +154,7 @@ import { isPlay, playMusicInfo } from '@renderer/store/player/state'
 import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
 import { isMac, log } from '@common/utils'
 import useDrag from '@renderer/utils/compositions/useDrag'
+import SettingVst3 from './SettingVst3.vue'
 import {
   movePlayErrorAction,
   normalizePlayErrorApiSourceCount,
@@ -165,6 +167,7 @@ import {
 
 export default {
   name: 'SettingPlay',
+  components: { SettingVst3 },
   setup() {
     const t = useI18n()
     const playQualityList = [...TRY_QUALITYS_LIST, '128k'].reverse()
