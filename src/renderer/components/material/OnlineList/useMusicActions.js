@@ -23,6 +23,13 @@ export default ({ props }) => {
     })
   }
 
+  const handleFieldSearch = text => {
+    router.push({
+      path: '/search',
+      query: { text },
+    })
+  }
+
   const handleSimilarSongs = index => {
     const info = props.list[index]
     const isPlatformSource = ['wy', 'tx', 'kg'].includes(info.source)
@@ -65,6 +72,7 @@ export default ({ props }) => {
 
   return {
     handleSearch,
+    handleFieldSearch,
     handleSimilarSongs,
     handleOpenMusicDetail,
     handleDislikeMusic,

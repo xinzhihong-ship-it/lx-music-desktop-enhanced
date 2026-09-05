@@ -6,6 +6,7 @@
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
 import { getUserSpace } from '@main/modules/sync/server/user'
 import { handleRemoteListAction } from '@main/modules/sync/listEvent'
+import { filterListActionForMobile } from '../compatibility'
 // import { encryptMsg } from '@/utils/tools'
 
 // let wss: LX.SocketServer | null
@@ -157,7 +158,12 @@ const handler: LX.Sync.ServerSyncHandlerListActions<LX.Sync.Server.Socket> = {
     const currentId = socket.keyInfo.clientId
     socket.broadcast((client) => {
       if (client.keyInfo.clientId == currentId || !client.moduleReadys?.list || client.userInfo.name != currentUserName) return
-      void client.remoteQueueList.onListSyncAction(action).then(async() => {
+      const clientAction = client.keyInfo.isMobile ? filterListActionForMobile(action) : action
+      if (!clientAction) {
+        void userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
+        return
+      }
+      void client.remoteQueueList.onListSyncAction(clientAction).then(async() => {
         return userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
       }).catch(err => {
         // TODO send status

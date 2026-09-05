@@ -27,8 +27,7 @@
 
 <script setup>
 // import { reactive } from '@common/utils/vueTools'
-import { setMediaDeviceId } from '@renderer/plugins/player'
-import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/setting'
+import { appSetting, updateSetting } from '@renderer/store/setting'
 
 // const setting = reactive({
 //   enabled: false,
@@ -37,12 +36,7 @@ import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/se
 // })
 
 const updateEnabled = async(enabled) => {
-  // console.log(enabled)
-  if (appSetting['player.mediaDeviceId'] != 'default') {
-    await setMediaDeviceId('default').catch(_ => _)
-    saveMediaDeviceId('default')
-  }
-  updateSetting({ 'player.soundEffect.panner.enable': enabled })
+  // console.log(enabled)  updateSetting({ 'player.soundEffect.panner.enable': enabled })
 }
 
 const handleUpdateSoundR = (value) => {
@@ -51,7 +45,6 @@ const handleUpdateSoundR = (value) => {
 const handleUpdateSpeed = (value) => {
   updateSetting({ 'player.soundEffect.panner.speed': Math.round(value) })
 }
-
 
 </script>
 

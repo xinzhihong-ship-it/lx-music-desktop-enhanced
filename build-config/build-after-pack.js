@@ -2,6 +2,8 @@ const fs = require('fs').promises
 const path = require('path')
 const { execFile } = require('child_process')
 const { promisify } = require('util')
+const { Arch } = require('electron-builder')
+const { validateMacMpvRuntimes } = require('./mpv-runtime')
 
 const execFileAsync = promisify(execFile)
 
@@ -58,7 +60,7 @@ const signMacAppForLocalUse = async(appPath) => {
 // https://github.com/electron-userland/electron-builder/issues/4630#issuecomment-782020139
 
 module.exports = async(context) => {
-  const { electronPlatformName, appOutDir } = context
+	const { electronPlatformName, appOutDir, arch } = context
   if (electronPlatformName !== 'darwin') return
   const {
     productFilename,
@@ -68,6 +70,7 @@ module.exports = async(context) => {
   } = context.packager.appInfo
 
   const resPath = `${appOutDir}/${productFilename}.app/Contents/Resources`
+	validateMacMpvRuntimes(path.join(resPath, 'bin'), arch === Arch.arm64 ? 'arm64' : 'x64')
 
   // 创建APP语言包文件
   await Promise.all(

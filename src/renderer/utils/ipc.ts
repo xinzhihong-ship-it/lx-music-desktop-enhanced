@@ -7,6 +7,18 @@ import { APP_EVENT_NAMES, DATA_KEYS, DEFAULT_SETTING } from '@common/constants'
 
 type RemoveListener = () => void
 
+export const scanVst3Plugins = async() => {
+  return rendererInvoke<{
+    plugins: Array<{ path: string, details: { info: { name: string, vendor: string } } }>
+    warnings: Array<{ path: string, error: string }>
+    directories: string[]
+  }>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_scan)
+}
+
+export const openVst3Editor = async(params: { id: string, open: boolean }) => {
+  return rendererInvoke<{ id: string, open: boolean }>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_editor, params)
+}
+
 export const getSetting = async() => {
   return rendererInvoke<LX.AppSetting>(CMMON_EVENT_NAME.get_app_setting)
 }

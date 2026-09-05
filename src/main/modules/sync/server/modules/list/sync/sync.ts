@@ -3,13 +3,14 @@ import { removeSelectModeListener, sendCloseSelectMode, sendSelectMode } from '@
 import { getUserSpace, getUserConfig } from '../../../user'
 import { buildUserListInfoFull, getLocalListData, setLocalListData } from '@main/modules/sync/listEvent'
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
+import { filterListActionForMobile, filterListDataForMobile } from '../compatibility'
 // import { LIST_IDS } from '@common/constants'
 
 // type ListInfoType = LX.List.UserListInfoFull | LX.List.MyDefaultListInfoFull | LX.List.MyLoveListInfoFull
 
 // let wss: LX.Sync.Server.SocketServer | null
 let syncingId: string | null = null
-const wait = async(time = 1000) => await new Promise((resolve, reject) => setTimeout(resolve, time))
+const wait = async(time = 1000) => await new Promise(resolve => setTimeout(resolve, time))
 
 const patchListData = (listData: Partial<LX.Sync.List.ListData>): LX.Sync.List.ListData => {
   return Object.assign({
@@ -69,7 +70,12 @@ const overwriteRemoteListData = async(socket: LX.Sync.Server.Socket, listData: L
   const userSpace = getUserSpace(socket.userInfo.name)
   socket.broadcast((client) => {
     if (excludeIds.includes(client.keyInfo.clientId) || client.userInfo.name != socket.userInfo.name || !client.moduleReadys?.list) return
-    tasks.push(client.remoteQueueList.onListSyncAction(action).then(async() => {
+    const clientAction = client.keyInfo.isMobile ? filterListActionForMobile(action) : action
+    if (!clientAction) {
+      tasks.push(userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key))
+      return
+    }
+    tasks.push(client.remoteQueueList.onListSyncAction(clientAction).then(async() => {
       return userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
     }).catch(err => {
       // TODO send status
@@ -82,7 +88,8 @@ const overwriteRemoteListData = async(socket: LX.Sync.Server.Socket, listData: L
   await Promise.all(tasks)
 }
 const setRemotelList = async(socket: LX.Sync.Server.Socket, listData: LX.Sync.List.ListData, key: string): Promise<void> => {
-  await socket.remoteQueueList.list_sync_set_list_data(listData)
+  const targetListData = socket.keyInfo.isMobile ? filterListDataForMobile(listData) : listData
+  await socket.remoteQueueList.list_sync_set_list_data(targetListData)
   const userSpace = getUserSpace(socket.userInfo.name)
   await userSpace.listManage.updateDeviceSnapshotKey(socket.keyInfo.clientId, key)
 }
@@ -270,6 +277,7 @@ const mergeListDataFromSnapshot = (
   targetList: LX.Music.MusicInfo[],
   snapshotList: LX.Music.MusicInfo[],
   addMusicLocationType: LX.AddMusicLocationType,
+  isMobile: boolean,
 ): LX.Music.MusicInfo[] => {
   const removedListIds = new Set<string | number>()
   const sourceListItemIds = new Set<string | number>()
@@ -278,6 +286,7 @@ const mergeListDataFromSnapshot = (
   for (const m of targetList) targetListItemIds.add(m.id)
   if (snapshotList) {
     for (const m of snapshotList) {
+      if (isMobile && m.source === 'bili') continue
       if (!sourceListItemIds.has(m.id) || !targetListItemIds.has(m.id)) removedListIds.add(m.id)
     }
   }
@@ -332,8 +341,8 @@ const handleMergeListDataFromSnapshot = async(socket: LX.Sync.Server.Socket, sna
     loveList: [],
     userList: [],
   }
-  newListData.defaultList = mergeListDataFromSnapshot(localListData.defaultList, remoteListData.defaultList, snapshot.defaultList, addMusicLocationType)
-  newListData.loveList = mergeListDataFromSnapshot(localListData.loveList, remoteListData.loveList, snapshot.loveList, addMusicLocationType)
+  newListData.defaultList = mergeListDataFromSnapshot(localListData.defaultList, remoteListData.defaultList, snapshot.defaultList, addMusicLocationType, socket.keyInfo.isMobile)
+  newListData.loveList = mergeListDataFromSnapshot(localListData.loveList, remoteListData.loveList, snapshot.loveList, addMusicLocationType, socket.keyInfo.isMobile)
   const localUserListData = createUserListDataObj(localListData)
   const remoteUserListData = createUserListDataObj(remoteListData)
   const snapshotUserListData = createUserListDataObj(snapshot)
@@ -345,6 +354,7 @@ const handleMergeListDataFromSnapshot = async(socket: LX.Sync.Server.Socket, sna
   for (const l of remoteListData.userList) remoteUserListIds.add(l.id)
 
   for (const l of snapshot.userList) {
+    if (socket.keyInfo.isMobile && l.source === 'bili') continue
     if (!localUserListIds.has(l.id) || !remoteUserListIds.has(l.id)) removedListIds.add(l.id)
   }
 
@@ -361,7 +371,7 @@ const handleMergeListDataFromSnapshot = async(socket: LX.Sync.Server.Socket, sna
         source: selectData(snapshotList.source, list.source, remoteList.source),
         sourceListId: selectData(snapshotList.sourceListId, list.sourceListId, remoteList.sourceListId),
         locationUpdateTime: list.locationUpdateTime,
-        list: mergeListDataFromSnapshot(list.list, remoteList.list, snapshotList.list, addMusicLocationType),
+        list: mergeListDataFromSnapshot(list.list, remoteList.list, snapshotList.list, addMusicLocationType, socket.keyInfo.isMobile),
       })
     } else {
       newList = { ...list }

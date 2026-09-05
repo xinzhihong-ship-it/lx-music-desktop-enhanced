@@ -1,0 +1,57 @@
+name: VST3 host cross-platform check
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - beta
+      - main
+  workflow_dispatch:
+
+jobs:
+  vst3:
+    name: VST3 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Check Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxcb-cursor-dev libxkbcommon-dev xvfb
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build VST3 host
+        run: npm run build:native:vst3
+
+      - name: Rust and unit tests
+        run: npm run test:vst3
+
+      # Linux 无显示器/音频栈，端到端音频测试仅在 macOS/Windows 运行
+      - name: Realtime audio end-to-end test
+        run: npm run test:vst3:audio
+        if: runner.os != 'Linux'

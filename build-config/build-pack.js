@@ -1,75 +1,72 @@
 /* eslint-disable no-template-curly-in-string */
 
-const fs = require('fs')
-const path = require('path')
-const builder = require('electron-builder')
-const beforePack = require('./build-before-pack')
-const afterPack = require('./build-after-pack')
-const { downloadMpv } = require('./download-mpv')
+const fs = require("fs");
+const path = require("path");
+const builder = require("electron-builder");
+const beforePack = require("./build-before-pack");
+const afterPack = require("./build-after-pack");
+const { downloadMpv } = require("./download-mpv");
+const { validateMacMpvRuntimes } = require("./mpv-runtime");
 
 /**
-* @type {import('electron-builder').Configuration}
-* @see https://www.electron.build/configuration/configuration
-*/
+ * @type {import('electron-builder').Configuration}
+ * @see https://www.electron.build/configuration/configuration
+ */
 const options = {
-  appId: 'cn.toside.music.desktop',
-  productName: 'lx-music-desktop',
-  beforePack,
-  afterPack,
-  protocols: {
-    name: 'lx-music-protocol',
-    schemes: [
-      'lxmusic',
-    ],
-  },
-  directories: {
-    buildResources: './resources',
-    output: './build',
-  },
-  files: [
-    '!node_modules/**/*',
-    '!**/electron-debug/**/*',
-    '!**/electron-devtools-installer/**/*',
-    '!**/electron-is-dev/**/*',
-    '!**/electron-localshortcut/**/*',
-    '!**/devtron/**/*',
-    'node_modules/font-list',
-    'node_modules/better-sqlite3/lib',
-    'node_modules/better-sqlite3/package.json',
-    'node_modules/better-sqlite3/build/Release/better_sqlite3.node',
-    'node_modules/electron-font-manager/index.js',
-    'node_modules/electron-font-manager/package.json',
-    'node_modules/electron-font-manager/build/Release/font_manager.node',
-    'node_modules/node-gyp-build',
-    'node_modules/bufferutil',
-    'node_modules/utf-8-validate',
-    'build/Release/qrc_decode.node',
-    'build/Release/lx_mpv_video.node',
-    'build/Release/lx_mpv_window.node',
-    'build/Release/mpv-libs/**/*',
-    'dist/**/*',
-    '!dist/**/index-dev.js',
-  ],
-  asar: {
-    smartUnpack: false,
-  },
-  asarUnpack: [
-    'build/Release/lx_mpv_video.node',
-    'build/Release/lx_mpv_window.node',
-    'build/Release/mpv-libs/**/*',
-  ],
-  extraResources: [
-    './licenses',
-  ],
-  publish: [
-    {
-      provider: 'github',
-      owner: 'xinzhihong-ship-it',
-      repo: 'lx-music-desktop-enhanced',
-      releaseType: 'release',
-    },
-  ],
-}
+	appId: "cn.toside.music.desktop",
+	productName: "lx-music-desktop",
+	beforePack,
+	afterPack,
+	protocols: {
+		name: "lx-music-protocol",
+		schemes: ["lxmusic"],
+	},
+	directories: {
+		buildResources: "./resources",
+		output: "./build",
+	},
+	files: [
+		"!node_modules/**/*",
+		"!**/electron-debug/**/*",
+		"!**/electron-devtools-installer/**/*",
+		"!**/electron-is-dev/**/*",
+		"!**/electron-localshortcut/**/*",
+		"!**/devtron/**/*",
+		"node_modules/font-list",
+		"node_modules/better-sqlite3/lib",
+		"node_modules/better-sqlite3/package.json",
+		"node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+		"node_modules/electron-font-manager/index.js",
+		"node_modules/electron-font-manager/package.json",
+		"node_modules/electron-font-manager/build/Release/font_manager.node",
+		"node_modules/node-gyp-build",
+		"node_modules/bufferutil",
+		"node_modules/utf-8-validate",
+		"build/Release/qrc_decode.node",
+		"build/Release/lx_mpv_video.node",
+		"build/Release/lx_mpv_window.node",
+		"build/Release/mpv-libs/**/*",
+		"dist/**/*",
+		"!dist/**/index-dev.js",
+	],
+	asar: {
+		smartUnpack: false,
+	},
+	asarUnpack: [
+		"build/Release/lx_mpv_video.node",
+		"build/Release/lx_mpv_window.node",
+		"build/Release/mpv-libs/**/*",
+	],
+	extraResources: ["./licenses"],
+	publish: [
+		{
+			provider: "github",
+			owner: "xinzhihong-ship-it",
+			repo: "lx-music-desktop-enhanced",
+			releaseType: "release",
+		},
+	],
+};
 /**
  * 根据目标平台/架构自动下载并集成 mpv 二进制，然后返回包含 mpv extraResources 的 build 配置。
  * @param {import('electron-builder').Configuration} baseOptions
@@ -77,149 +74,183 @@ const options = {
  * @param {string} mpvArch
  * @returns {Promise<import('electron-builder').Configuration>}
  */
-const withMpvResources = async(baseOptions, mpvPlatform, mpvArch) => {
-  const buildOptions = { ...baseOptions }
-  if (mpvPlatform && mpvArch) {
-    try {
-      await downloadMpv(mpvPlatform, mpvArch)
-    } catch (err) {
-      console.error(`[download mpv] ${err.message}`)
-      // 允许手动放置内置二进制；支持自动下载的 Windows 架构在下方校验
-    }
-    const mpvResourcePath = `./resources/mpv/${mpvPlatform}-${mpvArch}`
-    const mpvBinaryPath = path.join(mpvResourcePath, 'mpv.exe')
-    if (
-      mpvPlatform === 'win32' &&
-      (mpvArch === 'x64' || mpvArch === 'arm64') &&
-      !fs.existsSync(mpvBinaryPath)
-    ) throw new Error(`Missing MPV runtime for ${mpvPlatform}-${mpvArch}: ${mpvBinaryPath}`)
-    if (fs.existsSync(mpvResourcePath)) {
-      buildOptions.extraResources = [
-        ...buildOptions.extraResources,
-        {
-          from: mpvResourcePath,
-          to: './bin',
-          filter: ['**/*', '!**/.gitkeep'],
-        },
-      ]
-    }
-  }
-  if (mpvPlatform && mpvArch) {
-    const ffmpegResourcePath = `./resources/ffmpeg/${mpvPlatform}-${mpvArch}`
-    const ffmpegName = mpvPlatform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-    const ffprobeName = mpvPlatform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
-    const requiredBinaries = [ffmpegName, ffprobeName]
-    const missingBinaries = requiredBinaries.filter(name => !fs.existsSync(`${ffmpegResourcePath}/${name}`))
-    if (missingBinaries.length) throw new Error(`Missing FFmpeg runtime for ${mpvPlatform}-${mpvArch}: ${missingBinaries.join(', ')}`)
-    buildOptions.extraResources = [
-      ...buildOptions.extraResources,
-      {
-        from: ffmpegResourcePath,
-        to: './bin',
-        filter: ['**/*'],
-      },
-    ]
-  }
-  if (mpvPlatform === 'darwin') {
-    const audioTeePath = './node_modules/audiotee/bin/audiotee'
-    if (!fs.existsSync(audioTeePath)) throw new Error(`Missing music recognition binary: ${audioTeePath}`)
-    if ((fs.statSync(audioTeePath).mode & 0o111) === 0) throw new Error(`Music recognition binary is not executable: ${audioTeePath}`)
-    buildOptions.extraResources = [
-      ...buildOptions.extraResources,
-      {
-        from: audioTeePath,
-        to: './bin/music-recognition/audiotee',
-      },
-    ]
-  }
-  return buildOptions
-}
+const withMpvResources = async (baseOptions, mpvPlatform, mpvArch) => {
+	const buildOptions = { ...baseOptions };
+	if (mpvPlatform && mpvArch) {
+		try {
+			await downloadMpv(mpvPlatform, mpvArch);
+		} catch (err) {
+			console.error(`[download mpv] ${err.message}`);
+			// 允许手动放置内置二进制；支持自动下载的 Windows 架构在下方校验
+		}
+		const mpvResourcePath = `./resources/mpv/${mpvPlatform}-${mpvArch}`;
+		const mpvBinaryPath = path.join(mpvResourcePath, "mpv.exe");
+		if (
+			mpvPlatform === "win32" &&
+			(mpvArch === "x64" || mpvArch === "arm64") &&
+			!fs.existsSync(mpvBinaryPath)
+		)
+			throw new Error(
+				`Missing MPV runtime for ${mpvPlatform}-${mpvArch}: ${mpvBinaryPath}`,
+			);
+		if (mpvPlatform === "darwin")
+			validateMacMpvRuntimes(mpvResourcePath, mpvArch);
+		if (fs.existsSync(mpvResourcePath)) {
+			buildOptions.extraResources = [
+				...buildOptions.extraResources,
+				{
+					from: mpvResourcePath,
+					to: "./bin",
+					filter: ["**/*", "!**/.gitkeep"],
+				},
+			];
+		}
+	}
+	if (mpvPlatform && mpvArch) {
+		const ffmpegResourcePath = `./resources/ffmpeg/${mpvPlatform}-${mpvArch}`;
+		const ffmpegName = mpvPlatform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+		const ffprobeName = mpvPlatform === "win32" ? "ffprobe.exe" : "ffprobe";
+		const requiredBinaries = [ffmpegName, ffprobeName];
+		const missingBinaries = requiredBinaries.filter(
+			(name) => !fs.existsSync(`${ffmpegResourcePath}/${name}`),
+		);
+		if (missingBinaries.length)
+			throw new Error(
+				`Missing FFmpeg runtime for ${mpvPlatform}-${mpvArch}: ${missingBinaries.join(", ")}`,
+			);
+		buildOptions.extraResources = [
+			...buildOptions.extraResources,
+			{
+				from: ffmpegResourcePath,
+				to: "./bin",
+				filter: ["**/*"],
+			},
+		];
+	}
+	if (mpvPlatform === "darwin") {
+		const audioTeePath = "./node_modules/audiotee/bin/audiotee";
+		if (!fs.existsSync(audioTeePath))
+			throw new Error(`Missing music recognition binary: ${audioTeePath}`);
+		if ((fs.statSync(audioTeePath).mode & 0o111) === 0)
+			throw new Error(
+				`Music recognition binary is not executable: ${audioTeePath}`,
+			);
+		buildOptions.extraResources = [
+			...buildOptions.extraResources,
+			{
+				from: audioTeePath,
+				to: "./bin/music-recognition/audiotee",
+			},
+		];
+	}
+	// VST3 宿主由 beforePack 阶段原生构建；交叉编译目标（构建机架构不一致）不携带。
+	const vst3HostName =
+		mpvPlatform === "win32" ? "lx-vst3-host.exe" : "lx-vst3-host";
+	if (mpvArch === process.arch) {
+		if (!fs.existsSync(`./build/Release/${vst3HostName}`))
+			console.log(
+				`[vst3] host binary will be built by beforePack: ${vst3HostName}`,
+			);
+		buildOptions.extraResources = [
+			...buildOptions.extraResources,
+			{
+				from: `./build/Release/${vst3HostName}`,
+				to: `./bin/${vst3HostName}`,
+			},
+		];
+	} else {
+		console.warn(
+			`[vst3] skip host resource for ${mpvPlatform}-${mpvArch} (build arch ${process.arch})`,
+		);
+	}
+	return buildOptions;
+};
 
 /**
  * @type {import('electron-builder').Configuration}
  * @see https://www.electron.build/configuration/configuration
  */
 const winOptions = {
-  win: {
-    icon: './resources/icons/icon.ico',
-    legalTrademarks: 'lyswhut',
-    // artifactName: '${productName}-v${version}-${env.ARCH}-${env.TARGET}.${ext}',
-  },
-  nsis: {
-    oneClick: false,
-    language: '2052',
-    allowToChangeInstallationDirectory: true,
-    // differentialPackage: true,
-    license: './licenses/license.rtf',
-    shortcutName: 'LX Music',
-  },
-}
+	win: {
+		icon: "./resources/icons/icon.ico",
+		legalTrademarks: "lyswhut",
+		// artifactName: '${productName}-v${version}-${env.ARCH}-${env.TARGET}.${ext}',
+	},
+	nsis: {
+		oneClick: false,
+		language: "2052",
+		allowToChangeInstallationDirectory: true,
+		// differentialPackage: true,
+		license: "./licenses/license.rtf",
+		shortcutName: "LX Music",
+	},
+};
 /**
  * @type {import('electron-builder').Configuration}
  * @see https://www.electron.build/configuration/configuration
  */
 const linuxOptions = {
-  linux: {
-    maintainer: 'lyswhut <lyswhut@qq.com>',
-    // artifactName: '${productName}-${version}.${env.ARCH}.${ext}',
-    icon: './resources/icons',
-    category: 'Utility;AudioVideo;Audio;Player;Music;',
-    desktop: {
-      // https://www.electron.build/app-builder-lib.interface.linuxdesktopfile
-      // https://www.electronjs.org/docs/latest/tutorial/linux-desktop-actions
-      // https://specifications.freedesktop.org/desktop-entry-spec/latest/example.html
-      // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html#desktop-files
-      entry: {
-        Name: 'LX Music',
-        'Name[zh_CN]': 'LX Music',
-        'Name[zh_TW]': 'LX Music',
-        Encoding: 'UTF-8',
-        MimeType: 'x-scheme-handler/lxmusic',
-        StartupNotify: 'false',
-      },
-    },
-  },
-  appImage: {
-    license: './licenses/license_zh.txt',
-    category: 'Utility;AudioVideo;Audio;Player;Music;',
-  },
-}
+	linux: {
+		maintainer: "lyswhut <lyswhut@qq.com>",
+		// artifactName: '${productName}-${version}.${env.ARCH}.${ext}',
+		icon: "./resources/icons",
+		category: "Utility;AudioVideo;Audio;Player;Music;",
+		desktop: {
+			// https://www.electron.build/app-builder-lib.interface.linuxdesktopfile
+			// https://www.electronjs.org/docs/latest/tutorial/linux-desktop-actions
+			// https://specifications.freedesktop.org/desktop-entry-spec/latest/example.html
+			// https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html#desktop-files
+			entry: {
+				Name: "LX Music",
+				"Name[zh_CN]": "LX Music",
+				"Name[zh_TW]": "LX Music",
+				Encoding: "UTF-8",
+				MimeType: "x-scheme-handler/lxmusic",
+				StartupNotify: "false",
+			},
+		},
+	},
+	appImage: {
+		license: "./licenses/license_zh.txt",
+		category: "Utility;AudioVideo;Audio;Player;Music;",
+	},
+};
 /**
  * @type {import('electron-builder').Configuration}
  * @see https://www.electron.build/configuration/configuration
  */
 const macOptions = {
-  mac: {
-    icon: './resources/icons/icon.icns',
-    category: 'public.app-category.music',
-    entitlements: './resources/entitlements.mac.plist',
-    entitlementsInherit: './resources/entitlements.mac.plist',
-    extendInfo: {
-      NSAudioCaptureUsageDescription: '用于听歌识曲，采集电脑正在播放的音频。',
-      NSMicrophoneUsageDescription: '用于听歌识曲所需的系统音频采集。',
-    },
-    // artifactName: '${productName}-${version}.${ext}',
-  },
-  dmg: {
-    window: {
-      width: 530,
-      height: 380,
-    },
-    contents: [
-      {
-        x: 140,
-        y: 200,
-      },
-      {
-        x: 390,
-        y: 200,
-        type: 'link',
-        path: '/Applications',
-      },
-    ],
-    title: 'LX Music v${version}',
-  },
-}
+	mac: {
+		icon: "./resources/icons/icon.icns",
+		category: "public.app-category.music",
+		entitlements: "./resources/entitlements.mac.plist",
+		entitlementsInherit: "./resources/entitlements.mac.plist",
+		extendInfo: {
+			NSAudioCaptureUsageDescription: "用于听歌识曲，采集电脑正在播放的音频。",
+			NSMicrophoneUsageDescription: "用于听歌识曲所需的系统音频采集。",
+		},
+		// artifactName: '${productName}-${version}.${ext}',
+	},
+	dmg: {
+		window: {
+			width: 530,
+			height: 380,
+		},
+		contents: [
+			{
+				x: 140,
+				y: 200,
+			},
+			{
+				x: 390,
+				y: 200,
+				type: "link",
+				path: "/Applications",
+			},
+		],
+		title: "LX Music v${version}",
+	},
+};
 
 // win: {
 // tagret: {
@@ -254,100 +285,103 @@ const macOptions = {
 // },
 
 const createTarget = {
-  /**
-   *
-   * @param {*} arch
-   * @param {*} packageType
-   * @returns {{ buildOptions: import('electron-builder').CliOptions, options: import('electron-builder').Configuration }}
-   */
-  win(arch, packageType) {
-    switch (packageType) {
-      case 'setup':
-        winOptions.artifactName = `\${productName}-v\${version}-${arch}-Setup.\${ext}`
-        return {
-          buildOptions: { win: ['nsis'] },
-          options: winOptions,
-        }
-      case 'green':
-        winOptions.artifactName = `\${productName}-v\${version}-win_${arch}-green.\${ext}`
-        return {
-          buildOptions: { win: ['7z'] },
-          options: winOptions,
-        }
-      case 'win7_setup':
-        winOptions.artifactName = `\${productName}-v\${version}-win7_${arch}-Setup.\${ext}`
-        return {
-          buildOptions: { win: ['nsis'] },
-          options: winOptions,
-        }
-      case 'win7_green':
-        winOptions.artifactName = `\${productName}-v\${version}-win7_${arch}-green.\${ext}`
-        return {
-          buildOptions: { win: ['7z'] },
-          options: winOptions,
-        }
-      case 'portable':
-        winOptions.artifactName = `\${productName}-v\${version}-${arch}-portable.\${ext}`
-        return {
-          buildOptions: { win: ['portable'] },
-          options: winOptions,
-        }
-      default: throw new Error('Unknown package type: ' + packageType)
-    }
-  },
-  /**
-   *
-   * @param {*} arch
-   * @param {*} packageType
-   * @returns {{ buildOptions: import('electron-builder').CliOptions, options: import('electron-builder').Configuration }}
-   */
-  linux(arch, packageType) {
-    switch (packageType) {
-      case 'deb':
-        linuxOptions.artifactName = `\${productName}_\${version}_${arch == 'x64' ? 'amd64' : arch}.\${ext}`
-        return {
-          buildOptions: { linux: ['deb'] },
-          options: linuxOptions,
-        }
-      case 'appImage':
-        linuxOptions.artifactName = `\${productName}_\${version}_${arch}.\${ext}`
-        return {
-          buildOptions: { linux: ['AppImage'] },
-          options: linuxOptions,
-        }
-      case 'pacman':
-        linuxOptions.artifactName = `\${productName}_\${version}_${arch}.\${ext}`
-        return {
-          buildOptions: { linux: ['pacman'] },
-          options: linuxOptions,
-        }
-      case 'rpm':
-        linuxOptions.artifactName = `\${productName}-\${version}.${arch}.\${ext}`
-        return {
-          buildOptions: { linux: ['rpm'] },
-          options: linuxOptions,
-        }
-      default: throw new Error('Unknown package type: ' + packageType)
-    }
-  },
-  /**
-   *
-   * @param {*} arch
-   * @param {*} packageType
-   * @returns {{ buildOptions: import('electron-builder').CliOptions, options: import('electron-builder').Configuration }}
-   */
-  mac(arch, packageType) {
-    switch (packageType) {
-      case 'dmg':
-        macOptions.artifactName = `\${productName}-\${version}-${arch}.\${ext}`
-        return {
-          buildOptions: { mac: ['dmg'] },
-          options: macOptions,
-        }
-      default: throw new Error('Unknown package type: ' + packageType)
-    }
-  },
-}
+	/**
+	 *
+	 * @param {*} arch
+	 * @param {*} packageType
+	 * @returns {{ buildOptions: import('electron-builder').CliOptions, options: import('electron-builder').Configuration }}
+	 */
+	win(arch, packageType) {
+		switch (packageType) {
+			case "setup":
+				winOptions.artifactName = `\${productName}-v\${version}-${arch}-Setup.\${ext}`;
+				return {
+					buildOptions: { win: ["nsis"] },
+					options: winOptions,
+				};
+			case "green":
+				winOptions.artifactName = `\${productName}-v\${version}-win_${arch}-green.\${ext}`;
+				return {
+					buildOptions: { win: ["7z"] },
+					options: winOptions,
+				};
+			case "win7_setup":
+				winOptions.artifactName = `\${productName}-v\${version}-win7_${arch}-Setup.\${ext}`;
+				return {
+					buildOptions: { win: ["nsis"] },
+					options: winOptions,
+				};
+			case "win7_green":
+				winOptions.artifactName = `\${productName}-v\${version}-win7_${arch}-green.\${ext}`;
+				return {
+					buildOptions: { win: ["7z"] },
+					options: winOptions,
+				};
+			case "portable":
+				winOptions.artifactName = `\${productName}-v\${version}-${arch}-portable.\${ext}`;
+				return {
+					buildOptions: { win: ["portable"] },
+					options: winOptions,
+				};
+			default:
+				throw new Error("Unknown package type: " + packageType);
+		}
+	},
+	/**
+	 *
+	 * @param {*} arch
+	 * @param {*} packageType
+	 * @returns {{ buildOptions: import('electron-builder').CliOptions, options: import('electron-builder').Configuration }}
+	 */
+	linux(arch, packageType) {
+		switch (packageType) {
+			case "deb":
+				linuxOptions.artifactName = `\${productName}_\${version}_${arch == "x64" ? "amd64" : arch}.\${ext}`;
+				return {
+					buildOptions: { linux: ["deb"] },
+					options: linuxOptions,
+				};
+			case "appImage":
+				linuxOptions.artifactName = `\${productName}_\${version}_${arch}.\${ext}`;
+				return {
+					buildOptions: { linux: ["AppImage"] },
+					options: linuxOptions,
+				};
+			case "pacman":
+				linuxOptions.artifactName = `\${productName}_\${version}_${arch}.\${ext}`;
+				return {
+					buildOptions: { linux: ["pacman"] },
+					options: linuxOptions,
+				};
+			case "rpm":
+				linuxOptions.artifactName = `\${productName}-\${version}.${arch}.\${ext}`;
+				return {
+					buildOptions: { linux: ["rpm"] },
+					options: linuxOptions,
+				};
+			default:
+				throw new Error("Unknown package type: " + packageType);
+		}
+	},
+	/**
+	 *
+	 * @param {*} arch
+	 * @param {*} packageType
+	 * @returns {{ buildOptions: import('electron-builder').CliOptions, options: import('electron-builder').Configuration }}
+	 */
+	mac(arch, packageType) {
+		switch (packageType) {
+			case "dmg":
+				macOptions.artifactName = `\${productName}-\${version}-${arch}.\${ext}`;
+				return {
+					buildOptions: { mac: ["dmg"] },
+					options: macOptions,
+				};
+			default:
+				throw new Error("Unknown package type: " + packageType);
+		}
+	},
+};
 
 /**
  *
@@ -356,48 +390,59 @@ const createTarget = {
  * @param {*} packageType 包类型
  * @param {'onTagOrDraft' | 'always' | 'never'} publishType 发布类型
  */
-const build = async(target, arch, packageType, publishType) => {
-  if (target == 'dir') {
-    const buildOptions = await withMpvResources(options, process.platform, process.arch)
-    await builder.build({
-      dir: true,
-      config: { ...buildOptions, ...winOptions, ...linuxOptions, ...macOptions },
-    })
-    return
-  }
-  const platformMap = { win: 'win32', mac: 'darwin', linux: 'linux' }
-  const mpvPlatform = platformMap[target]
-  const mpvArch = arch === 'x86_64' ? 'x64' : arch
-  const buildOptions = await withMpvResources(options, mpvPlatform, mpvArch)
-  const targetInfo = createTarget[target](arch, packageType)
-  // Promise is returned
-  await builder.build({
-    ...targetInfo.buildOptions,
-    publish: publishType ?? 'never',
-    x64: arch == 'x64' || arch == 'x86_64',
-    ia32: arch == 'x86' || arch == 'x86_64',
-    arm64: arch == 'arm64',
-    armv7l: arch == 'armv7l',
-    config: { ...buildOptions, ...targetInfo.options },
-  })
-  // .then((result) => {
-  //   console.log(JSON.stringify(result))
-  // })
-  // .catch((error) => {
-  //   console.error(error)
-  // })
-}
+const build = async (target, arch, packageType, publishType) => {
+	if (target == "dir") {
+		const buildOptions = await withMpvResources(
+			options,
+			process.platform,
+			process.arch,
+		);
+		await builder.build({
+			dir: true,
+			config: {
+				...buildOptions,
+				...winOptions,
+				...linuxOptions,
+				...macOptions,
+			},
+		});
+		return;
+	}
+	const platformMap = { win: "win32", mac: "darwin", linux: "linux" };
+	const mpvPlatform = platformMap[target];
+	const mpvArch = arch === "x86_64" ? "x64" : arch;
+	const buildOptions = await withMpvResources(options, mpvPlatform, mpvArch);
+	const targetInfo = createTarget[target](arch, packageType);
+	// Promise is returned
+	await builder.build({
+		...targetInfo.buildOptions,
+		publish: publishType ?? "never",
+		x64: arch == "x64" || arch == "x86_64",
+		ia32: arch == "x86" || arch == "x86_64",
+		arm64: arch == "arm64",
+		armv7l: arch == "armv7l",
+		config: { ...buildOptions, ...targetInfo.options },
+	});
+	// .then((result) => {
+	//   console.log(JSON.stringify(result))
+	// })
+	// .catch((error) => {
+	//   console.error(error)
+	// })
+};
 
-const params = {}
+const params = {};
 
 for (const param of process.argv.slice(2)) {
-  const [name, value] = param.split('=')
-  params[name] = value
+	const [name, value] = param.split("=");
+	params[name] = value;
 }
 
-if (params.target == null) throw new Error('Missing target')
-if (params.target != 'dir' && params.arch == null) throw new Error('Missing arch')
-if (params.target != 'dir' && params.type == null) throw new Error('Missing type')
+if (params.target == null) throw new Error("Missing target");
+if (params.target != "dir" && params.arch == null)
+	throw new Error("Missing arch");
+if (params.target != "dir" && params.type == null)
+	throw new Error("Missing type");
 
-console.log(params.target, params.arch, params.type, params.publish ?? '')
-build(params.target, params.arch, params.type, params.publish)
+console.log(params.target, params.arch, params.type, params.publish ?? "");
+build(params.target, params.arch, params.type, params.publish);

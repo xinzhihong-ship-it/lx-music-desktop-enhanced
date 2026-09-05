@@ -1,5 +1,6 @@
 <template lang="pug">
 dt#play {{ $t('setting__play') }}
+setting-vst3
 dd
   div(:class="$style.engineSection")
     h3#basic_play_engine {{ $t('setting__play_engine') }}
@@ -48,12 +49,61 @@ dd
     base-checkbox(id="setting_player_awap_lyric_trans_roma" :model-value="appSetting['player.isSwapLyricTranslationAndRoma']" :label="$t('setting__player_swap_lyric_trans_roma')" @update:model-value="updateSetting({'player.isSwapLyricTranslationAndRoma': $event})")
   .gap-top
     base-checkbox(id="setting_player_auto_skip_on_error" :model-value="appSetting['player.autoSkipOnError']" :label="$t('setting__play_auto_skip_on_error')" @update:model-value="updateSetting({'player.autoSkipOnError': $event})")
-  .gap-top(v-if="appSetting['player.autoSkipOnError']")
-    span {{ $t('setting__play_error_strategy') }}
-    base-selection.gap-left(
+  .gap-top(v-if="appSetting['player.autoSkipOnError']" :class="$style.errorSettingRow")
+    span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_strategy') }}
+    base-selection(
+      :class="$style.errorStrategySelect"
       :model-value="appSetting['player.playErrorStrategy']" :list="errorStrategyList"
       item-key="id" item-name="label"
       @update:model-value="updateSetting({'player.playErrorStrategy': $event})")
+  div(v-show="appSetting['player.autoSkipOnError'] && appSetting['player.playErrorStrategy'] == 'auto'")
+    .gap-top(:class="$style.errorSettingRow")
+      span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_retry_count') }}
+      base-input(
+        :class="$style.errorCountInput"
+        :model-value="playErrorRetryCount"
+        :aria-label="$t('setting__play_error_retry_count')"
+        type="number"
+        :min="PLAY_ERROR_RETRY_COUNT.min"
+        :max="PLAY_ERROR_RETRY_COUNT.max"
+        step="1"
+        @change="handlePlayErrorRetryCountChange"
+        @submit="handlePlayErrorRetryCountChange")
+    .gap-top(:class="$style.errorSettingRow")
+      span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_api_source_count') }}
+      base-input(
+        :class="$style.errorCountInput"
+        :model-value="playErrorApiSourceCount"
+        :aria-label="$t('setting__play_error_api_source_count')"
+        type="number"
+        :min="PLAY_ERROR_API_SOURCE_COUNT.min"
+        :max="PLAY_ERROR_API_SOURCE_COUNT.max"
+        step="1"
+        @change="handlePlayErrorApiSourceCountChange"
+        @submit="handlePlayErrorApiSourceCountChange")
+      span(:class="$style.errorSettingTip") {{ $t('setting__play_error_api_source_tip') }}
+    .gap-top
+      span {{ $t('setting__play_error_strategy_order') }}
+      ol(ref="domErrorStrategyList" :class="$style.errorStrategyList")
+        li(v-for="(item, index) in errorActionList" :key="item.id" :class="[$style.errorStrategyItem, item.id == 'next' && 'error-strategy-fixed']")
+          button.error-strategy-drag-handle(
+            type="button"
+            :class="$style.errorStrategyDragHandle"
+            :disabled="item.id == 'next'"
+            :aria-label="$t('setting__play_error_strategy_drag', { name: item.label })") ⋮⋮
+          span(:class="$style.errorStrategyName") {{ index + 1 }}. {{ item.label }}
+          button(
+            type="button"
+            :class="$style.errorStrategyMoveButton"
+            :disabled="index == 0 || item.id == 'next'"
+            :aria-label="$t('setting__play_error_strategy_move_up', { name: item.label })"
+            @click="moveErrorStrategy(index, index - 1)") ↑
+          button(
+            type="button"
+            :class="$style.errorStrategyMoveButton"
+            :disabled="index >= errorActionList.length - 2"
+            :aria-label="$t('setting__play_error_strategy_move_down', { name: item.label })"
+            @click="moveErrorStrategy(index, index + 1)") ↓
   .gap-top
     base-checkbox(id="setting_player_lyric_s2t" :model-value="appSetting['player.isS2t']" :label="$t('setting__play_lyric_s2t')" @update:model-value="updateSetting({'player.isS2t': $event})")
   .gap-top
@@ -92,21 +142,31 @@ dd(:aria-label="$t('setting__play_mediaDevice_title')")
 
 <script>
 import { ref, onBeforeUnmount, onMounted, watch, computed } from '@common/utils/vueTools'
-import { hasInitedAdvancedAudioFeatures, setMediaDeviceId } from '@renderer/plugins/player'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
 import * as mpvVideoPlayer from '@renderer/plugins/player/mpvVideo'
 import { dialog } from '@renderer/plugins/Dialog'
 import showTip from '@renderer/plugins/Tips/Tips'
 import { useI18n } from '@renderer/plugins/i18n'
-import { appSetting, saveMediaDeviceId, updateSetting } from '@renderer/store/setting'
+import { appSetting, updateSetting } from '@renderer/store/setting'
 import { setPowerSaveBlocker } from '@renderer/core/player/utils'
 import { isPlay, playMusicInfo } from '@renderer/store/player/state'
 import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
 import { isMac, log } from '@common/utils'
+import useDrag from '@renderer/utils/compositions/useDrag'
+import SettingVst3 from './SettingVst3.vue'
+import {
+  movePlayErrorAction,
+  normalizePlayErrorApiSourceCount,
+  normalizePlayErrorRetryCount,
+  normalizePlayErrorStrategyOrder,
+  PLAY_ERROR_API_SOURCE_COUNT,
+  PLAY_ERROR_RETRY_COUNT,
+} from '@common/utils/playErrorStrategy'
 
 
 export default {
   name: 'SettingPlay',
+  components: { SettingVst3 },
   setup() {
     const t = useI18n()
     const playQualityList = [...TRY_QUALITYS_LIST, '128k'].reverse()
@@ -116,6 +176,41 @@ export default {
       { id: 'quality', label: t('setting__play_error_strategy_quality') },
       { id: 'next', label: t('setting__play_error_strategy_next') },
     ]
+    const errorActionLabels = {
+      apiSource: t('setting__play_error_action_api_source'),
+      platform: t('setting__play_error_action_platform'),
+      quality: t('setting__play_error_action_quality'),
+      next: t('setting__play_error_action_next'),
+    }
+    const errorActionList = computed(() => normalizePlayErrorStrategyOrder(appSetting['player.playErrorStrategyOrder'])
+      .map(id => ({ id, label: errorActionLabels[id] })))
+    const moveErrorStrategy = (oldIndex, newIndex) => {
+      updateSetting({
+        'player.playErrorStrategyOrder': movePlayErrorAction(appSetting['player.playErrorStrategyOrder'], oldIndex, newIndex),
+      })
+    }
+    const domErrorStrategyList = ref(null)
+    const errorStrategyDrag = useDrag({
+      dom_list: domErrorStrategyList,
+      dragingItemClassName: 'setting-error-strategy-dragging',
+      filter: 'error-strategy-fixed',
+      handle: 'error-strategy-drag-handle',
+      onUpdate: (newIndex, oldIndex) => { moveErrorStrategy(oldIndex, newIndex) },
+    })
+    const playErrorRetryCount = ref(normalizePlayErrorRetryCount(appSetting['player.playErrorRetryCount']))
+    const playErrorApiSourceCount = ref(normalizePlayErrorApiSourceCount(appSetting['player.playErrorApiSourceCount']))
+    const handlePlayErrorRetryCountChange = value => {
+      const count = normalizePlayErrorRetryCount(value)
+      playErrorRetryCount.value = count
+      if (count != appSetting['player.playErrorRetryCount']) updateSetting({ 'player.playErrorRetryCount': count })
+    }
+    const handlePlayErrorApiSourceCountChange = value => {
+      const count = normalizePlayErrorApiSourceCount(value)
+      playErrorApiSourceCount.value = count
+      if (count != appSetting['player.playErrorApiSourceCount']) updateSetting({ 'player.playErrorApiSourceCount': count })
+    }
+    watch(() => appSetting['player.playErrorRetryCount'], value => { playErrorRetryCount.value = normalizePlayErrorRetryCount(value) })
+    watch(() => appSetting['player.playErrorApiSourceCount'], value => { playErrorApiSourceCount.value = normalizePlayErrorApiSourceCount(value) })
 
     // Audirvana 仅 macOS 可用（主进程在非 mac 平台直接 reject），其他平台不展示该选项
     const playEngineList = [
@@ -289,6 +384,7 @@ export default {
     })
     // 设置项可能在组件 setup 之后才合并完成，因此在挂载后统一加载一次。
     onMounted(() => {
+      errorStrategyDrag.setDisabled(false)
       if (isMpvEngine()) void loadMpvAudioDevices()
       // 清理旧配置里被错误拆分的 --audio-device 参数
       const cleaned = cleanExtraArgs(appSetting['player.mpv.extraArgs'].join(' '))
@@ -317,30 +413,9 @@ export default {
         }
         return
       }
-      // Electron 模式：走原有逻辑
-      if (hasInitedAdvancedAudioFeatures()) {
-        await dialog({
-          message: t('setting__play_media_device_error_tip'),
-          confirmButtonText: t('alert_button_text'),
-        })
-        mediaDeviceId.value = appSetting['player.mediaDeviceId']
-      } else if (appSetting['player.audioVisualization']) {
-        const confirm = await dialog.confirm({
-          message: t('setting__play_media_device_tip'),
-          cancelButtonText: t('cancel_button_text'),
-          confirmButtonText: t('confirm_button_text'),
-        })
-        if (confirm) {
-          updateSetting({
-            'player.audioVisualization': false,
-            'player.mediaDeviceId': mediaDeviceId.value,
-          })
-        } else {
-          mediaDeviceId.value = appSetting['player.mediaDeviceId']
-        }
-      } else {
-        appSetting['player.mediaDeviceId'] = mediaDeviceId.value
-      }
+      // Electron 模式：AudioContext 与 <audio> 一起重定向到所选设备（Chromium 110+），
+      // 高级音频功能激活时不再锁定默认设备。
+      appSetting['player.mediaDeviceId'] = mediaDeviceId.value
     }
 
     watch(() => appSetting['player.mediaDeviceId'], val => {
@@ -359,19 +434,6 @@ export default {
     const isMaxOutputChannelCount = ref(appSetting['player.isMaxOutputChannelCount'])
     const handleUpdateMaxOutputChannelCount = async(enabled) => {
       isMaxOutputChannelCount.value = enabled
-      if (appSetting['player.mediaDeviceId'] != 'default') {
-        const confirm = await dialog.confirm({
-          message: t('setting__play_advanced_audio_features_tip'),
-          cancelButtonText: t('cancel_button_text'),
-          confirmButtonText: t('confirm_button_text'),
-        })
-        if (!confirm) {
-          isMaxOutputChannelCount.value = false
-          return
-        }
-        await setMediaDeviceId('default').catch(_ => _)
-        saveMediaDeviceId('default')
-      }
       updateSetting({ 'player.isMaxOutputChannelCount': enabled })
     }
 
@@ -387,6 +449,15 @@ export default {
       handleUpdateMaxOutputChannelCount,
       playQualityList,
       errorStrategyList,
+      errorActionList,
+      domErrorStrategyList,
+      moveErrorStrategy,
+      playErrorRetryCount,
+      playErrorApiSourceCount,
+      handlePlayErrorRetryCountChange,
+      handlePlayErrorApiSourceCountChange,
+      PLAY_ERROR_RETRY_COUNT,
+      PLAY_ERROR_API_SOURCE_COUNT,
       playEngineList,
       playEngine,
       handlePlayEngineChange,
@@ -474,6 +545,72 @@ export default {
   color: var(--color-font-label);
   line-height: 1.6;
   margin: 0;
+}
+.errorSettingRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+}
+.errorSettingLabel {
+  display: block;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.errorStrategySelect {
+  --selection-width: 220px;
+  width: 220px;
+  max-width: 100%;
+}
+.errorCountInput {
+  width: 64px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.errorSettingTip {
+  display: block;
+  color: var(--color-font-label);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.errorStrategyList {
+  max-width: 520px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.errorStrategyItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  border-radius: @form-radius;
+  background-color: var(--color-primary-background);
+}
+.errorStrategyDragHandle,
+.errorStrategyMoveButton {
+  border: 0;
+  color: var(--color-button-font);
+  background: transparent;
+}
+.errorStrategyDragHandle {
+  cursor: grab;
+}
+.errorStrategyName {
+  flex: 1;
+}
+.errorStrategyMoveButton {
+  cursor: pointer;
+  &:disabled {
+    cursor: default;
+    opacity: .35;
+  }
+}
+:global(.setting-error-strategy-dragging) {
+  opacity: .45;
 }
 .qualityGrid {
   display: grid;

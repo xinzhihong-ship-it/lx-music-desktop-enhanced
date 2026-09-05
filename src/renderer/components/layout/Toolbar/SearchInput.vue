@@ -1,11 +1,24 @@
 <template>
-  <material-search-input v-model="searchText" :list="tipList" :visible-list="visibleList" @event="handleEvent" />
+  <div :class="$style.container">
+    <button type="button" :class="$style.navBtn" :disabled="!canGoBack" :aria-label="$t('pagination__prev')" @click="router.back">
+      <svg viewBox="0 0 451.846 451.847">
+        <use xlink:href="#icon-left" />
+      </svg>
+    </button>
+    <button type="button" :class="$style.navBtn" :disabled="!canGoForward" :aria-label="$t('pagination__next')" @click="router.forward">
+      <svg viewBox="0 0 451.846 451.847">
+        <use xlink:href="#icon-right" />
+      </svg>
+    </button>
+    <material-search-input v-model="searchText" :class="$style.search" :list="tipList" :visible-list="visibleList" @event="handleEvent" />
+  </div>
 </template>
 
 <script>
 import music from '@renderer/utils/musicSdk'
 import { debounce } from '@common/utils'
 import {
+  computed,
   markRaw,
   ref,
   watch,
@@ -33,6 +46,8 @@ export default {
 
     const route = useRoute()
     const router = useRouter()
+    const canGoBack = computed(() => Boolean(route.fullPath && router.options.history.state.back))
+    const canGoForward = computed(() => Boolean(route.fullPath && router.options.history.state.forward))
 
     watch(() => route.name, (newValue, oldValue) => {
       if (oldValue == 'Search' && newValue != 'SongListDetail') {
@@ -132,8 +147,54 @@ export default {
       visibleList,
       tipList,
       handleEvent,
+      router,
+      canGoBack,
+      canGoForward,
     }
   },
 }
 
 </script>
+
+<style lang="less" module>
+@import '@renderer/assets/styles/layout.less';
+
+.container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: calc(35% + 56px);
+  height: @height-toolbar * 0.52;
+  -webkit-app-region: no-drag;
+}
+
+.navBtn {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 5px;
+  border: 0;
+  background: none;
+  color: var(--color-font-label);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: var(--color-primary-font-hover);
+  }
+
+  &:disabled {
+    opacity: .35;
+    cursor: default;
+  }
+
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+.search {
+  flex: 1;
+  width: auto;
+}
+</style>

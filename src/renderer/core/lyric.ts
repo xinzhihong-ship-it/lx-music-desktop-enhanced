@@ -3,15 +3,25 @@ import { getAnalyser, getCurrentTime as getPlayerCurrentTime } from '@renderer/p
 import { lyric, setLines, setOffset, setTempOffset, setText } from '@renderer/store/player/lyric'
 import { isPlay, musicInfo } from '@renderer/store/player/state'
 import { setStatusText } from '@renderer/store/player/action'
-import { markRawList } from '@common/utils/vueTools'
+import { markRawList, watch } from '@common/utils/vueTools'
+import { vst3Runtime } from '@renderer/plugins/player/vst3'
 import { appSetting } from '@renderer/store/setting'
+import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { onNewDesktopLyricProcess } from '@renderer/utils/ipc'
 
 const getCurrentTime = () => {
-  return getPlayerCurrentTime() * 1000
+  const delay = vst3Runtime.active && appSetting['player.playEngine'] === 'electron' && !isBiliVideoActive()
+    ? (vst3Runtime.latencyMs + vst3Runtime.bridgeMs) * appSetting['player.playbackRate'] : 0
+  return Math.max(0, getPlayerCurrentTime() * 1000 - delay)
 }
 
 let lrc: Lyric
+watch(() => [vst3Runtime.active, vst3Runtime.latencyMs, vst3Runtime.bridgeMs], () => {
+  if (!lrc || !isPlay.value) return
+  const time = getCurrentTime()
+  lrc.play(time)
+  sendDesktopLyricInfo({ action: 'set_play', data: time })
+})
 let desktopLyricPort: Electron.IpcRendererEvent['ports'][0] | null = null
 const analyserTools: {
   dataArray: Uint8Array

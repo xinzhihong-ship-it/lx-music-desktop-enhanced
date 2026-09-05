@@ -22,7 +22,7 @@ export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.
   //   const cachedInfo = await getOtherSourceFromStore(musicInfo.id)
   //   if (cachedInfo.length) return cachedInfo
   // }
-  if (otherSourceCache.has(musicInfo)) return otherSourceCache.get(musicInfo)!
+  if (!isRefresh && otherSourceCache.has(musicInfo)) return otherSourceCache.get(musicInfo)!
   let key: string
   let searchMusicInfo: {
     name: string
@@ -60,26 +60,29 @@ export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.
     otherSourceCache.set(musicInfo, [])
     return []
   }
-  if (getOtherSourcePromises.has(key)) return getOtherSourcePromises.get(key)
+  if (!isRefresh && getOtherSourcePromises.has(key)) return getOtherSourcePromises.get(key)
 
-  const promise = new Promise<LX.Music.MusicInfoOnline[]>((resolve, reject) => {
+  let promise: Promise<LX.Music.MusicInfoOnline[]>
+  promise = new Promise<LX.Music.MusicInfoOnline[]>((resolve, reject) => {
     let timeout: null | NodeJS.Timeout = setTimeout(() => {
       timeout = null
       reject(new Error('find music timeout'))
     }, 15_000)
     musicSdk.findMusic(searchMusicInfo).then((otherSource: any[]) => {
-      if (otherSourceCache.size > 10) otherSourceCache.clear()
       const source = otherSource.map(item => toNewMusicInfo(item) as LX.Music.MusicInfoOnline)
-      otherSourceCache.set(musicInfo, source)
       resolve(source)
     }).catch(reject).finally(() => {
       if (timeout) clearTimeout(timeout)
     })
   }).then((otherSource) => {
+    if (getOtherSourcePromises.get(key) === promise) {
+      if (otherSourceCache.size > 10) otherSourceCache.clear()
+      otherSourceCache.set(musicInfo, otherSource)
+    }
     // if (otherSource.length) void saveOtherSourceFromStore(musicInfo.id, otherSource)
     return otherSource
   }).finally(() => {
-    if (getOtherSourcePromises.has(key)) getOtherSourcePromises.delete(key)
+    if (getOtherSourcePromises.get(key) === promise) getOtherSourcePromises.delete(key)
   })
   getOtherSourcePromises.set(key, promise)
   return promise
@@ -354,7 +357,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
     if (!allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
     onToggleSource()
     // eslint-disable-next-line @typescript-eslint/promise-function-async
-    return getOtherSource(musicInfo).then(otherSource => {
+    return getOtherSource(musicInfo, isRefresh).then(otherSource => {
       console.log('find otherSource', otherSource)
       if (otherSource.length) {
         return getOnlineOtherSourceMusicUrl({
@@ -438,7 +441,7 @@ export const handleGetOnlinePicUrl = async({ musicInfo, isRefresh, onToggleSourc
     if (!allowToggleSource) throw err
     onToggleSource()
     // eslint-disable-next-line @typescript-eslint/promise-function-async
-    return getOtherSource(musicInfo).then(otherSource => {
+    return getOtherSource(musicInfo, isRefresh).then(otherSource => {
       console.log('find otherSource', otherSource)
       if (otherSource.length) {
         return getOnlineOtherSourcePicUrl({
@@ -537,7 +540,7 @@ export const handleGetOnlineLyricInfo = async({ musicInfo, onToggleSource, isRef
 
     onToggleSource()
     // eslint-disable-next-line @typescript-eslint/promise-function-async
-    return getOtherSource(musicInfo).then(otherSource => {
+    return getOtherSource(musicInfo, isRefresh).then(otherSource => {
       console.log('find otherSource', otherSource)
       if (otherSource.length) {
         return getOnlineOtherSourceLyricInfo({

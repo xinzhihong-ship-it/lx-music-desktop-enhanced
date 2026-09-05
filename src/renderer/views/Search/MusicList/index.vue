@@ -9,6 +9,7 @@
       :no-item="listInfo.noItemLabel"
       :source-tag="sourceId == 'all'"
       check-api-source
+      search-by-field
       @toggle-page="handleTogglePage"
       @play-list="handlePlayList"
     />

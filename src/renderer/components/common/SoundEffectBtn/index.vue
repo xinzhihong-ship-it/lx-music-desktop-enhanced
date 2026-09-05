@@ -17,13 +17,12 @@
         <BiquadFilter />
       </div>
     </div>
-    <p v-if="showTip" :class="$style.tip">{{ $t('player__sound_effect_features_tip') }}</p>
     <!-- </main> -->
   </material-modal>
 </template>
 
 <script setup>
-import { ref, watch } from '@common/utils/vueTools'
+import { ref } from '@common/utils/vueTools'
 // import useNextTogglePlay from '@renderer/utils/compositions/useNextTogglePlay'
 // import useToggleDesktopLyric from '@renderer/utils/compositions/useToggleDesktopLyric'
 // import { musicInfo, playMusicInfo } from '@renderer/store/player/state'
@@ -34,7 +33,6 @@ import BiquadFilter from './BiquadFilter.vue'
 import AudioPanner from './AudioPanner.vue'
 import AudioConvolution from './AudioConvolution.vue'
 import PitchShifter from './PitchShifter.vue'
-import { appSetting } from '@renderer/store/setting'
 
 defineProps({
   teleport: {
@@ -44,12 +42,6 @@ defineProps({
 })
 
 const visible = ref(false)
-
-const showTip = ref(false)
-
-watch(visible, (visible) => {
-  if (visible) showTip.value = appSetting['player.mediaDeviceId'] != 'default'
-})
 
 
 </script>

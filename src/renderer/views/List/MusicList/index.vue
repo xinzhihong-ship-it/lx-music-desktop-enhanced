@@ -2,6 +2,10 @@
   <div :class="$style.list">
     <div :class="$style.filter">
       <input v-model="filterText" type="search" :placeholder="$t('list__search')">
+      <label>
+        <input v-model="duplicateOnly" type="checkbox">
+        {{ $t('lists__duplicate') }}
+      </label>
     </div>
     <div class="thead">
       <table>
@@ -141,7 +145,7 @@ import useListScroll from './useListScroll'
 import useMusicToggle from './useMusicToggle'
 import { appSetting } from '@renderer/store/setting'
 import { computed, ref, watch } from '@common/utils/vueTools'
-import { filterMusicRows } from '@renderer/utils/filterMusicRows'
+import { filterDuplicateMusicRows, filterMusicRows } from '@renderer/utils/filterMusicRows'
 export default {
   name: 'MusicList',
   components: {
@@ -159,6 +163,7 @@ export default {
   setup(props, { emit }) {
     const actionButtonsVisible = appSetting['list.actionButtonsVisible']
     const filterText = ref('')
+    const duplicateOnly = ref(false)
 
     let scrollIndex = null
     let isAnimation = false
@@ -184,11 +189,16 @@ export default {
       isShowSource,
       excludeListIds,
     } = useListInfo({ props, onLoadedList })
-    const filteredRows = computed(() => filterMusicRows(list.value, filterText.value))
+    const duplicateIndexes = computed(() => new Set(
+      duplicateOnly.value ? filterDuplicateMusicRows(list.value).map(({ index }) => index) : [],
+    ))
+    const filteredRows = computed(() => filterMusicRows(list.value, filterText.value)
+      .filter(({ index }) => !duplicateOnly.value || duplicateIndexes.value.has(index)))
     const filteredList = computed(() => filteredRows.value.map(({ item }) => item))
     const getSourceIndex = index => filteredRows.value[index]?.index ?? index
     watch(() => props.listId, () => {
       filterText.value = ''
+      duplicateOnly.value = false
     })
 
     const {
@@ -380,6 +390,7 @@ export default {
 
       list,
       filterText,
+      duplicateOnly,
       filteredList,
       getSourceIndex,
       playerInfo,
@@ -432,9 +443,13 @@ export default {
   flex: none;
   padding: 7px 10px;
   border-bottom: var(--color-list-header-border-bottom);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 
-  input {
-    width: 100%;
+  > input {
+    flex: auto;
+    min-width: 0;
     height: 30px;
     box-sizing: border-box;
     padding: 0 10px;
@@ -446,6 +461,13 @@ export default {
     &:focus {
       border-color: var(--color-primary);
     }
+  }
+  label {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
   }
 }
 .num {

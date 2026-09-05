@@ -45,7 +45,8 @@
                 </div>
                 <div class="list-item-cell no-select num" style="flex: 0 0 5%;" @click.stop>{{ index + 1 }}</div>
                 <div class="list-item-cell auto name">
-                  <span class="select name" :aria-label="item.name">{{ item.name }}</span>
+                  <button v-if="searchByField" type="button" class="select name hover" :class="$style.fieldLink" :aria-label="item.name" @click.stop="handleFieldSearch(item.name)">{{ item.name }}</button>
+                  <span v-else class="select name" :aria-label="item.name">{{ item.name }}</span>
                   <span v-if="item.meta._qualitys.master" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_master') }}</span>
                   <span v-else-if="item.meta._qualitys.atmos_plus" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos_plus') }}</span>
                   <span v-else-if="item.meta._qualitys.atmos" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos') }}</span>
@@ -56,8 +57,14 @@
                   <span v-else-if="item.meta._qualitys.risk" class="no-select badge badge-theme-tertiary">{{ $t('tag__risk_control') }}</span>
                   <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.meta.platformSources?.join(' · ') || item.source }}</span>
                 </div>
-                <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-                <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+                <div class="list-item-cell" style="flex: 0 0 22%;">
+                  <button v-if="searchByField && item.singer" type="button" class="select hover" :class="$style.fieldLink" :aria-label="item.singer" @click.stop="handleFieldSearch(item.singer)">{{ item.singer }}</button>
+                  <span v-else class="select" :aria-label="item.singer">{{ item.singer }}</span>
+                </div>
+                <div class="list-item-cell" style="flex: 0 0 22%;">
+                  <button v-if="searchByField && item.meta.albumName" type="button" class="select hover" :class="$style.fieldLink" :aria-label="item.meta.albumName" @click.stop="handleFieldSearch(item.meta.albumName)">{{ item.meta.albumName }}</button>
+                  <span v-else class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span>
+                </div>
                 <div class="list-item-cell" style="flex: 0 0 9%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
                 <div class="list-item-cell" style="flex: 0 0 16%; padding-left: 0; padding-right: 0;">
                   <material-list-buttons :index="index" :remove-btn="false" :download-btn="assertApiSupport(item.source)" :play-btn="checkApiSource ? assertApiSupport(item.source) : true" @btn-click="handleListBtnClick" />
@@ -81,7 +88,8 @@
                 </div>
                 <div class="list-item-cell no-select num" style="flex: 0 0 5%;" @click.stop>{{ index + 1 }}</div>
                 <div class="list-item-cell auto name">
-                  <span class="select name" :aria-label="item.name">{{ item.name }}</span>
+                  <button v-if="searchByField" type="button" class="select name hover" :class="$style.fieldLink" :aria-label="item.name" @click.stop="handleFieldSearch(item.name)">{{ item.name }}</button>
+                  <span v-else class="select name" :aria-label="item.name">{{ item.name }}</span>
                   <span v-if="item.meta._qualitys.master" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_master') }}</span>
                   <span v-else-if="item.meta._qualitys.atmos_plus" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos_plus') }}</span>
                   <span v-else-if="item.meta._qualitys.atmos" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos') }}</span>
@@ -92,8 +100,14 @@
                   <span v-else-if="item.meta._qualitys.risk" class="no-select badge badge-theme-tertiary">{{ $t('tag__risk_control') }}</span>
                   <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.meta.platformSources?.join(' · ') || item.source }}</span>
                 </div>
-                <div class="list-item-cell" style="flex: 0 0 24%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-                <div class="list-item-cell" style="flex: 0 0 27%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+                <div class="list-item-cell" style="flex: 0 0 24%;">
+                  <button v-if="searchByField && item.singer" type="button" class="select hover" :class="$style.fieldLink" :aria-label="item.singer" @click.stop="handleFieldSearch(item.singer)">{{ item.singer }}</button>
+                  <span v-else class="select" :aria-label="item.singer">{{ item.singer }}</span>
+                </div>
+                <div class="list-item-cell" style="flex: 0 0 27%;">
+                  <button v-if="searchByField && item.meta.albumName" type="button" class="select hover" :class="$style.fieldLink" :aria-label="item.meta.albumName" @click.stop="handleFieldSearch(item.meta.albumName)">{{ item.meta.albumName }}</button>
+                  <span v-else class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span>
+                </div>
                 <div class="list-item-cell" style="flex: 0 0 10%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
               </div>
             </template>
@@ -175,6 +189,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    searchByField: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['show-menu', 'play-list', 'togglePage', 'remove-from-platform'],
   setup(props, { emit }) {
@@ -216,6 +234,7 @@ export default {
 
     const {
       handleSearch,
+      handleFieldSearch,
       handleSimilarSongs,
       handleOpenMusicDetail,
       handleDislikeMusic,
@@ -350,6 +369,7 @@ export default {
       locateMusic,
       locatedIndex,
       actionButtonsVisible,
+      handleFieldSearch,
     }
   },
 }
@@ -367,6 +387,18 @@ export default {
   :global(.thead) {
     padding-right: 10px;
   }
+}
+
+.fieldLink {
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .selectionToolbar {

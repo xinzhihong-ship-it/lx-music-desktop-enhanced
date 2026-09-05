@@ -1,6 +1,7 @@
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
 import { registerListActionEvent } from '../../../../listEvent'
 import { getUserSpace } from '../../../user'
+import { filterListActionForMobile } from '../compatibility'
 
 // let socket: LX.Sync.Server.Socket | null
 let unregisterLocalListAction: (() => void) | null
@@ -14,7 +15,12 @@ const sendListAction = async(wss: LX.Sync.Server.SocketServer, action: LX.Sync.L
     if (!client.moduleReadys?.list) continue
     // eslint-disable-next-line require-atomic-updates
     if (!key) key = await userSpace.listManage.createSnapshot()
-    void client.remoteQueueList.onListSyncAction(action).then(async() => {
+    const clientAction = client.keyInfo.isMobile ? filterListActionForMobile(action) : action
+    if (!clientAction) {
+      void userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
+      continue
+    }
+    void client.remoteQueueList.onListSyncAction(clientAction).then(async() => {
       return userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
     }).catch(err => {
       // TODO send status

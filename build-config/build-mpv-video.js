@@ -8,17 +8,22 @@ const sourceFile = path.join(sourceDir, 'build/Release/lx_mpv_video.node')
 const targetFile = path.join(root, 'build/Release/lx_mpv_video.node')
 const runtimeDir = path.join(root, 'build/Release/mpv-libs')
 const windowSourceDir = path.join(root, 'native/mpv-window')
-const windowSourceFile = path.join(windowSourceDir, 'build/Release/lx_mpv_window.node')
+const windowSourceFile = path.join(
+  windowSourceDir,
+  'build/Release/lx_mpv_window.node',
+)
 const windowTargetFile = path.join(root, 'build/Release/lx_mpv_window.node')
 const nodeGyp = path.join(root, 'node_modules/node-gyp/bin/node-gyp.js')
 
-const getDylibDependencies = (filePath) => execFileSync('otool', ['-L', filePath], { encoding: 'utf8' })
-  .split(/\r?\n/)
-  .slice(1)
-  .map(line => line.trim().split(' (compatibility')[0])
-  .filter(Boolean)
+const getDylibDependencies = (filePath) =>
+  execFileSync('otool', ['-L', filePath], { encoding: 'utf8' })
+    .split(/\r?\n/)
+    .slice(1)
+    .map((line) => line.trim().split(' (compatibility')[0])
+    .filter(Boolean)
 
-const isHomebrewPath = filePath => filePath.startsWith('/opt/homebrew/') || filePath.startsWith('/usr/local/')
+const isHomebrewPath = (filePath) =>
+  filePath.startsWith('/opt/homebrew/') || filePath.startsWith('/usr/local/')
 
 const bundleMpvRuntime = (mpvPrefix) => {
   const mpvLibrary = path.join(mpvPrefix, 'lib/libmpv.2.dylib')
@@ -32,7 +37,7 @@ const bundleMpvRuntime = (mpvPrefix) => {
     const sourceRealPath = fs.realpathSync(sourcePath)
     const targetName = path.basename(sourcePath)
     if (dependencies.has(targetName)) {
-      if (dependencies.get(targetName) !== sourceRealPath) throw new Error(`macOS MPV 依赖重名：${targetName}`)
+      if (dependencies.get(targetName) !== sourceRealPath) { throw new Error(`macOS MPV 依赖重名：${targetName}`) }
       continue
     }
     fs.copyFileSync(sourceRealPath, path.join(runtimeDir, targetName))
@@ -46,13 +51,26 @@ const bundleMpvRuntime = (mpvPrefix) => {
     const targetPath = path.join(runtimeDir, targetName)
     for (const dependency of getDylibDependencies(sourcePath)) {
       if (!isHomebrewPath(dependency)) continue
-      execFileSync('install_name_tool', ['-change', dependency, `@rpath/${path.basename(dependency)}`, targetPath])
+      execFileSync('install_name_tool', [
+        '-change',
+        dependency,
+        `@rpath/${path.basename(dependency)}`,
+        targetPath,
+      ])
     }
     try {
-      execFileSync('install_name_tool', ['-id', `@rpath/${targetName}`, targetPath])
+      execFileSync('install_name_tool', [
+        '-id',
+        `@rpath/${targetName}`,
+        targetPath,
+      ])
     } catch {}
     try {
-      execFileSync('install_name_tool', ['-add_rpath', '@loader_path', targetPath])
+      execFileSync('install_name_tool', [
+        '-add_rpath',
+        '@loader_path',
+        targetPath,
+      ])
     } catch {}
   }
 
@@ -67,20 +85,44 @@ const bundleMpvRuntime = (mpvPrefix) => {
 
 const buildMpvVideoNative = () => {
   if (process.platform !== 'darwin') return false
-  const defaultPrefixes = process.arch === 'arm64'
-    ? ['/opt/homebrew/opt/mpv', '/usr/local/opt/mpv']
-    : ['/usr/local/opt/mpv', '/opt/homebrew/opt/mpv']
-  const mpvPrefix = process.env.LX_MPV_PREFIX || defaultPrefixes.find(prefix => fs.existsSync(path.join(prefix, 'include/mpv/client.h')) && fs.existsSync(path.join(prefix, 'lib/libmpv.2.dylib'))) || defaultPrefixes[0]
-  if (!fs.existsSync(path.join(mpvPrefix, 'include/mpv/client.h')) || !fs.existsSync(path.join(mpvPrefix, 'lib/libmpv.2.dylib'))) {
-    console.warn(`[mpv video] native bridge skipped: libmpv not found at ${mpvPrefix}`)
+  const defaultPrefixes =
+    process.arch === 'arm64'
+      ? ['/opt/homebrew/opt/mpv', '/usr/local/opt/mpv']
+      : ['/usr/local/opt/mpv', '/opt/homebrew/opt/mpv']
+  const mpvPrefix =
+    process.env.LX_MPV_PREFIX ||
+    defaultPrefixes.find(
+      (prefix) =>
+        fs.existsSync(path.join(prefix, 'include/mpv/client.h')) &&
+        fs.existsSync(path.join(prefix, 'lib/libmpv.2.dylib')),
+    ) ||
+    defaultPrefixes[0]
+  if (
+    !fs.existsSync(path.join(mpvPrefix, 'include/mpv/client.h')) ||
+    !fs.existsSync(path.join(mpvPrefix, 'lib/libmpv.2.dylib'))
+  ) {
+    console.warn(
+      `[mpv video] native bridge skipped: libmpv not found at ${mpvPrefix}`,
+    )
     return false
   }
-  const result = spawnSync(process.execPath, [nodeGyp, 'rebuild', '--directory', sourceDir, '--', `-Dmpv_prefix=${mpvPrefix}`], {
-    cwd: root,
-    stdio: 'inherit',
-    env: { ...process.env, MPV_PREFIX: mpvPrefix },
-  })
-  if (result.status !== 0 || !fs.existsSync(sourceFile)) throw new Error('mpv video native bridge build failed')
+  const result = spawnSync(
+    process.execPath,
+    [
+      nodeGyp,
+      'rebuild',
+      '--directory',
+      sourceDir,
+      '--',
+      `-Dmpv_prefix=${mpvPrefix}`,
+    ],
+    {
+      cwd: root,
+      stdio: 'inherit',
+      env: { ...process.env, MPV_PREFIX: mpvPrefix },
+    },
+  )
+  if (result.status !== 0 || !fs.existsSync(sourceFile)) { throw new Error('mpv video native bridge build failed') }
   fs.mkdirSync(path.dirname(targetFile), { recursive: true })
   fs.copyFileSync(sourceFile, targetFile)
   bundleMpvRuntime(mpvPrefix)
@@ -88,13 +130,17 @@ const buildMpvVideoNative = () => {
   return true
 }
 
-const buildMpvWindowNative = arch => {
+const buildMpvWindowNative = (arch) => {
   if (process.platform !== 'win32') return false
-  const result = spawnSync(process.execPath, [nodeGyp, 'rebuild', '--directory', windowSourceDir, `--arch=${arch}`], {
-    cwd: root,
-    stdio: 'inherit',
-  })
-  if (result.status !== 0 || !fs.existsSync(windowSourceFile)) throw new Error('Windows MPV video host build failed')
+  const result = spawnSync(
+    process.execPath,
+    [nodeGyp, 'rebuild', '--directory', windowSourceDir, `--arch=${arch}`],
+    {
+      cwd: root,
+      stdio: 'inherit',
+    },
+  )
+  if (result.status !== 0 || !fs.existsSync(windowSourceFile)) { throw new Error('Windows MPV video host build failed') }
   fs.mkdirSync(path.dirname(windowTargetFile), { recursive: true })
   fs.copyFileSync(windowSourceFile, windowTargetFile)
   console.log(`[mpv video] Windows host ready: ${windowTargetFile}`)

@@ -5,7 +5,7 @@ This directory defines the optional mpv sidecar layout for the high-fidelity ext
 Place platform mpv binaries here when preparing a distributable build:
 
 - macOS: `resources/mpv/darwin-arm64/mpv.app/Contents/MacOS/mpv` (or `resources/mpv/darwin-x64/mpv.app/Contents/MacOS/mpv`)
-- macOS 26+ variant (optional): `resources/mpv/darwin-arm64/mpv-macos26.app/Contents/MacOS/mpv` — a build compiled for macOS 26 or later (depends on the newer system libc++ and cannot launch on older macOS). At runtime it is preferred only when the system is macOS 26+ (Darwin 25+); older systems always use the compatible `mpv.app`.
+- macOS 26+ Apple Silicon variant: `resources/mpv/darwin-arm64/mpv-macos26.app/Contents/MacOS/mpv`. The download script resolves the current official `macos-26-arm` asset from `mpv-player/mpv` and installs it automatically; runtime selection is limited to Darwin 25+.
 - Windows: `resources/mpv/win32-x64/mpv.exe` (or `resources/mpv/win32-arm64/mpv.exe`)
 - Linux: `resources/mpv/linux-x64/mpv` (or `resources/mpv/linux-arm64/mpv`, `resources/mpv/linux-armv7l/mpv`)
 
@@ -27,15 +27,15 @@ npm run download:mpv -- --platform=win32 --arch=arm64
 npm run download:mpv -- --platform=linux --arch=x64
 ```
 
-`npm run pack:*` / `npm run publish:*` will also call this automatically before electron-builder starts, so end users do not need to install mpv themselves.
+`npm run pack:*` / `npm run publish:*` calls this automatically before electron-builder starts. macOS arm64 packages download both the legacy-compatible runtime and the official macOS 26+ runtime, so end users do not need to install mpv themselves.
 
 Runtime lookup order:
 
 1. User configured `player.mpv.path`
 2. Production bundled binary under `process.resourcesPath/bin/mpv` or `process.resourcesPath/bin/mpv.exe`
-3. Production macOS: `bin/mpv-macos26.app` (macOS 26+ only) → `bin/mpv.app`
+3. Production macOS: the runtime selected for the current OS/architecture (`mpv-macos26.app` on Apple Silicon macOS 26+, otherwise `mpv.app`)
 4. Development bundled binary under this `resources/mpv/<platform>-<arch>/` directory
-5. Development macOS: `mpv-macos26.app` (macOS 26+ only) → `mpv.app`
+5. Development macOS: the same OS/architecture-specific app selection used in production
 6. `mpv` / `mpv.exe` from system `PATH`
 7. Common install paths for macOS, Windows, and Linux
 

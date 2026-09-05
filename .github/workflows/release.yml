@@ -282,7 +282,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install package
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools gcc-arm-linux-gnueabihf qemu-user-static
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools gcc-arm-linux-gnueabihf qemu-user-static libxcb1-dev
 
       - name: Check out git repository
         uses: actions/checkout@v6

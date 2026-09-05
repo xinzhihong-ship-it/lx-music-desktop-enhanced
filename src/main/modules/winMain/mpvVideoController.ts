@@ -11,7 +11,11 @@ declare const __non_webpack_require__: (id: string) => unknown
 
 interface NativeMpvVideo {
   create: (handle: Buffer, onDoubleClick: () => void) => void
-  load: (params: { videoUrl: string, audioUrl?: string, headers: string[] }) => void
+  load: (params: {
+    videoUrl: string
+    audioUrl?: string
+    headers: string[]
+  }) => void
   command: (params: { name: string, seconds?: number }) => void
   setVolume: (volume: number) => void
   setAudioDevice: (device: string) => void
@@ -29,17 +33,33 @@ interface NativeMpvWindow {
   destroy: () => void
 }
 
-type VideoEventName = 'started' | 'loaded' | 'playing' | 'pause' | 'stopped' | 'ended' | 'error' | 'timeUpdate' | 'duration' | 'seeked' | 'doubleClick'
+type VideoEventName =
+  | 'started'
+  | 'loaded'
+  | 'playing'
+  | 'pause'
+  | 'stopped'
+  | 'ended'
+  | 'error'
+  | 'timeUpdate'
+  | 'duration'
+  | 'seeked'
+  | 'doubleClick'
 
-const isBiliCdn = (url: string) => /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
+const isBiliCdn = (url: string) =>
+  /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
 const normalizeAudioDevice = (device: string | undefined) => {
   const value = String(device ?? '').trim()
-  return value && !['default', 'Default', 'communications'].includes(value) ? value : 'auto'
+  return value && !['default', 'Default', 'communications'].includes(value)
+    ? value
+    : 'auto'
 }
 const getBiliCookie = () => {
   const session = accountSessions.getSessionBySource('bili')
   if (!session) return ''
-  return Object.entries(session.cookies).map(([key, value]) => `${key}=${String(value)}`).join('; ')
+  return Object.entries(session.cookies)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join('; ')
 }
 
 let native: NativeMpvVideo | null = null
@@ -58,7 +78,8 @@ let videoHostReady: Promise<void> | null = null
 let externalVideoVisible = false
 const useNativeMacVideo = process.platform === 'darwin'
 const useNativeWindowsVideoHost = process.platform === 'win32'
-const requireNative = <T>(modulePath: string): T => __non_webpack_require__(modulePath) as T
+const requireNative = <T>(modulePath: string): T =>
+  __non_webpack_require__(modulePath) as T
 
 const getExternalWindowId = (handle: Buffer) => {
   if (handle.length < 4) throw new Error('未获取到视频宿主窗口句柄')
@@ -70,14 +91,22 @@ const syncExternalVideoBounds = () => {
     nativeWindowHost.setBounds(bounds)
     return
   }
-  if (!videoHostWindow || videoHostWindow.isDestroyed() || !videoHostParent || videoHostParent.isDestroyed()) return
+  if (
+    !videoHostWindow ||
+    videoHostWindow.isDestroyed() ||
+    !videoHostParent ||
+    videoHostParent.isDestroyed()
+  ) { return }
   const contentBounds = videoHostParent.getContentBounds()
-  videoHostWindow.setBounds({
-    x: Math.round(contentBounds.x + bounds.x),
-    y: Math.round(contentBounds.y + bounds.y),
-    width: Math.max(1, Math.round(bounds.width)),
-    height: Math.max(1, Math.round(bounds.height)),
-  }, false)
+  videoHostWindow.setBounds(
+    {
+      x: Math.round(contentBounds.x + bounds.x),
+      y: Math.round(contentBounds.y + bounds.y),
+      width: Math.max(1, Math.round(bounds.width)),
+      height: Math.max(1, Math.round(bounds.height)),
+    },
+    false,
+  )
 }
 
 const setExternalVideoVisible = (visible: boolean) => {
@@ -95,7 +124,9 @@ const setExternalVideoVisible = (visible: boolean) => {
 const ensureExternalVideoPlayer = () => {
   if (processPlayer) return processPlayer
   if (process.platform === 'linux' && !process.env.DISPLAY) {
-    throw new Error('Linux 视频嵌入需要 X11；当前 Wayland 会话暂不支持 MPV --wid')
+    throw new Error(
+      'Linux 视频嵌入需要 X11；当前 Wayland 会话暂不支持 MPV --wid',
+    )
   }
   const parent = getBrowserWindow()
   if (!parent) throw new Error('主窗口尚未创建')
@@ -104,10 +135,14 @@ const ensureExternalVideoPlayer = () => {
   let windowId: string
   if (useNativeWindowsVideoHost) {
     nativeWindowHost = getNativeWindowHost()
-    windowId = nativeWindowHost.create(parent.getNativeWindowHandle(), () => { sendVideoEvent('doubleClick') })
+    windowId = nativeWindowHost.create(parent.getNativeWindowHandle(), () => {
+      sendVideoEvent('doubleClick')
+    })
     nativeWindowHost.setBounds(bounds)
     nativeWindowHost.setVisible(externalVideoVisible)
-    log.info(`[MpvVideoController] using native Windows video host: ${windowId}`)
+    log.info(
+      `[MpvVideoController] using native Windows video host: ${windowId}`,
+    )
   } else {
     videoHostWindow = new BrowserWindow({
       parent,
@@ -146,17 +181,24 @@ const ensureExternalVideoPlayer = () => {
 const getNative = (): NativeMpvVideo => {
   if (native) return native
   if (!useNativeMacVideo) throw new Error('当前平台未启用 macOS 视频原生桥')
-  const candidates = process.env.NODE_ENV === 'development'
-    ? [
-        path.join(process.cwd(), 'native/mpv-video/build/Release/lx_mpv_video.node'),
-        path.join(process.cwd(), 'build/Release/lx_mpv_video.node'),
-      ]
-    : [
-        path.join(__dirname, '../build/Release/lx_mpv_video.node'),
-        path.join(process.resourcesPath, 'app.asar.unpacked/build/Release/lx_mpv_video.node'),
-        path.join(process.resourcesPath, 'build/Release/lx_mpv_video.node'),
-      ]
-  const modulePath = candidates.find(filePath => fs.existsSync(filePath))
+  const candidates =
+    process.env.NODE_ENV === 'development'
+      ? [
+          path.join(
+            process.cwd(),
+            'native/mpv-video/build/Release/lx_mpv_video.node',
+          ),
+          path.join(process.cwd(), 'build/Release/lx_mpv_video.node'),
+        ]
+      : [
+          path.join(__dirname, '../build/Release/lx_mpv_video.node'),
+          path.join(
+            process.resourcesPath,
+            'app.asar.unpacked/build/Release/lx_mpv_video.node',
+          ),
+          path.join(process.resourcesPath, 'build/Release/lx_mpv_video.node'),
+        ]
+  const modulePath = candidates.find((filePath) => fs.existsSync(filePath))
   if (!modulePath) throw new Error('未找到 MPV 视频原生桥，请重新构建应用')
   const nativeModule = requireNative<NativeMpvVideo>(modulePath)
   native = nativeModule
@@ -165,18 +207,25 @@ const getNative = (): NativeMpvVideo => {
 
 const getNativeWindowHost = (): NativeMpvWindow => {
   if (nativeWindowHost) return nativeWindowHost
-  if (!useNativeWindowsVideoHost) throw new Error('当前平台未启用 Windows 视频宿主桥')
-  const candidates = process.env.NODE_ENV === 'development'
-    ? [
-        path.join(process.cwd(), 'native/mpv-window/build/Release/lx_mpv_window.node'),
-        path.join(process.cwd(), 'build/Release/lx_mpv_window.node'),
-      ]
-    : [
-        path.join(__dirname, '../build/Release/lx_mpv_window.node'),
-        path.join(process.resourcesPath, 'app.asar.unpacked/build/Release/lx_mpv_window.node'),
-        path.join(process.resourcesPath, 'build/Release/lx_mpv_window.node'),
-      ]
-  const modulePath = candidates.find(filePath => fs.existsSync(filePath))
+  if (!useNativeWindowsVideoHost) { throw new Error('当前平台未启用 Windows 视频宿主桥') }
+  const candidates =
+    process.env.NODE_ENV === 'development'
+      ? [
+          path.join(
+            process.cwd(),
+            'native/mpv-window/build/Release/lx_mpv_window.node',
+          ),
+          path.join(process.cwd(), 'build/Release/lx_mpv_window.node'),
+        ]
+      : [
+          path.join(__dirname, '../build/Release/lx_mpv_window.node'),
+          path.join(
+            process.resourcesPath,
+            'app.asar.unpacked/build/Release/lx_mpv_window.node',
+          ),
+          path.join(process.resourcesPath, 'build/Release/lx_mpv_window.node'),
+        ]
+  const modulePath = candidates.find((filePath) => fs.existsSync(filePath))
   if (!modulePath) throw new Error('未找到 Windows 视频宿主桥，请重新构建应用')
   const nativeModule = requireNative<NativeMpvWindow>(modulePath)
   nativeWindowHost = nativeModule
@@ -215,19 +264,22 @@ const poll = () => {
           try {
             sendVideoEvent('duration', native.getProperty('duration'))
           } catch (error) {
-            log.debug('[MpvVideoController] duration property unavailable', error)
+            log.debug(
+              '[MpvVideoController] duration property unavailable',
+              error,
+            )
           }
           try {
-            if (native.getProperty('pause') === false) sendVideoEvent('playing')
+            if (native.getProperty('pause') === false) { sendVideoEvent('playing') }
           } catch (error) {
             log.debug('[MpvVideoController] pause property unavailable', error)
           }
           break
         case 'time':
-          if (typeof event.value === 'number') sendVideoEvent('timeUpdate', event.value)
+          if (typeof event.value === 'number') { sendVideoEvent('timeUpdate', event.value) }
           break
         case 'duration':
-          if (typeof event.value === 'number') sendVideoEvent('duration', event.value)
+          if (typeof event.value === 'number') { sendVideoEvent('duration', event.value) }
           break
         case 'pause':
           if (loading) break
@@ -260,7 +312,9 @@ const ensureNativeInitialized = () => {
   if (!initialized) {
     const window = getBrowserWindow()
     if (!window) throw new Error('主窗口尚未创建')
-    player.create(window.getNativeWindowHandle(), () => { sendVideoEvent('doubleClick') })
+    player.create(window.getNativeWindowHandle(), () => {
+      sendVideoEvent('doubleClick')
+    })
     initialized = true
     player.setBounds(bounds)
     if (!pollTimer) pollTimer = setInterval(poll, 100)
@@ -285,13 +339,22 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
     try {
       const player = ensureExternalVideoPlayer()
       if (videoHostReady) await videoHostReady
-      if (!nativeWindowHost && (!videoHostWindow || videoHostWindow.isDestroyed())) throw new Error('视频宿主窗口已关闭')
-      if (nativeWindowHost) log.info(`[MpvVideoController] showing native Windows video host bounds=${JSON.stringify(bounds)}`)
+      if (
+        !nativeWindowHost &&
+        (!videoHostWindow || videoHostWindow.isDestroyed())
+      ) { throw new Error('视频宿主窗口已关闭') }
+      if (nativeWindowHost) {
+        log.info(
+          `[MpvVideoController] showing native Windows video host bounds=${JSON.stringify(bounds)}`,
+        )
+      }
       setExternalVideoVisible(externalVideoVisible)
       await player.loadUrl(videoUrl, { audioUrl })
     } catch (error) {
       loading = false
-      sendVideoEvent('error', { message: error instanceof Error ? error.message : String(error) })
+      sendVideoEvent('error', {
+        message: error instanceof Error ? error.message : String(error),
+      })
       log.error('[MpvVideoController] external video load failed', error)
       throw error
     }
@@ -302,7 +365,9 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
   hasFileLoaded = false
   currentUrl = videoUrl
   try {
-    player.setAudioDevice(normalizeAudioDevice(global.lx.appSetting['player.mediaDeviceId']))
+    player.setAudioDevice(
+      normalizeAudioDevice(global.lx.appSetting['player.mediaDeviceId']),
+    )
   } catch (error) {
     log.warn('[MpvVideoController] set audio device failed', error)
   }
@@ -324,9 +389,14 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
 export const setAudioDevice = (device: string) => {
   const normalizedDevice = normalizeAudioDevice(device)
   if (!useNativeMacVideo) {
-    void ensureExternalVideoPlayer().setAudioDevice(normalizedDevice).catch(error => {
-      log.warn('[MpvVideoController] external video audio device failed', error)
-    })
+    void ensureExternalVideoPlayer()
+      .setAudioDevice(normalizedDevice)
+      .catch((error) => {
+        log.warn(
+          '[MpvVideoController] external video audio device failed',
+          error,
+        )
+      })
     return
   }
   if (!native || !initialized) return
@@ -335,7 +405,11 @@ export const setAudioDevice = (device: string) => {
 
 export const play = () => {
   if (!useNativeMacVideo) {
-    void ensureExternalVideoPlayer().play().catch(error => { log.error('[MpvVideoController] external video play failed', error) })
+    void ensureExternalVideoPlayer()
+      .play()
+      .catch((error) => {
+        log.error('[MpvVideoController] external video play failed', error)
+      })
     return
   }
   ensureNativeInitialized().command({ name: 'play' })
@@ -343,7 +417,11 @@ export const play = () => {
 
 export const pause = () => {
   if (!useNativeMacVideo) {
-    void ensureExternalVideoPlayer().pause().catch(error => { log.error('[MpvVideoController] external video pause failed', error) })
+    void ensureExternalVideoPlayer()
+      .pause()
+      .catch((error) => {
+        log.error('[MpvVideoController] external video pause failed', error)
+      })
     return
   }
   ensureNativeInitialized().command({ name: 'pause' })
@@ -352,7 +430,9 @@ export const pause = () => {
 export const stop = () => {
   if (!useNativeMacVideo) {
     if (!processPlayer) return
-    void processPlayer.stop().catch(error => { log.error('[MpvVideoController] external video stop failed', error) })
+    void processPlayer.stop().catch((error) => {
+      log.error('[MpvVideoController] external video stop failed', error)
+    })
     loading = false
     hasFileLoaded = false
     return
@@ -366,7 +446,11 @@ export const stop = () => {
 
 export const seek = (seconds: number) => {
   if (!useNativeMacVideo) {
-    void ensureExternalVideoPlayer().seek(seconds).catch(error => { log.error('[MpvVideoController] external video seek failed', error) })
+    void ensureExternalVideoPlayer()
+      .seek(seconds)
+      .catch((error) => {
+        log.error('[MpvVideoController] external video seek failed', error)
+      })
     return
   }
   ensureNativeInitialized().command({ name: 'seek', seconds })
@@ -375,7 +459,11 @@ export const seek = (seconds: number) => {
 
 export const setVolume = (volume: number) => {
   if (!useNativeMacVideo) {
-    void ensureExternalVideoPlayer().setVolume(volume).catch(error => { log.error('[MpvVideoController] external video volume failed', error) })
+    void ensureExternalVideoPlayer()
+      .setVolume(volume)
+      .catch((error) => {
+        log.error('[MpvVideoController] external video volume failed', error)
+      })
     return
   }
   ensureNativeInitialized().setVolume(volume)
@@ -435,7 +523,7 @@ export const destroy = async() => {
   nativeWindowHostToDestroy?.destroy()
   removeHostWindowListeners?.()
   removeHostWindowListeners = null
-  if (videoHostWindow && !videoHostWindow.isDestroyed()) videoHostWindow.destroy()
+  if (videoHostWindow && !videoHostWindow.isDestroyed()) { videoHostWindow.destroy() }
   videoHostWindow = null
   videoHostParent = null
   videoHostReady = null
@@ -447,6 +535,8 @@ export const destroy = async() => {
 
 export const getState = () => ({ loading, hasFileLoaded, currentUrl })
 
-app.on('before-quit', () => { void destroy() })
+app.on('before-quit', () => {
+  void destroy()
+})
 
 log.debug('[MpvVideoController] native video controller loaded')

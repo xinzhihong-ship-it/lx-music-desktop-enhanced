@@ -3,6 +3,66 @@ import * as mpvPlayer from './mpv'
 import * as mpvVideoPlayer from './mpvVideo'
 import * as audirvanaPlayer from './audirvana'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
+import { watch } from '@common/utils/vueTools'
+import { createVst3Node, configureVst3Audio, closeVst3Audio, prepareVst3Audio, resetVst3Audio, vst3Runtime, cleanVst3Error } from './vst3'
+
+let vst3Node: AudioWorkletNode | null = null
+let vst3Change = Promise.resolve()
+let playbackRevision = 0
+let seekResume = false
+const syncVst3 = async() => {
+  vst3Change = vst3Change.catch(() => {}).then(async() => {
+    const enabled = appSetting['player.vst3.enabled'] && appSetting['player.playEngine'] === 'electron' && !isBiliVideoActive()
+    const playing = !!audio && !audio.paused
+    if (vst3Node) resetVst3Audio(false)
+    if (audio && (vst3Node != null || enabled)) audio.pause()
+    if (vst3Node && !enabled) {
+      gainNode.disconnect(vst3Node)
+      vst3Node = null
+      try { await closeVst3Audio() } finally { gainNode.connect(mediaStreamDest!) }
+    }
+    if (enabled) {
+      initAdvancedAudioFeatures()
+      try {
+        if (vst3Node) await configureVst3Audio(audioContext)
+        else {
+          const next = await createVst3Node(audioContext, () => {
+            audio?.pause()
+            window.app_event.pause()
+          })
+          gainNode.disconnect(mediaStreamDest!)
+          gainNode.connect(next)
+          next.connect(mediaStreamDest!)
+          // eslint-disable-next-line require-atomic-updates -- Connection changes are serialized by vst3Change.
+          vst3Node = next
+        }
+      } catch (err) {
+        // 一个坏插件不能卡死播放：丢弃插件链，回退直通输出并继续播放。
+        vst3Runtime.error = cleanVst3Error(err)
+        if (vst3Node) {
+          try { gainNode.disconnect(vst3Node) } catch {}
+          try { vst3Node.disconnect() } catch {}
+          // eslint-disable-next-line require-atomic-updates -- Connection changes are serialized by vst3Change.
+          vst3Node = null
+        }
+        try { await closeVst3Audio() } catch {}
+        gainNode.connect(mediaStreamDest!)
+      }
+    }
+    if (playing) {
+      if (vst3Node && !await prepareVst3Audio()) return
+      await audio?.play()
+    }
+  })
+  return vst3Change
+}
+
+watch(() => [appSetting['player.vst3.enabled'], appSetting['player.vst3.chain'], appSetting['player.playEngine'], isBiliVideoActive()], () => {
+  void syncVst3().catch((err: Error) => {
+    // 切换失败不暂停播放，仅记录错误；音频保持直通输出。
+    vst3Runtime.error = cleanVst3Error(err)
+  })
+}, { deep: true })
 
 interface HTMLAudioElementChrome extends HTMLAudioElement {
   setSinkId: (id: string) => Promise<void>
@@ -10,6 +70,12 @@ interface HTMLAudioElementChrome extends HTMLAudioElement {
 let audio: HTMLAudioElementChrome | null = null
 let audioContext: AudioContext
 let mediaSource: MediaElementAudioSourceNode
+// 效果处理后的音频经此隐藏元素输出：设备切换用元素级 setSinkId，
+// 绕开 AudioContext.setSinkId 在携带媒体源的上下文上永不决议的问题。
+let outputPipe: HTMLAudioElement | null = null
+// 图的最终输出接入流式目的地（不再走 AudioContext 默认硬件出口），
+// 由 outputPipe 播放该流，输出设备完全由 outputPipe 的 sink 决定。
+let mediaStreamDest: MediaStreamAudioDestinationNode | null = null
 let analyser: AnalyserNode
 // https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext
 // https://benzleung.gitbooks.io/web-audio-api-mini-guide/content/chapter5-1.html
@@ -75,6 +141,7 @@ export const createAudio = () => {
 
   // https://developer.chrome.com/blog/autoplay
   audio.addEventListener('playing', () => {
+    if (vst3Node) resetVst3Audio(true)
     if (audioContext?.state == 'suspended') {
       void audioContext.resume().catch((err) => {
         console.error('Resume audio context failed:', err)
@@ -140,13 +207,26 @@ const initAdvancedAudioFeatures = () => {
   // source -> analyser -> biquadFilter -> pitchShifter -> [(convolver & convolverSource)->convolverDynamicsCompressor] -> panner -> gain
   mediaSource = audioContext.createMediaElementSource(audio)
   mediaSource.connect(analyser)
+  // 最终输出接流式目的地（不走 AudioContext 默认硬件出口），由 outputPipe 播放
+  mediaStreamDest = audioContext.createMediaStreamDestination()
+  outputPipe = new window.Audio()
+  outputPipe.srcObject = mediaStreamDest.stream
+  void outputPipe.play().catch(err => {
+    console.error('effect output pipe start failed:', err)
+  })
+  const savedSinkId = appSetting['player.mediaDeviceId']
+  if (savedSinkId && savedSinkId != 'default') {
+    void outputPipe.setSinkId(savedSinkId).catch(err => {
+      console.error('apply saved media device to output pipe failed:', err)
+    })
+  }
   analyser.connect(biquads.get(`hz${freqs[0]}`)!)
   const lastBiquadFilter = (biquads.get(`hz${freqs.at(-1)!}`)!)
   lastBiquadFilter.connect(convolverSourceGainNode)
   lastBiquadFilter.connect(convolver)
   convolverDynamicsCompressor.connect(panner)
   panner.connect(gainNode)
-  gainNode.connect(audioContext.destination)
+  gainNode.connect(mediaStreamDest)
 
   // 音频输出设备改变时刷新 audio node 连接
   window.app_event.on('playerDeviceChanged', handleMediaListChange)
@@ -417,6 +497,7 @@ const stopSelectedAudioEngine = async() => {
   } else if (isAudirvanaEngine()) {
     await audirvanaPlayer.setStop().catch(err => { console.error('audirvana stop before video failed', err) })
   } else if (audio) {
+    if (vst3Node) resetVst3Audio(false)
     audio.pause()
     audio.src = ''
     audio.removeAttribute('src')
@@ -424,6 +505,9 @@ const stopSelectedAudioEngine = async() => {
 }
 
 export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string, videoAudioUrl?: string): Promise<void> => {
+  const revision = ++playbackRevision
+  seekResume = false
+  if (vst3Node) resetVst3Audio(false)
   if (isBiliVideoActive()) {
     if (!src) return
     await stopSelectedAudioEngine()
@@ -460,10 +544,16 @@ export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, fi
     await audirvanaPlayer.setResource(src, musicInfo, filePath)
     return
   }
+  await vst3Change
+  if (revision !== playbackRevision) return
+  if (appSetting['player.vst3.enabled'] && !vst3Node) await syncVst3()
+  if (vst3Node && !await prepareVst3Audio()) return
+  if (revision !== playbackRevision) return
   if (audio) audio.src = src
 }
 
 export const setPlay = () => {
+  const revision = ++playbackRevision
   if (isBiliVideoActive()) {
     void mpvVideoPlayer.setPlay().catch(err => { handleMpvError('播放视频', err) })
     return
@@ -478,13 +568,22 @@ export const setPlay = () => {
     })
     return
   }
-  void audio?.play().catch(err => {
-    console.error('audio play failed:', err)
+  void (async() => {
+    await vst3Change
+    if (revision !== playbackRevision) return
+    if (audio && !audio.paused) return
+    if (vst3Node && !await prepareVst3Audio()) return
+    if (revision !== playbackRevision) return
+    await audio?.play()
+  })().catch(() => {
     window.app_event.pause()
   })
 }
 
 export const setPause = () => {
+  playbackRevision++
+  seekResume = false
+  if (vst3Node) resetVst3Audio(false)
   if (isBiliVideoActive()) {
     void mpvVideoPlayer.setPause().catch(err => { console.error('mpv video pause failed', err) })
     return
@@ -501,10 +600,17 @@ export const setPause = () => {
     })
     return
   }
+  const playing = !!audio && !audio.paused
   audio?.pause()
+  if (vst3Node && audio && playing) {
+    audio.currentTime = Math.max(0, audio.currentTime - (vst3Runtime.latencyMs + vst3Runtime.bridgeMs) / 1000 * audio.playbackRate)
+  }
 }
 
 export const setStop = async(): Promise<void> => {
+  playbackRevision++
+  seekResume = false
+  if (vst3Node) resetVst3Audio(false)
   if (isBiliVideoActive()) {
     return mpvVideoPlayer.setStop().catch(err => { console.error('mpv video stop failed', err) })
   }
@@ -613,14 +719,28 @@ export const setCurrentTime = (time: number) => {
     audirvanaPlayer.setCurrentTime(time)
     return
   }
-  if (audio) audio.currentTime = time
+  if (audio && vst3Node) {
+    const revision = ++playbackRevision
+    seekResume = seekResume || !audio.paused
+    audio.pause()
+    audio.currentTime = time
+    void prepareVst3Audio().then(async(ready) => {
+      if (!ready || revision !== playbackRevision) return
+      const playing = seekResume
+      seekResume = false
+      if (playing) await audio?.play()
+      else resetVst3Audio(false)
+    }).catch((err: Error) => { vst3Runtime.error = err.message })
+  } else if (audio) audio.currentTime = time
 }
 
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
   if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
-  if (!audio) return
-  return audio.setSinkId(mediaDeviceId)
+  // 高级音频功能激活时输出走 outputPipe（元素级 setSinkId 即时可靠）；
+  // 图未初始化时直接设置 <audio> 元素。
+  if (outputPipe) return outputPipe.setSinkId(mediaDeviceId)
+  if (audio) await audio.setSinkId(mediaDeviceId)
 }
 
 export const setVolume = (volume: number) => {

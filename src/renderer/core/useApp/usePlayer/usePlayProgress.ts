@@ -10,9 +10,9 @@ import { playProgress, setNowPlayTime, setMaxplayTime } from '@renderer/store/pl
 import { musicInfo, playMusicInfo, playInfo, isPlay } from '@renderer/store/player/state'
 // import { getList } from '@renderer/store/utils'
 import { appSetting } from '@renderer/store/setting'
-import { playNext, setShouldPlayAfterSeek } from '@renderer/core/player'
+import { setShouldPlayAfterSeek } from '@renderer/core/player'
 import { updateListMusics } from '@renderer/store/list/action'
-import { shouldSkipOnError } from '@renderer/core/player/errorStrategy'
+import { isPlayErrorHandlingEnabled } from '@renderer/core/player/errorStrategy'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 
 const delaySavePlayInfo = throttle(savePlayInfo, 2000)
@@ -42,9 +42,10 @@ export default () => {
       if (skipTime > playProgress.maxPlayTime) skipTime = (playProgress.maxPlayTime - currentTime) / 2
       if (skipTime - mediaBuffer.playTime < 1 || playProgress.maxPlayTime - skipTime < 1) {
         mediaBuffer.playTime = 0
-        if (shouldSkipOnError()) {
+        if (isPlayErrorHandlingEnabled()) {
           console.warn('buffering end')
-          void playNext(true)
+          window.app_event.error()
+          window.app_event.playerError()
         }
         return
       }
