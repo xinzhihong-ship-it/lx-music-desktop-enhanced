@@ -88,6 +88,7 @@ test('only the latest audio preparation may activate output; pause cancels a pen
       if (name === 'electron') return { ipcRenderer: { invoke: () => new Promise(resolve => pending.push(resolve)) } }
       if (name === '@common/utils/vueTools') return { shallowReactive: value => value }
       if (name === '@common/ipcNames') return { WIN_MAIN_RENDERER_EVENT_NAME: { vst3_reset: 'reset' } }
+      if (name === '@renderer/store/setting') return { appSetting: { 'player.vst3.enabled': true } }
       throw new Error(`Unexpected import: ${name}`)
     },
   })

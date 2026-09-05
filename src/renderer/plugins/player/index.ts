@@ -12,6 +12,7 @@ let playbackRevision = 0
 let seekResume = false
 const syncVst3 = async() => {
   vst3Change = vst3Change.catch(() => {}).then(async() => {
+    await applyAudioRouting()
     const enabled = appSetting['player.vst3.enabled'] && appSetting['player.playEngine'] === 'electron' && !isBiliVideoActive()
     const playing = !!audio && !audio.paused
     if (vst3Node) resetVst3Audio(false)
@@ -70,6 +71,9 @@ interface HTMLAudioElementChrome extends HTMLAudioElement {
 let audio: HTMLAudioElementChrome | null = null
 let audioContext: AudioContext
 let mediaSource: MediaElementAudioSourceNode
+// 当前 audio 元素是否已被 WebAudio 图捕获（capture 不可逆，切换模式只能重建元素）
+let elementCaptured = false
+let routingChange = Promise.resolve()
 // 效果处理后的音频经此隐藏元素输出：设备切换用元素级 setSinkId，
 // 绕开 AudioContext.setSinkId 在携带媒体源的上下文上永不决议的问题。
 let outputPipe: HTMLAudioElement | null = null
@@ -130,17 +134,15 @@ let defaultChannelCount = 2
 export const soundR = 0.5
 
 
-export const createAudio = () => {
-  if (isAudirvanaEngine()) return
-  if (audio) return
-  audio = new window.Audio() as HTMLAudioElementChrome
-  audio.controls = false
-  audio.autoplay = true
-  audio.preload = 'auto'
-  audio.crossOrigin = 'anonymous'
+const createAudioElement = () => {
+  const el = new window.Audio() as HTMLAudioElementChrome
+  el.controls = false
+  el.autoplay = true
+  el.preload = 'auto'
+  el.crossOrigin = 'anonymous'
 
   // https://developer.chrome.com/blog/autoplay
-  audio.addEventListener('playing', () => {
+  el.addEventListener('playing', () => {
     if (vst3Node) resetVst3Audio(true)
     if (audioContext?.state == 'suspended') {
       void audioContext.resume().catch((err) => {
@@ -149,6 +151,13 @@ export const createAudio = () => {
       })
     }
   })
+  return el
+}
+
+export const createAudio = () => {
+  if (isAudirvanaEngine()) return
+  if (audio) return
+  audio = createAudioElement()
 }
 
 const initAnalyser = () => {
@@ -196,6 +205,7 @@ const initAdvancedAudioFeatures = () => {
   if (audioContext) return
   if (!audio) createAudio()
   if (!audio) return
+  elementCaptured = true
   audioContext = new window.AudioContext({ latencyHint: 'playback' })
   defaultChannelCount = audioContext.destination.channelCount
 
@@ -204,6 +214,7 @@ const initAdvancedAudioFeatures = () => {
   initConvolver()
   initPanner()
   initGain()
+  updateConvolverCompressor()
   // source -> analyser -> biquadFilter -> pitchShifter -> [(convolver & convolverSource)->convolverDynamicsCompressor] -> panner -> gain
   mediaSource = audioContext.createMediaElementSource(audio)
   mediaSource.connect(analyser)
@@ -307,6 +318,14 @@ export const getBiquadFilter = () => {
 }
 
 // let isConvolverConnected = false
+// 压缩器仅为卷积混响的干湿混合而设；无卷积时完全透明，避免无谓的动态压平
+const updateConvolverCompressor = () => {
+  if (!convolverDynamicsCompressor) return
+  const active = !!appSetting['player.soundEffect.convolution.fileName']
+  convolverDynamicsCompressor.threshold.value = active ? -24 : 0
+  convolverDynamicsCompressor.ratio.value = active ? 12 : 1
+}
+
 export const setConvolver = (buffer: AudioBuffer | null, mainGain: number, sendGain: number) => {
   initAdvancedAudioFeatures()
   convolver.buffer = buffer
@@ -732,6 +751,92 @@ export const setCurrentTime = (time: number) => {
       else resetVst3Audio(false)
     }).catch((err: Error) => { vst3Runtime.error = err.message })
   } else if (audio) audio.currentTime = time
+}
+
+// 是否有音频效果处于启用状态（决定音频走效果链还是透明直出）
+const hasActiveAudioEffect = () =>
+  freqs.some(v => appSetting[`player.soundEffect.biquadFilter.hz${v}`] != 0) ||
+  !!appSetting['player.soundEffect.convolution.fileName'] ||
+  appSetting['player.soundEffect.pitchShifter.playbackRate'] != 1 ||
+  appSetting['player.soundEffect.panner.enable'] ||
+  appSetting['player.audioVisualization'] ||
+  (appSetting['player.vst3.enabled'] && vst3Node != null)
+
+// 重建 audio 元素：capture 不可逆，透明直出与效果链之间切换只能换元素
+const rebuildAudioElement = async(capture: boolean) => {
+  if (!audio) {
+    createAudio()
+    elementCaptured = false
+    if (capture) {
+      initAdvancedAudioFeatures()
+      elementCaptured = true
+    }
+    return
+  }
+  const wasPlaying = !audio.paused
+  const state = {
+    src: audio.src,
+    time: audio.currentTime,
+    volume: audio.volume,
+    muted: audio.muted,
+    rate: audio.playbackRate,
+    defaultRate: audio.defaultPlaybackRate,
+    preserves: audio.preservesPitch,
+  }
+  audio.pause()
+  audio.removeAttribute('src')
+  audio.load()
+  if (capture) initAdvancedAudioFeatures()
+  audio = createAudioElement()
+  elementCaptured = capture
+  if (state.src) {
+    audio.src = state.src
+    audio.volume = state.volume
+    audio.muted = state.muted
+    audio.defaultPlaybackRate = state.defaultRate
+    audio.playbackRate = state.rate
+    if ('preservesPitch' in audio) audio.preservesPitch = state.preserves
+    audio.load()
+    audio.currentTime = state.time
+  }
+  if (wasPlaying) {
+    await audio.play().catch(err => {
+      console.error('audio play after routing switch failed:', err?.message)
+    })
+  }
+}
+
+// 按当前效果状态切换音频路由（串行化避免并发重建）
+const applyAudioRouting = async() => {
+  routingChange = routingChange.catch(() => {}).then(async() => {
+    if (!audio && !mediaSource) return
+    const wantEffects = hasActiveAudioEffect()
+    if (wantEffects === elementCaptured) return
+    await rebuildAudioElement(wantEffects)
+    // 模式切换后 VST3 节点需要跟随重建
+    if (appSetting['player.vst3.enabled']) {
+      void syncVst3()
+    }
+  })
+  return routingChange
+}
+
+export const applyAudioRoutingNow = async() => applyAudioRouting()
+
+// TEMP DEBUG（验证完成后移除）
+if (typeof window !== 'undefined') {
+  (window as any).__lxAudioDebug = () => ({
+    hasAudio: !!audio,
+    audioPaused: audio ? audio.paused : null,
+    audioSinkId: audio ? (audio as any).sinkId : null,
+    hasCtx: !!audioContext,
+    ctxState: audioContext ? audioContext.state : null,
+    hasPipe: !!outputPipe,
+    pipePaused: outputPipe ? outputPipe.paused : null,
+    pipeSinkId: outputPipe ? (outputPipe as any).sinkId : null,
+    captured: elementCaptured,
+    vst3Node: !!vst3Node,
+  })
 }
 
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {

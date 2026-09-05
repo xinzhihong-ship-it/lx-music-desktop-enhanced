@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron'
 import { shallowReactive } from '@common/utils/vueTools'
+import { appSetting } from '@renderer/store/setting'
 import { WIN_MAIN_RENDERER_EVENT_NAME as IPC } from '@common/ipcNames'
 
 export const vst3Runtime = shallowReactive({
@@ -72,6 +73,8 @@ export const createVst3Node = async(audioContext: AudioContext, onFault: () => v
   node = new AudioWorkletNode(audioContext, 'lx-vst3', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] })
   const current = node
   const fail = (message: string) => {
+    // 关闭/停用过程中的预期报错（链路已拆除）不算故障
+    if (!appSetting['player.vst3.enabled']) return
     if (node !== current || vst3Runtime.error) return
     vst3Runtime.error = message
     resetVst3Audio(false)

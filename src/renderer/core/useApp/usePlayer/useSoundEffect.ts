@@ -1,6 +1,7 @@
 import { watch } from '@common/utils/vueTools'
 import {
   freqs,
+  applyAudioRoutingNow,
   getAudioContext,
   getBiquadFilter,
   setConvolver,
@@ -147,6 +148,16 @@ export default () => {
 
   watch(() => appSetting['player.soundEffect.pitchShifter.playbackRate'], (playbackRate) => {
     setPitchShifter(playbackRate)
+  })
+
+  // 效果开关状态变化时切换音频路由（透明直出 <-> 效果链）
+  watch(() => [
+    freqs.map(v => appSetting[`player.soundEffect.biquadFilter.hz${v}`]).join(','),
+    appSetting['player.soundEffect.convolution.fileName'],
+    appSetting['player.soundEffect.pitchShifter.playbackRate'],
+    appSetting['player.soundEffect.panner.enable'],
+  ], () => {
+    void applyAudioRoutingNow()
   })
 
 
