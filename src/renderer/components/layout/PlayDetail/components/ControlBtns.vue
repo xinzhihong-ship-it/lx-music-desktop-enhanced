@@ -15,6 +15,7 @@ div(:class="$style.footerLeftControlBtns")
     svg(version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" width="95%" viewBox="0 0 24 24" space="preserve")
       use(xlink:href="#icon-comment")
   common-sound-effect-btn
+  common-vst3-btn
   common-playback-rate-btn
   common-volume-btn
   common-toggle-play-mode-btn
