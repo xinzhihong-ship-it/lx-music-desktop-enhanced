@@ -10,6 +10,7 @@
           @blur="handleBlur"
           @input="$emit('update:modelValue', text)"
           @change="sendEvent('change')"
+          @keydown.enter="handleKeydownEnter"
           @keyup.enter="handleSearch"
           @keydown.arrow-down.arrow-up.prevent
           @keyup.arrow-down.prevent="handleKeyDown"
@@ -32,7 +33,8 @@
         </button>
       </div>
       <div v-if="list" :class="$style.list" :style="listStyle">
-        <ul ref="dom_list" @mouseleave="selectIndex = -1">
+        <!-- mousedown.prevent 保持输入框焦点：候选点击不再与 blur 收起列表竞速 -->
+        <ul ref="dom_list" @mouseleave="selectIndex = -1" @mousedown.prevent>
           <li
             v-for="(item, index) in list"
             :key="item"
@@ -89,6 +91,9 @@ export default {
       text: '',
       selectIndex: -1,
       focus: false,
+      // Windows 中文输入法在组词时会以 Enter 确认候选：keydown 带 isComposing/229，
+      // 必须记录下来在 keyup 里跳过，否则确认输入法会被误当成搜索。
+      composing: false,
       listStyle: {
         height: 0,
       },
@@ -99,7 +104,7 @@ export default {
       if (!this.visibleList) return
       if (this.selectIndex > -1) this.selectIndex = -1
       this.$nextTick(() => {
-        this.listStyle.height = this.$refs.dom_list.scrollHeight + 'px'
+        this.listStyle.height = (this.$refs.dom_list?.scrollHeight ?? 0) + 'px'
       })
     },
     modelValue(n) {
@@ -141,6 +146,7 @@ export default {
       }, 80)
     },
     handleSearch() {
+      if (this.composing) return
       this.hideList()
       if (this.selectIndex < 0) {
         this.sendEvent('submit')
@@ -148,9 +154,12 @@ export default {
       }
       this.sendEvent('listClick', this.selectIndex)
     },
+    handleKeydownEnter(event) {
+      this.composing = event.isComposing || event.keyCode === 229
+    },
     showList() {
       this.isShow = true
-      this.listStyle.height = this.$refs.dom_list.scrollHeight + 'px'
+      this.listStyle.height = (this.$refs.dom_list?.scrollHeight ?? 0) + 'px'
     },
     hideList() {
       this.isShow = false
@@ -165,14 +174,16 @@ export default {
         data,
       })
     },
-    handleKeyDown() {
+    handleKeyDown(event) {
+      if (event.isComposing || event.keyCode === 229) return
       if (this.list.length) {
         this.selectIndex = this.selectIndex + 1 < this.list.length ? this.selectIndex + 1 : 0
       } else if (this.selectIndex > -1) {
         this.selectIndex = -1
       }
     },
-    handleKeyUp() {
+    handleKeyUp(event) {
+      if (event.isComposing || event.keyCode === 229) return
       if (this.list.length) {
         this.selectIndex = this.selectIndex - 1 < -1 ? this.list.length - 1 : this.selectIndex - 1
       } else if (this.selectIndex > -1) {
