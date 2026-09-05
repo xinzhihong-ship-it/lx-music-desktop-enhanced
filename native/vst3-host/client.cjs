@@ -44,27 +44,40 @@ async function startHost(executable, timeout = 15000) {
       }
       server.on('connection', peer => {
         peers.add(peer)
-        peer.setEncoding('utf8')
         peer.setNoDelay(true)
         peer.setTimeout(timeout, () => peer.destroy())
-        let buffer = ''
+        let buffer = Buffer.alloc(0)
         let authenticated = false
+        let expectBinary = 0
         peer.on('error', error => { if (authenticated) fail(error) })
         peer.on('close', () => {
           peers.delete(peer)
           if (authenticated) fail(new Error('VST3 host disconnected'))
         })
         peer.on('data', chunk => {
-          buffer += chunk
-          if (Buffer.byteLength(buffer) > MAX_MESSAGE) {
+          buffer = Buffer.concat([buffer, chunk])
+          if (buffer.length > MAX_MESSAGE) {
             if (authenticated) fail(new Error('VST3 response too large'))
             else peer.destroy()
             return
           }
-          let end
-          while ((end = buffer.indexOf('\n')) !== -1) {
-            const line = buffer.slice(0, end)
-            buffer = buffer.slice(end + 1)
+          while (true) {
+            if (expectBinary > 0) {
+              if (buffer.length < expectBinary) return
+              const payload = buffer.subarray(0, expectBinary)
+              buffer = buffer.subarray(expectBinary)
+              expectBinary = 0
+              const request = pending
+              pending = null
+              clearTimeout(request.timer)
+              if (request.header?.ok === true) request.resolve({ result: request.header.result, payload })
+              else request.reject(new Error(typeof request.header?.error === 'string' ? request.header.error : 'Invalid VST3 response'))
+              continue
+            }
+            const end = buffer.indexOf('\n')
+            if (end === -1) return
+            const line = buffer.subarray(0, end).toString('utf8')
+            buffer = buffer.subarray(end + 1)
             let response
             try { response = JSON.parse(line) } catch {
               if (authenticated) fail(new Error('Invalid VST3 response'))
@@ -80,6 +93,12 @@ async function startHost(executable, timeout = 15000) {
               clearTimeout(timer)
               resolve()
             } else if (pending) {
+              const binaryBytes = Number(response?.result?.binary_bytes)
+              if (response?.ok === true && Number.isInteger(binaryBytes) && binaryBytes > 0 && binaryBytes <= MAX_MESSAGE) {
+                pending.header = response
+                expectBinary = binaryBytes
+                continue
+              }
               const request = pending
               pending = null
               clearTimeout(request.timer)
@@ -107,14 +126,15 @@ async function startHost(executable, timeout = 15000) {
     pid: child.pid,
     get closed() { return !!failed },
     close,
-    request(command) {
+    request(command, binaryPayload) {
       if (failed) return Promise.reject(failed)
       if (pending) return Promise.reject(new Error('VST3 request already in progress'))
-      const payload = JSON.stringify(command) + '\n'
-      if (Buffer.byteLength(payload) > MAX_MESSAGE) return Promise.reject(new Error('VST3 request too large'))
+      const header = JSON.stringify(command) + '\n'
+      if (Buffer.byteLength(header) > MAX_MESSAGE) return Promise.reject(new Error('VST3 request too large'))
       return new Promise((resolve, reject) => {
         pending = { resolve, reject, timer: setTimeout(() => close(new Error('VST3 request timeout')), timeout) }
-        socket.write(payload, error => { if (error) close(error) })
+        socket.write(header, error => { if (error) { close(error); return } })
+        if (binaryPayload) socket.write(binaryPayload, error => { if (error) close(error) })
       })
     },
   }

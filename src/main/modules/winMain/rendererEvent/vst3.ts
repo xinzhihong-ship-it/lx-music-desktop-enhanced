@@ -28,12 +28,12 @@ const executablePath = () => {
   return executable
 }
 
-export const processVst3Audio = async(inputs: number[][]): Promise<{ outputs: number[][], latencySamples: number, bypassed?: boolean }> => {
+export const processVst3Audio = async(inputs: Float32Array[]): Promise<{ outputs: Float32Array[], latencySamples: number, bypassed?: boolean }> => {
   if (!chain || !global.lx.appSetting['player.vst3.enabled'] || global.lx.appSetting['player.playEngine'] === 'audirvana') {
     throw new Error('VST3 audio mode is not active')
   }
   // chain.cjs 为无类型 JS 模块，其推断返回类型含 void 分支，这里显式收口。
-  return chain.process(inputs) as Promise<{ outputs: number[][], latencySamples: number, bypassed?: boolean }>
+  return chain.process(inputs) as Promise<{ outputs: Float32Array[], latencySamples: number, bypassed?: boolean }>
 }
 
 export default () => {
@@ -50,7 +50,7 @@ export default () => {
     chain ??= new Vst3Chain(executablePath(), path.join(app.getPath('userData'), 'vst3-state'))
     return chain.configure(global.lx.appSetting['player.vst3.chain'], sampleRate, new Set(allowed.paths))
   })
-  mainHandle<number[][], { outputs: number[][], latencySamples: number, bypassed?: boolean }>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_process, async({ params }) => processVst3Audio(params))
+  mainHandle<Float32Array[], { outputs: Float32Array[], latencySamples: number, bypassed?: boolean }>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_process, async({ params }) => processVst3Audio(params))
   mainHandle<{ id: string, open: boolean }>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_editor, async({ params }) => {
     if (!chain) throw new Error('VST3 chain is not loaded')
     await chain.editor(params.id, params.open)

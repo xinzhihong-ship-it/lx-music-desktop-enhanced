@@ -31,8 +31,8 @@ enum Command {
     Editor {
         open: bool,
     },
-    Process {
-        inputs: Vec<Vec<f32>>,
+    ProcessBinary {
+        frames: usize,
     },
     Unload {},
 }
@@ -151,7 +151,7 @@ impl Session {
                     }
                     // Only reachable when the audio worker is gone and the reader forwards
                     // the request here for an error response.
-                    Command::Process { .. } => Err("audio worker is not running".into()),
+                    Command::ProcessBinary { .. } => Err("audio worker is not running".into()),
                     _ => unreachable!(),
                 }
             }
@@ -164,16 +164,57 @@ impl Session {
 // the UI thread). Heavy UI work that holds the mutex (preset loads) bounds the stalls —
 // upstream answers those with dry passthrough — but editor menus, which block the main
 // thread in a modal loop without holding the mutex, no longer affect processing at all.
-fn process_block(
+fn decode_payload(payload: &[u8], frames: usize) -> Result<Vec<Vec<f32>>, String> {
+    if payload.len() != frames * 2 * 4 {
+        return Err(format!(
+            "process payload size mismatch: expected {}, got {}",
+            frames * 2 * 4,
+            payload.len()
+        ));
+    }
+    let mut left = Vec::with_capacity(frames);
+    let mut right = Vec::with_capacity(frames);
+    for frame in 0..frames {
+        let offset = frame * 4;
+        left.push(f32::from_le_bytes(
+            payload[offset..offset + 4].try_into().unwrap(),
+        ));
+        right.push(f32::from_le_bytes(
+            payload[frames * 4 + offset..frames * 4 + offset + 4]
+                .try_into()
+                .unwrap(),
+        ));
+    }
+    Ok(vec![left, right])
+}
+
+fn encode_outputs(outputs: &[Vec<f32>], frames: usize) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(frames * 2 * 4);
+    for frame in 0..frames {
+        for channel in outputs {
+            bytes.extend_from_slice(&channel[frame].to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn write_json_line(output: &mut dyn Write, value: &Value) -> io::Result<()> {
+    serde_json::to_writer(&mut *output, value)?;
+    output.write_all(b"\n")?;
+    output.flush()
+}
+
+fn process_binary_block(
     plugin: &Arc<Mutex<Plugin>>,
     sample_rate: f64,
-    inputs: &[Vec<f32>],
-) -> Result<Value, String> {
+    frames: usize,
+    payload: &[u8],
+) -> Result<(usize, Vec<u8>), String> {
+    let inputs = decode_payload(payload, frames)?;
     let mut plugin = plugin.lock().map_err(|_| "plugin lock poisoned".to_string())?;
-    validate_audio(inputs, plugin.block_size()).map_err(|error| error.to_string())?;
-    let frames = inputs[0].len();
+    validate_audio(&inputs, plugin.block_size()).map_err(|error| error.to_string())?;
     let mut buffers = AudioBuffers::new(2, 2, frames, sample_rate);
-    buffers.inputs = inputs.to_vec();
+    buffers.inputs = inputs;
     plugin.process_audio(&mut buffers).map_err(|error| error.to_string())?;
     if buffers
         .outputs
@@ -183,9 +224,8 @@ fn process_block(
     {
         return Err("plugin returned non-finite audio".to_string());
     }
-    Ok(
-        json!({"outputs": buffers.outputs, "latency_samples": plugin.latency_samples()}),
-    )
+    let latency_samples = plugin.latency_samples();
+    Ok((latency_samples as usize, encode_outputs(&buffers.outputs, frames)))
 }
 
 fn validate_audio(inputs: &[Vec<f32>], block_size: usize) -> Result<(), &'static str> {
@@ -216,7 +256,7 @@ fn write_response(output: &mut dyn Write, result: Result<Value, String>) -> io::
 // modal loop, so the editor stays alive for as long as the user browses it.
 #[cfg(target_os = "macos")]
 fn schedule_plugin_servicer(shared: SharedPlugin) -> objc2::rc::Retained<objc2_foundation::NSTimer> {
-    use block2::{DynBlock, RcBlock};
+    use block2::RcBlock;
     use core::ptr::NonNull;
     use objc2_foundation::{NSRunLoop, NSRunLoopCommonModes, NSTimer};
 
@@ -314,7 +354,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 
     let shared: SharedPlugin = Arc::new(Mutex::new(None));
-    let (jobs, job_rx) = mpsc::channel::<Vec<Vec<f32>>>();
+    let (jobs, job_rx) = mpsc::channel::<(usize, Vec<u8>)>();
     #[cfg(target_os = "macos")]
     let _servicing_timer = schedule_plugin_servicer(Arc::clone(&shared));
     {
@@ -325,18 +365,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::Builder::new()
             .name("vst3-audio".into())
             .spawn(move || {
-                for inputs in job_rx {
+                for (frames, payload) in job_rx {
                     let current = worker_shared
                         .lock()
                         .ok()
                         .and_then(|slot| slot.clone());
-                    let result = match current {
+                    let outcome = match current {
                         Some((plugin, sample_rate)) => {
-                            process_block(&plugin, sample_rate, &inputs)
+                            process_binary_block(&plugin, sample_rate, frames, &payload)
                         }
                         None => Err("no plugin loaded".to_string()),
                     };
-                    if write_response(&mut *worker_output, result).is_err() {
+                    let write_failed = match outcome {
+                        Ok((latency_samples, out_bytes)) => {
+                            let header = json!({"ok": true, "result": {"latency_samples": latency_samples, "frames": frames, "binary_bytes": out_bytes.len()}});
+                            write_json_line(&mut *worker_output, &header).is_err()
+                                || worker_output.write_all(&out_bytes).is_err()
+                                || worker_output.flush().is_err()
+                        }
+                        Err(error) => write_json_line(
+                            &mut *worker_output,
+                            &json!({"ok": false, "error": error}),
+                        )
+                        .is_err(),
+                    };
+                    if write_failed {
                         break;
                     }
                 }
@@ -361,7 +414,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 // behind the main thread; everything else goes to the control loop. If the
                 // worker is gone, fall through so the control loop answers with an error.
                 let routed = match serde_json::from_slice::<Command>(&line) {
-                    Ok(Command::Process { inputs }) => jobs.send(inputs).is_ok(),
+                    Ok(Command::ProcessBinary { frames }) => {
+                        if frames == 0 || frames > MAX_FRAMES {
+                            let _ = sender.send(Err("invalid process frame count"));
+                            break;
+                        }
+                        let mut payload = vec![0u8; frames * 2 * 4];
+                        match input.read_exact(&mut payload) {
+                            Ok(()) => jobs.send((frames, payload)).is_ok(),
+                            Err(_) => {
+                                let _ = sender.send(Err("truncated process payload"));
+                                break;
+                            }
+                        }
+                    }
                     _ => false,
                 };
                 if routed {

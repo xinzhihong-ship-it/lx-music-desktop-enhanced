@@ -1,4 +1,28 @@
 const fs = require('node:fs/promises')
+
+// PCM 帧编码：双声道交错为 [L...][R...] 的原始 f32 LE 字节
+function encodePcm(outputs) {
+  const frames = outputs[0].length
+  const payload = Buffer.alloc(frames * outputs.length * 4)
+  for (let channel = 0; channel < outputs.length; channel++) {
+    const samples = outputs[channel]
+    const offset = channel * frames * 4
+    for (let i = 0; i < frames; i++) {
+      const value = Number(samples[i])
+      payload.writeFloatLE(Number.isFinite(value) ? value : 0, offset + i * 4)
+    }
+  }
+  return payload
+}
+
+function decodePcm(payload, frames) {
+  const left = Buffer.from(payload.subarray(0, frames * 4))
+  const right = Buffer.from(payload.subarray(frames * 4, frames * 8))
+  return [
+    new Float32Array(left.buffer, left.byteOffset, frames),
+    new Float32Array(right.buffer, right.byteOffset, frames),
+  ]
+}
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { startHost } = require('./client.cjs')
@@ -105,21 +129,16 @@ class Vst3Chain {
       return Promise.resolve({ outputs: inputs, latencySamples: this.status().latencySamples, bypassed: true })
     }
     this._bypassed = false
-    const __t0 = Date.now()
     return this.run(async () => {
-      if (!Array.isArray(inputs) || inputs.length !== 2 || inputs.some(channel => !Array.isArray(channel)
-        || channel.length !== 512 || channel.some(sample => typeof sample !== 'number' || !Number.isFinite(sample)))) {
-        throw new Error('Invalid VST3 stereo block')
-      }
       let outputs = inputs
       for (const slot of this.slots) {
         if (!slot.host) continue
-        const result = await slot.host.request({ command: 'process', inputs: outputs })
-        outputs = result.outputs
-        slot.latency = result.latency_samples
+        const frames = outputs[0].length
+        // 二进制 PCM 帧：编解码为原始 f32 字节，宿主端做完整校验
+        const result = await slot.host.request({ command: 'process_binary', frames }, encodePcm(outputs))
+        outputs = decodePcm(result.payload, frames)
+        slot.latency = result.result.latency_samples
       }
-      const __ms = Date.now() - __t0
-      if (__ms > 300) console.error('[stall] process blocked ' + __ms + 'ms (plugin busy)')
       return { outputs, latencySamples: this.status().latencySamples }
     })
   }

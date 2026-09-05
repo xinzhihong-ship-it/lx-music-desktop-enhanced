@@ -734,25 +734,6 @@ export const setCurrentTime = (time: number) => {
   } else if (audio) audio.currentTime = time
 }
 
-// TEMP DEBUG: 供真机诊断音频链路状态，发布前移除
-if (typeof window !== 'undefined') {
-  (window as any).__lxAudioDebug = () => ({
-    hasAudio: !!audio,
-    audioPaused: audio ? audio.paused : null,
-    audioSinkId: audio ? (audio as any).sinkId : null,
-    hasCtx: !!audioContext,
-    ctxState: audioContext ? audioContext.state : null,
-    ctxSinkId: audioContext ? (audioContext as any).sinkId : null,
-    hasPipe: !!outputPipe,
-    pipePaused: outputPipe ? outputPipe.paused : null,
-    pipeSinkId: outputPipe ? (outputPipe as any).sinkId : null,
-    pipeSrcObject: outputPipe ? !!outputPipe.srcObject : null,
-    pipeVolume: outputPipe ? outputPipe.volume : null,
-    pipeMuted: outputPipe ? outputPipe.muted : null,
-    vst3Node: !!vst3Node,
-  })
-}
-
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
   if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
