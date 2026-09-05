@@ -5,7 +5,7 @@ export const SEARCH_HISTORY_LIMIT = {
 } as const
 
 export const normalizeSearchHistoryLimit = (value: unknown) => {
-  if (value === '' || value === null || value === undefined) return SEARCH_HISTORY_LIMIT.default
+  if (value === '' || value === null || value === undefined) { return SEARCH_HISTORY_LIMIT.default }
   const limit = Number(value)
   if (!Number.isFinite(limit)) return SEARCH_HISTORY_LIMIT.default
   return Math.min(

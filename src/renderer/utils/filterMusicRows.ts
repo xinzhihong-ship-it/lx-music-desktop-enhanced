@@ -13,7 +13,7 @@ export const filterMusicRows = <T>(
 }
 
 const variantRxp = /[（(][^）)]*[）)]/g
-const normalizeRxp = /[\s'.,，&"、()（）`~\-<>|/\[\]]/g
+const normalizeRxp = /[\s'.,，&"、()（）`~\-<>|/[\]]/g
 const singerSplitRxp = /、|&|;|；|\/|,|，|\|/
 
 export const filterDuplicateMusicRows = <T extends { id?: string, name: string, singer?: string }>(
