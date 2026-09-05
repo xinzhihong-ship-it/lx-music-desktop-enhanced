@@ -210,6 +210,36 @@ fn write_response(output: &mut dyn Write, result: Result<Value, String>) -> io::
     output.flush()
 }
 
+// Native editor menus run AppKit's modal tracking loop, which stops our main loop from
+// servicing the plugin's run loop — editor timers starve and the UI appears frozen while
+// the menu stays open. A timer scheduled in NSRunLoopCommonModes keeps firing inside that
+// modal loop, so the editor stays alive for as long as the user browses it.
+#[cfg(target_os = "macos")]
+fn schedule_plugin_servicer(shared: SharedPlugin) -> objc2::rc::Retained<objc2_foundation::NSTimer> {
+    use block2::{DynBlock, RcBlock};
+    use core::ptr::NonNull;
+    use objc2_foundation::{NSRunLoop, NSRunLoopCommonModes, NSTimer};
+
+    let timer_block = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+        if let Ok(slot) = shared.lock() {
+            if let Some((plugin, _)) = slot.as_ref() {
+                if let Ok(mut plugin) = plugin.lock() {
+                    if let Err(error) = plugin.service_host_requests() {
+                        eprintln!("vst3 service_host_requests: {error}");
+                    }
+                    plugin.service_run_loop();
+                }
+            }
+        }
+    });
+    let timer = unsafe { NSTimer::timerWithTimeInterval_repeats_block(0.03, true, &timer_block) };
+    unsafe {
+        let run_loop = NSRunLoop::mainRunLoop();
+        run_loop.addTimer_forMode(&timer, NSRunLoopCommonModes);
+    }
+    timer
+}
+
 fn pump_events() {
     #[cfg(target_os = "macos")]
     {
@@ -282,8 +312,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         app.finishLaunching();
     }
 
+
     let shared: SharedPlugin = Arc::new(Mutex::new(None));
     let (jobs, job_rx) = mpsc::channel::<Vec<Vec<f32>>>();
+    #[cfg(target_os = "macos")]
+    let _servicing_timer = schedule_plugin_servicer(Arc::clone(&shared));
     {
         // Audio worker: processes blocks and writes responses end to end. Lives for the
         // whole process; plugin loads swap the shared slot underneath it.

@@ -105,6 +105,7 @@ class Vst3Chain {
       return Promise.resolve({ outputs: inputs, latencySamples: this.status().latencySamples, bypassed: true })
     }
     this._bypassed = false
+    const __t0 = Date.now()
     return this.run(async () => {
       if (!Array.isArray(inputs) || inputs.length !== 2 || inputs.some(channel => !Array.isArray(channel)
         || channel.length !== 512 || channel.some(sample => typeof sample !== 'number' || !Number.isFinite(sample)))) {
@@ -117,6 +118,8 @@ class Vst3Chain {
         outputs = result.outputs
         slot.latency = result.latency_samples
       }
+      const __ms = Date.now() - __t0
+      if (__ms > 300) console.error('[stall] process blocked ' + __ms + 'ms (plugin busy)')
       return { outputs, latencySamples: this.status().latencySamples }
     })
   }
