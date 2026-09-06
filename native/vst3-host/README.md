@@ -26,15 +26,17 @@
 | 平台 | 音频处理 | 插件编辑器 | 状态 |
 | --- | --- | --- | --- |
 | macOS arm64 | ✅ 实测 | ✅ 实测（含置前激活） | 可用 |
-| macOS x64 | 同代码路径 | 同代码路径 | 交叉编译检查通过 |
-| Windows x64 | 就绪，待实测 | 可打开，但后台进程窗口可能被前台窗口遮挡（任务栏点开即可） | 交叉编译检查通过（含 winapi 事件泵） |
-| Linux x64 | 就绪，待实测 | X11 编辑器交互待实测 | 交叉编译检查通过（含 xcb 窗口） |
-| Linux arm64 | 代码可编译（交叉检查通过），打包在 x64 构建机上跳过宿主 | 同左 | 按需在本机打包 |
-| Windows arm64 | 代码可编译，打包在 x64 构建机上跳过宿主 | 同左 | 按需在本机打包 |
+| macOS x64 | 同代码路径 | 同代码路径 | 原生 CI 构建，待实机验证 |
+| Windows x64 | 就绪，待实测 | 可打开，但后台进程窗口可能被前台窗口遮挡（任务栏点开即可） | 原生 CI 构建，待实机验证 |
+| Linux x64 | 就绪，待实测 | X11 编辑器交互待实测 | 原生 CI 构建，待实机验证 |
+| Linux arm64 | 当前包不携带宿主 | 当前包不携带宿主 | 交叉 host/linker 尚未配置 |
+| Linux armv7l | 当前包不携带宿主 | 当前包不携带宿主 | ARMv7 sysroot/linker 尚未配置 |
+| Windows arm64 | 当前包不携带宿主 | 当前包不携带宿主 | MSVC ARM64 交叉工具链尚未配置 |
+| Windows 7 x86/x64 | 当前包不携带宿主 | 当前包不携带宿主 | Electron 22 兼容包禁用 VST3 |
 
-交叉编译检查（`cargo check --target`，非链接）：x86_64-pc-windows-msvc、x86_64-unknown-linux-gnu、aarch64-unknown-linux-gnu 全部通过；CI 工作流 `vst3-check` 在三平台执行构建 + Rust/单元测试（音频端到端测试仅在 macOS/Windows 运行）。
+CI 工作流 `vst3-check` 在 Ubuntu、Windows、macOS 原生 runner 执行 host 构建及 Rust/单元测试；音频端到端测试仅在 macOS/Windows 运行，Linux 实时音频与 X11 编辑器仍待实机验证。当前发布流程未配置 ARM 或 Win32 Rust 交叉链接，因此对应目标包会明确省略 VST3 宿主。
 
-打包已接入：`beforePack` 阶段用 Rust 原生构建宿主（要求构建机装有 Rust），二进制经 `extraResources` 放入 `resources/bin/`；目标架构与构建机不一致时跳过并输出警告。
+打包已接入：`beforePack` 阶段用 Rust 原生构建宿主（要求构建机装有 Rust），二进制经 `extraResources` 放入 `resources/bin/`；匹配的主流原生目标构建失败会直接阻止打包，未配置交叉链接的目标会删除旧 host 并明确省略，避免误用其他架构二进制。
 
 另外，音频线程直写响应的协议安全性依赖客户端"同一时刻至多一个在途请求"的约定（chain.cjs 已保证）；Linux 编辑器还依赖库的 X11 事件服务，真机表现需实测确认。
 
@@ -52,7 +54,7 @@ npm run test:vst3
 npm run test:vst3:audio
 ```
 
-构建脚本只构建当前操作系统/架构，产物为 `build/Release/lx-vst3-host`（Windows 为 `.exe`）。设置页开发运行也可以使用 `cargo build` 生成的 debug 产物。发布打包会在 beforePack 阶段自动构建并携带宿主（见平台支持状态）。
+构建脚本只构建当前操作系统/架构，产物为 `build/Release/lx-vst3-host`（Windows 为 `.exe`）。设置页开发运行也可以使用 `cargo build` 生成的 debug 产物。发布打包会在 beforePack 阶段自动构建并携带宿主（见平台支持状态）。当前仅使用构建机原生的 Rust target：Windows x64 为 `x86_64-pc-windows-msvc`，macOS x64/arm64 为对应 Apple target，Linux x64 为 `x86_64-unknown-linux-gnu`；Windows ARM64、Linux ARM64/ARMv7l 需要后续补齐对应 Rust target、Windows MSVC/ARM 工具链或 Linux ARM XCB sysroot 后，才可重新标记为支持。
 
 可选真实插件检查，不会输出插件状态内容，也不会改写插件文件：
 

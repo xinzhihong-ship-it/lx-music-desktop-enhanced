@@ -22,14 +22,13 @@ export default () => {
 
   let prevDeviceLabel: string | null = null
   let prevDeviceId = ''
+  let deviceRequestVersion = 0
+  let deviceChange = Promise.resolve()
 
   const getMediaDevice = async(deviceId: string) => {
+    const requestedDeviceId = deviceId || 'default'
     const devices = await getDevices()
-    let device = devices.find(device => device.deviceId === deviceId)
-    if (!device) {
-      deviceId = 'default'
-      device = devices.find(device => device.deviceId === deviceId)
-    }
+    const device = devices.find(item => item.deviceId === requestedDeviceId)
 
     if (!device && !devices.length && !isShowingTipAlert) {
       isShowingTipAlert = true
@@ -40,22 +39,36 @@ export default () => {
         isShowingTipAlert = false
       })
     }
-    return device ? { label: device.label, deviceId: device.deviceId } : { label: '', deviceId: '' }
+
+    // Keep the requested ID when enumeration is temporarily stale or the device
+    // disappeared. The player will retry it on the next devicechange instead of
+    // silently persisting `default`.
+    return device
+      ? { label: device.label, deviceId: device.deviceId }
+      : { label: '', deviceId: requestedDeviceId }
   }
-  const setMediaDevice = async(deviceId: string, label: string) => {
-    console.error('[device-debug] setMediaDevice ->', deviceId.slice(0, 12))
+
+  const setMediaDevice = async(deviceId: string, label: string, requestVersion: number, requestedDeviceId: string) => {
     prevDeviceLabel = label
-    // console.log(device)
-    setMediaDeviceId(deviceId).then(() => {
-      prevDeviceId = deviceId
-      saveMediaDeviceId(deviceId)
-    }).catch((err: any) => {
-      console.error('[device-debug] setSinkId failed, revert to default:', err && err.message)
-      setMediaDeviceId('default').finally(() => {
-        prevDeviceId = 'default'
-        saveMediaDeviceId('default')
-      })
+    deviceChange = deviceChange.catch(() => {}).then(async() => {
+      if (
+        requestVersion !== deviceRequestVersion ||
+        isMpvEngine() ||
+        appSetting['player.mediaDeviceId'] !== requestedDeviceId
+      ) return
+      try {
+        await setMediaDeviceId(deviceId)
+        // 只保存最后一次仍然有效且成功绑定的设备，避免旧请求覆盖新选择。
+        if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== requestedDeviceId) return
+        prevDeviceId = deviceId
+        saveMediaDeviceId(deviceId)
+      } catch (err: any) {
+        console.error('set media device failed:', err?.message ?? err)
+        // 路由重建期间的短暂失败不应把用户选择改写成 default；
+        // 下一次路由/设备变更会再次尝试当前设置。
+      }
     })
+    await deviceChange
   }
 
   const handleDeviceChange = (label: string) => {
@@ -71,30 +84,48 @@ export default () => {
     }
   }
 
+  const logDeviceRequestError = (err: unknown) => {
+    console.error('media device enumeration failed:', err instanceof Error ? err.message : err)
+  }
+
   const handleMediaListChange = async() => {
     if (isMpvEngine()) return
     const mediaDeviceId = appSetting['player.mediaDeviceId']
-    const device = await getMediaDevice(mediaDeviceId)
+    const requestVersion = ++deviceRequestVersion
+    try {
+      const device = await getMediaDevice(mediaDeviceId)
+      if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== mediaDeviceId) return
 
-    handleDeviceChange(device.label)
-
-    if (device.deviceId == mediaDeviceId) prevDeviceLabel = device.label
-    else void setMediaDevice(device.deviceId, device.label)
+      handleDeviceChange(device.label)
+      await setMediaDevice(device.deviceId, device.label, requestVersion, mediaDeviceId)
+    } catch (err) {
+      logDeviceRequestError(err)
+    }
   }
 
   watch(() => appSetting['player.mediaDeviceId'], (id) => {
     if (isMpvEngine() || prevDeviceId == id) return
-    void getMediaDevice(id).then(async({ deviceId, label }) => setMediaDevice(deviceId, label))
+    const requestVersion = ++deviceRequestVersion
+    void getMediaDevice(id).then(async({ deviceId, label }) => {
+      if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== id) return
+      await setMediaDevice(deviceId, label, requestVersion, id)
+    }).catch(logDeviceRequestError)
   })
 
   if (!isMpvEngine()) {
-    void getMediaDevice(appSetting['player.mediaDeviceId']).then(async({ deviceId, label }) => setMediaDevice(deviceId, label))
+    const requestedDeviceId = appSetting['player.mediaDeviceId']
+    const requestVersion = ++deviceRequestVersion
+    void getMediaDevice(requestedDeviceId).then(async({ deviceId, label }) => {
+      if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== requestedDeviceId) return
+      await setMediaDevice(deviceId, label, requestVersion, requestedDeviceId)
+    }).catch(logDeviceRequestError)
 
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     navigator.mediaDevices.addEventListener('devicechange', handleMediaListChange)
   }
 
   onBeforeUnmount(() => {
+    deviceRequestVersion++
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     navigator.mediaDevices.removeEventListener('devicechange', handleMediaListChange)
   })

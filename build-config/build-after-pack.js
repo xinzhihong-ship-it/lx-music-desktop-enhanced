@@ -4,6 +4,7 @@ const { execFile } = require('child_process')
 const { promisify } = require('util')
 const { Arch } = require('electron-builder')
 const { validateMacMpvRuntimes } = require('./mpv-runtime')
+const { getVst3HostPlan, validateVst3HostBinary } = require('./build-vst3-host')
 
 const execFileAsync = promisify(execFile)
 
@@ -35,16 +36,20 @@ const signMpvNativeFiles = async(appPath) => {
   }
 }
 
-const signMacAppForLocalUse = async(appPath) => {
+const signMacAppForLocalUse = async(appPath, vst3HostPath = null) => {
   const entitlements = path.resolve(__dirname, '../resources/entitlements.mac.plist')
   const audioTeePath = path.join(appPath, 'Contents/Resources/bin/music-recognition/audiotee')
-  await execFileAsync('codesign', [
-    '--force',
-    '--sign', '-',
-    '--options', 'runtime',
-    '--entitlements', entitlements,
-    audioTeePath,
-  ])
+  const signBinary = async(filePath) => {
+    await execFileAsync('codesign', [
+      '--force',
+      '--sign', '-',
+      '--options', 'runtime',
+      '--entitlements', entitlements,
+      filePath,
+    ])
+  }
+  await signBinary(audioTeePath)
+  if (vst3HostPath) await signBinary(vst3HostPath)
   await signMpvNativeFiles(appPath)
   await execFileAsync('codesign', [
     '--force',
@@ -54,23 +59,50 @@ const signMacAppForLocalUse = async(appPath) => {
     '--entitlements', entitlements,
     appPath,
   ])
+  if (vst3HostPath) {
+    await execFileAsync('codesign', ['--verify', '--strict', vst3HostPath])
+  }
 }
 
 // https://github.com/electron-userland/electron-builder/issues/4630
 // https://github.com/electron-userland/electron-builder/issues/4630#issuecomment-782020139
 
 module.exports = async(context) => {
-	const { electronPlatformName, appOutDir, arch } = context
+  const { electronPlatformName, appOutDir, arch } = context
+  const { productFilename } = context.packager.appInfo
+  const targetArch = arch === Arch.arm64 || arch === 'arm64'
+    ? 'arm64'
+    : arch === Arch.ia32 || arch === 'ia32'
+      ? 'ia32'
+      : arch === Arch.armv7l || arch === 'armv7l'
+        ? 'armv7l'
+        : 'x64'
+  const appPath = electronPlatformName === 'darwin'
+    ? path.join(appOutDir, `${productFilename}.app`)
+    : appOutDir
+  const resPath = electronPlatformName === 'darwin'
+    ? path.join(appPath, 'Contents/Resources')
+    : path.join(appPath, 'resources')
+  const vst3Plan = getVst3HostPlan(electronPlatformName, targetArch)
+  const vst3HostPath = path.join(resPath, 'bin', vst3Plan.name)
+  if (vst3Plan.supported) {
+    validateVst3HostBinary(vst3HostPath, electronPlatformName, targetArch)
+  } else {
+    try {
+      await fs.access(vst3HostPath)
+      throw new Error(`Unsupported VST3 target ${electronPlatformName}-${targetArch} unexpectedly contains ${vst3HostPath}`)
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err
+    }
+  }
   if (electronPlatformName !== 'darwin') return
+
   const {
-    productFilename,
     info: {
       _metadata: { macLanguagesInfoPlistStrings },
     },
   } = context.packager.appInfo
-
-  const resPath = `${appOutDir}/${productFilename}.app/Contents/Resources`
-	validateMacMpvRuntimes(path.join(resPath, 'bin'), arch === Arch.arm64 ? 'arm64' : 'x64')
+  validateMacMpvRuntimes(path.join(resPath, 'bin'), targetArch)
 
   // 创建APP语言包文件
   await Promise.all(
@@ -82,5 +114,5 @@ module.exports = async(context) => {
 
   // electron-builder leaves development packages with Electron's generic identity
   // when no Developer ID is installed, which prevents macOS from granting audio capture.
-  await signMacAppForLocalUse(`${appOutDir}/${productFilename}.app`)
+  await signMacAppForLocalUse(appPath, vst3Plan.supported ? vst3HostPath : null)
 }

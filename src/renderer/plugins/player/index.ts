@@ -5,6 +5,7 @@ import * as audirvanaPlayer from './audirvana'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { watch } from '@common/utils/vueTools'
 import { createVst3Node, configureVst3Audio, closeVst3Audio, prepareVst3Audio, resetVst3Audio, vst3Runtime, cleanVst3Error } from './vst3'
+import { applyOutputSink, createRoutingQueue } from './routingQueue'
 
 let vst3Node: AudioWorkletNode | null = null
 let vst3Change = Promise.resolve()
@@ -65,23 +66,61 @@ watch(() => [appSetting['player.vst3.enabled'], appSetting['player.vst3.chain'],
   })
 }, { deep: true })
 
+watch(() => appSetting['player.audioVisualization'], () => {
+  void applyAudioRouting().catch((err: Error) => {
+    console.error('audio visualization routing change failed:', err?.message ?? err)
+  })
+})
+
 interface HTMLAudioElementChrome extends HTMLAudioElement {
   setSinkId: (id: string) => Promise<void>
 }
 let audio: HTMLAudioElementChrome | null = null
 let audioContext: AudioContext
-let mediaSource: MediaElementAudioSourceNode
+let mediaSource: MediaElementAudioSourceNode | null = null
 // 当前 audio 元素是否已被 WebAudio 图捕获（capture 不可逆，切换模式只能重建元素）
 let elementCaptured = false
+const routingQueue = createRoutingQueue()
 let routingChange = Promise.resolve()
 // 注册在 audio 元素上的应用事件监听（重建元素时迁移到新元素）
 const elementEventListeners: Array<{ event: string, listener: EventListener }> = []
 // 效果处理后的音频经此隐藏元素输出：设备切换用元素级 setSinkId，
 // 绕开 AudioContext.setSinkId 在携带媒体源的上下文上永不决议的问题。
-let outputPipe: HTMLAudioElement | null = null
+let outputPipe: HTMLAudioElementChrome | null = null
 // 图的最终输出接入流式目的地（不再走 AudioContext 默认硬件出口），
 // 由 outputPipe 播放该流，输出设备完全由 outputPipe 的 sink 决定。
 let mediaStreamDest: MediaStreamAudioDestinationNode | null = null
+let unsubAudioMediaListChangeEvent: (() => void) | null = null
+
+const normalizeOutputSinkId = (deviceId: string) => deviceId || 'default'
+let desiredOutputSinkId = normalizeOutputSinkId(appSetting['player.mediaDeviceId'])
+const getDesiredOutputSinkId = () => desiredOutputSinkId || normalizeOutputSinkId(appSetting['player.mediaDeviceId'])
+
+const applyCurrentOutputSink = async(deviceId: string) => {
+  await applyOutputSink({
+    captured: elementCaptured,
+    audio,
+    outputPipe,
+  }, normalizeOutputSinkId(deviceId))
+}
+
+const enqueueRoutingChange = async(task: () => Promise<void>) => {
+  routingChange = routingQueue.enqueue(task)
+  return routingChange
+}
+
+const enqueueLatestRoutingChange = async(key: string, task: () => Promise<void>) => {
+  routingChange = routingQueue.enqueueLatest(key, task)
+  return routingChange
+}
+
+const scheduleCurrentOutputSink = async() => {
+  await enqueueLatestRoutingChange('output-sink', async() => {
+    await applyCurrentOutputSink(getDesiredOutputSinkId())
+  }).catch((err: Error) => {
+    console.error('apply output sink failed:', err?.message ?? err)
+  })
+}
 let analyser: AnalyserNode
 // https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext
 // https://benzleung.gitbooks.io/web-audio-api-mini-guide/content/chapter5-1.html
@@ -136,14 +175,16 @@ let defaultChannelCount = 2
 export const soundR = 0.5
 
 
-const createAudioElement = () => {
+const createAudioElement = (attachRegisteredListeners = true) => {
   const el = new window.Audio() as HTMLAudioElementChrome
   el.controls = false
   el.autoplay = true
   el.preload = 'auto'
   el.crossOrigin = 'anonymous'
-  for (const { event, listener } of elementEventListeners) {
-    el.addEventListener(event, listener)
+  if (attachRegisteredListeners) {
+    for (const { event, listener } of elementEventListeners) {
+      el.addEventListener(event, listener)
+    }
   }
 
   // https://developer.chrome.com/blog/autoplay
@@ -152,7 +193,6 @@ const createAudioElement = () => {
     if (audioContext?.state == 'suspended') {
       void audioContext.resume().catch((err) => {
         console.error('Resume audio context failed:', err)
-        throw err
       })
     }
   })
@@ -206,11 +246,30 @@ const initGain = () => {
   gainNode = audioContext.createGain()
 }
 
-const initAdvancedAudioFeatures = () => {
+const createOutputPipe = (stream: MediaStream, start = true) => {
+  const pipe = new window.Audio() as HTMLAudioElementChrome
+  pipe.controls = false
+  pipe.autoplay = start
+  pipe.preload = 'auto'
+  pipe.srcObject = stream
+  if (start) {
+    void pipe.play().catch(err => {
+      console.error('effect output pipe start failed:', err)
+    })
+  }
+  return pipe
+}
+
+// `deferOutputPipe` is used while an audio element is being staged.  It keeps
+// the old route authoritative until the new final output has accepted its sink.
+const initAdvancedAudioFeatures = (sourceAudio: HTMLAudioElementChrome | null = audio, deferOutputPipe = false) => {
   if (audioContext) return
-  if (!audio) createAudio()
-  if (!audio) return
-  elementCaptured = true
+  if (!sourceAudio) {
+    createAudio()
+    sourceAudio = audio
+  }
+  if (!sourceAudio) return
+  if (!deferOutputPipe) elementCaptured = true
   audioContext = new window.AudioContext({ latencyHint: 'playback' })
   defaultChannelCount = audioContext.destination.channelCount
 
@@ -221,21 +280,11 @@ const initAdvancedAudioFeatures = () => {
   initGain()
   updateConvolverCompressor()
   // source -> analyser -> biquadFilter -> pitchShifter -> [(convolver & convolverSource)->convolverDynamicsCompressor] -> panner -> gain
-  mediaSource = audioContext.createMediaElementSource(audio)
+  mediaSource = audioContext.createMediaElementSource(sourceAudio)
   mediaSource.connect(analyser)
   // 最终输出接流式目的地（不走 AudioContext 默认硬件出口），由 outputPipe 播放
   mediaStreamDest = audioContext.createMediaStreamDestination()
-  outputPipe = new window.Audio()
-  outputPipe.srcObject = mediaStreamDest.stream
-  void outputPipe.play().catch(err => {
-    console.error('effect output pipe start failed:', err)
-  })
-  const savedSinkId = appSetting['player.mediaDeviceId']
-  if (savedSinkId && savedSinkId != 'default') {
-    void outputPipe.setSinkId(savedSinkId).catch(err => {
-      console.error('apply saved media device to output pipe failed:', err)
-    })
-  }
+  outputPipe = createOutputPipe(mediaStreamDest.stream, !deferOutputPipe)
   analyser.connect(biquads.get(`hz${freqs[0]}`)!)
   const lastBiquadFilter = (biquads.get(`hz${freqs.at(-1)!}`)!)
   lastBiquadFilter.connect(convolverSourceGainNode)
@@ -244,8 +293,17 @@ const initAdvancedAudioFeatures = () => {
   panner.connect(gainNode)
   gainNode.connect(mediaStreamDest)
 
+  // 初始化图时设备 watcher 可能尚未完成，立即把当前期望设备提交到最终出口。
+  if (!deferOutputPipe) void scheduleCurrentOutputSink()
+
   // 音频输出设备改变时刷新 audio node 连接
-  window.app_event.on('playerDeviceChanged', handleMediaListChange)
+  if (!unsubAudioMediaListChangeEvent) {
+    window.app_event.on('playerDeviceChanged', handleMediaListChange)
+    unsubAudioMediaListChangeEvent = () => {
+      window.app_event.off('playerDeviceChanged', handleMediaListChange)
+      unsubAudioMediaListChangeEvent = null
+    }
+  }
 
   // audio.addEventListener('playing', connectAudioNode)
   // audio.addEventListener('pause', disconnectAudioNode)
@@ -255,7 +313,8 @@ const initAdvancedAudioFeatures = () => {
 }
 
 const handleMediaListChange = () => {
-  mediaSource.disconnect()
+  if (!mediaSource || !analyser) return
+  try { mediaSource.disconnect() } catch {}
   mediaSource.connect(analyser)
 }
 
@@ -598,6 +657,11 @@ export const setPlay = () => {
     if (audio && !audio.paused) return
     if (vst3Node && !await prepareVst3Audio()) return
     if (revision !== playbackRevision) return
+    if (elementCaptured && outputPipe?.paused) {
+      void outputPipe.play().catch(err => {
+        console.error('effect output pipe resume failed:', err)
+      })
+    }
     await audio?.play()
   })().catch(() => {
     window.app_event.pause()
@@ -758,122 +822,202 @@ export const setCurrentTime = (time: number) => {
   } else if (audio) audio.currentTime = time
 }
 
-// 是否有音频效果处于启用状态（决定音频走效果链还是透明直出）
-const hasActiveAudioEffect = () =>
-  freqs.some(v => appSetting[`player.soundEffect.biquadFilter.hz${v}`] != 0) ||
-  !!appSetting['player.soundEffect.convolution.fileName'] ||
-  appSetting['player.soundEffect.pitchShifter.playbackRate'] != 1 ||
-  appSetting['player.soundEffect.panner.enable'] ||
-  appSetting['player.audioVisualization'] ||
-  appSetting['player.vst3.enabled']
+// 是否有音频效果处于启用状态（决定音频走效果链还是透明直出）。
+// 外部播放引擎和 B 站视频不使用 renderer 的 AudioContext，必须回到透明出口。
+const hasActiveAudioEffect = () => {
+  if (appSetting['player.playEngine'] !== 'electron' || isBiliVideoActive()) return false
+  return freqs.some(v => appSetting[`player.soundEffect.biquadFilter.hz${v}`] != 0) ||
+    !!appSetting['player.soundEffect.convolution.fileName'] ||
+    appSetting['player.soundEffect.pitchShifter.playbackRate'] != 1 ||
+    appSetting['player.soundEffect.panner.enable'] ||
+    appSetting['player.audioVisualization'] ||
+    appSetting['player.vst3.enabled']
+}
 
 // 重建 audio 元素：capture 不可逆，透明直出与效果链之间切换只能换元素
 const rebuildAudioElement = async(capture: boolean) => {
   if (!audio) {
     createAudio()
-    elementCaptured = false
-    if (capture) {
-      initAdvancedAudioFeatures()
-      elementCaptured = true
-      const sinkId = appSetting['player.mediaDeviceId']
-      if (sinkId && sinkId != 'default' && outputPipe) {
-        void outputPipe.setSinkId(sinkId).catch(err => {
-          console.error('apply saved media device to output pipe failed:', err)
-        })
-      }
-    }
+    if (!audio) return
+    if (capture) initAdvancedAudioFeatures(audio)
+    await applyCurrentOutputSink(getDesiredOutputSinkId())
     return
   }
-  const wasPlaying = !audio.paused
+
+  const oldAudio = audio
+  const oldMediaSource = mediaSource
+  const oldOutputPipe = outputPipe
+  const oldCaptured = elementCaptured
+  const wasPlaying = !oldAudio.paused
   const state = {
-    src: audio.src,
-    time: audio.currentTime,
-    volume: audio.volume,
-    muted: audio.muted,
-    rate: audio.playbackRate,
-    defaultRate: audio.defaultPlaybackRate,
-    preserves: audio.preservesPitch,
+    src: oldAudio.src,
+    time: oldAudio.currentTime,
+    volume: oldAudio.volume,
+    muted: oldAudio.muted,
+    rate: oldAudio.playbackRate,
+    defaultRate: oldAudio.defaultPlaybackRate,
+    preserves: oldAudio.preservesPitch,
+    loop: oldAudio.loop,
   }
-  // 先摘除应用事件监听：旧元素即将丢弃，清空 src 触发的空源错误不应进入恢复流程
-  for (const { event, listener } of elementEventListeners) {
-    audio.removeEventListener(event, listener)
-  }
-  audio.pause()
-  audio.removeAttribute('src')
-  audio.load()
-  // 先换新元素（capture 不可逆），再初始化图（捕获新元素）并应用用户所选输出设备
-  audio = createAudioElement()
-  elementCaptured = capture
-  // 效果链模式：先确保 AudioContext 与效果节点就绪（内部捕获当前元素），再处理管道
-  if (capture) {
-    if (!audioContext) initAdvancedAudioFeatures()
-    else {
-      mediaSource = audioContext.createMediaElementSource(audio)
-      mediaSource.connect(analyser)
-    }
-    if (!outputPipe) {
-      outputPipe = new window.Audio()
-      outputPipe.srcObject = mediaStreamDest!.stream
-      void outputPipe.play().catch(err => {
-        console.error('effect output pipe start failed:', err)
-      })
-      const savedSinkId = appSetting['player.mediaDeviceId']
-      if (savedSinkId && savedSinkId != 'default') {
-        void outputPipe.setSinkId(savedSinkId).catch(err => {
-          console.error('apply saved media device to output pipe failed:', err)
-        })
+
+  // Stage the replacement without publishing it through the module-level `audio`.
+  // The old element remains the only active source until the final sink accepts.
+  const nextAudio = createAudioElement(false)
+  nextAudio.autoplay = false
+  let nextMediaSource: MediaElementAudioSourceNode | null = null
+  let nextOutputPipe: HTMLAudioElementChrome | null = null
+  try {
+    if (capture) {
+      if (!audioContext) {
+        // The first graph must also be initialized against the staged element;
+        // otherwise createMediaElementSource would capture the old direct output.
+        initAdvancedAudioFeatures(nextAudio, true)
+        nextMediaSource = mediaSource
+        nextOutputPipe = outputPipe
+      } else {
+        nextMediaSource = audioContext.createMediaElementSource(nextAudio)
+        nextMediaSource.connect(analyser)
+        nextOutputPipe = oldOutputPipe
+        if (!nextOutputPipe) {
+          if (!mediaStreamDest) throw new Error('Audio output pipe is not ready')
+          nextOutputPipe = createOutputPipe(mediaStreamDest.stream, false)
+        }
       }
     }
+
+    nextAudio.volume = state.volume
+    nextAudio.muted = state.muted
+    nextAudio.defaultPlaybackRate = state.defaultRate
+    nextAudio.playbackRate = state.rate
+    nextAudio.loop = state.loop
+    if ('preservesPitch' in nextAudio) nextAudio.preservesPitch = state.preserves
+    if (state.src) {
+      nextAudio.src = state.src
+      nextAudio.load()
+      try { nextAudio.currentTime = state.time } catch {}
+    }
+
+    // Bind the final output while the replacement is still staged. A rejected
+    // setSinkId therefore cannot strand playback on a new empty element.
+    await applyOutputSink({
+      captured: capture,
+      audio: nextAudio,
+      outputPipe: nextOutputPipe,
+    }, getDesiredOutputSinkId())
+  } catch (err) {
+    console.error('audio routing rebuild failed, keeping previous route:', err)
+    try {
+      nextAudio.pause()
+      nextAudio.removeAttribute('src')
+      nextAudio.load()
+    } catch {}
+    if (nextMediaSource && nextMediaSource !== oldMediaSource) {
+      try { nextMediaSource.disconnect() } catch {}
+    }
+    if (nextOutputPipe && nextOutputPipe !== oldOutputPipe) {
+      try {
+        nextOutputPipe.pause()
+        nextOutputPipe.srcObject = null
+      } catch {}
+    }
+    // A cold-start graph may have populated these globals while it was staged.
+    // Restore the route references; keep the initialized context for a retry.
+    // eslint-disable-next-line require-atomic-updates -- rollback runs inside the serialized routing transaction.
+    mediaSource = oldMediaSource
+    // eslint-disable-next-line require-atomic-updates -- rollback runs inside the serialized routing transaction.
+    outputPipe = oldOutputPipe
+    // eslint-disable-next-line require-atomic-updates -- rollback runs inside the serialized routing transaction.
+    elementCaptured = oldCaptured
+    throw err
   }
-  if (!capture && outputPipe) {
-    outputPipe.pause()
-    outputPipe.srcObject = null
-    outputPipe = null
-  }
+
+  // Keep the old element available until the replacement has also proved that
+  // it can resume playback. This covers autoplay/load failures after setSinkId.
   for (const { event, listener } of elementEventListeners) {
-    audio.addEventListener(event, listener)
+    oldAudio.removeEventListener(event, listener)
   }
-  // 透明直出时元素是唯一输出，必须应用用户所选的设备
-  if (!capture) {
-    const sinkId = appSetting['player.mediaDeviceId']
-    console.error('[device-debug] rebuilt transparent, apply sink:', sinkId == 'default' ? 'default' : String(sinkId).slice(0, 12))
-    if (sinkId && sinkId != 'default') {
-      void audio.setSinkId(sinkId).catch(err => {
-        console.error('apply media device to rebuilt element failed:', err)
+  oldAudio.pause()
+  nextAudio.autoplay = true
+  try {
+    if (capture && nextOutputPipe && nextOutputPipe !== oldOutputPipe) {
+      try {
+        await nextOutputPipe.play()
+      } catch (err) {
+        console.error('effect output pipe start failed:', err)
+        if (wasPlaying) throw err
+      }
+    }
+    if (wasPlaying) await nextAudio.play()
+  } catch (err) {
+    console.error('audio routing replacement could not resume, restoring previous route:', err)
+    try {
+      nextAudio.pause()
+      nextAudio.removeAttribute('src')
+      nextAudio.load()
+    } catch {}
+    if (nextMediaSource && nextMediaSource !== oldMediaSource) {
+      try { nextMediaSource.disconnect() } catch {}
+    }
+    if (nextOutputPipe && nextOutputPipe !== oldOutputPipe) {
+      try {
+        nextOutputPipe.pause()
+        nextOutputPipe.srcObject = null
+      } catch {}
+    }
+    // eslint-disable-next-line require-atomic-updates -- rollback runs inside the serialized routing transaction.
+    mediaSource = oldMediaSource
+    // eslint-disable-next-line require-atomic-updates -- rollback runs inside the serialized routing transaction.
+    outputPipe = oldOutputPipe
+    // eslint-disable-next-line require-atomic-updates -- rollback runs inside the serialized routing transaction.
+    elementCaptured = oldCaptured
+    for (const { event, listener } of elementEventListeners) {
+      oldAudio.addEventListener(event, listener)
+    }
+    if (wasPlaying) {
+      await oldAudio.play().catch(playErr => {
+        console.error('audio rollback failed:', playErr?.message ?? playErr)
       })
     }
+    throw err
   }
-  if (state.src) {
-    audio.src = state.src
-    audio.volume = state.volume
-    audio.muted = state.muted
-    audio.defaultPlaybackRate = state.defaultRate
-    audio.playbackRate = state.rate
-    if ('preservesPitch' in audio) audio.preservesPitch = state.preserves
-    audio.load()
-    audio.currentTime = state.time
+
+  // Commit only after the final output accepted the desired device and the new
+  // media element is ready to continue playback.
+  // eslint-disable-next-line require-atomic-updates -- commit is serialized by routingQueue.
+  audio = nextAudio
+  // eslint-disable-next-line require-atomic-updates -- commit is serialized by routingQueue.
+  elementCaptured = capture
+  // eslint-disable-next-line require-atomic-updates -- commit is serialized by routingQueue.
+  mediaSource = capture ? nextMediaSource : null
+  // eslint-disable-next-line require-atomic-updates -- commit is serialized by routingQueue.
+  outputPipe = capture ? nextOutputPipe : null
+  for (const { event, listener } of elementEventListeners) {
+    nextAudio.addEventListener(event, listener)
   }
-  if (wasPlaying) {
-    await audio.play().catch(err => {
-      console.error('audio play after routing switch failed:', err?.message)
-    })
+
+  if (oldMediaSource && oldMediaSource !== nextMediaSource) {
+    try { oldMediaSource.disconnect() } catch {}
+  }
+  oldAudio.removeAttribute('src')
+  oldAudio.load()
+  if (oldOutputPipe && oldOutputPipe !== nextOutputPipe) {
+    oldOutputPipe.pause()
+    oldOutputPipe.srcObject = null
   }
 }
 
 // 按当前效果状态切换音频路由（串行化避免并发重建）
 const applyAudioRouting = async() => {
-  routingChange = routingChange.catch(() => {}).then(async() => {
+  return enqueueRoutingChange(async() => {
     if (!audio && !mediaSource) return
     const wantEffects = hasActiveAudioEffect()
-    if (wantEffects === elementCaptured) return
+    if (wantEffects === elementCaptured) {
+      await applyCurrentOutputSink(getDesiredOutputSinkId())
+      return
+    }
     console.error('[device-debug] routing ->', wantEffects ? 'effects' : 'transparent')
     await rebuildAudioElement(wantEffects)
-    // 模式切换后 VST3 节点需要跟随重建
-    if (appSetting['player.vst3.enabled']) {
-      void syncVst3()
-    }
   })
-  return routingChange
 }
 
 export const applyAudioRoutingNow = async() => applyAudioRouting()
@@ -894,12 +1038,20 @@ if (typeof window !== 'undefined') {
   })
 }
 
+let outputSinkRequestVersion = 0
+
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
   if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
-  // 效果链模式：输出走管道；透明直出模式：<audio> 元素就是输出，元素级切换
-  if (elementCaptured && outputPipe) return outputPipe.setSinkId(mediaDeviceId)
-  if (audio) await audio.setSinkId(mediaDeviceId)
+  desiredOutputSinkId = normalizeOutputSinkId(mediaDeviceId)
+  const requestVersion = ++outputSinkRequestVersion
+  const requestedSinkId = desiredOutputSinkId
+  await enqueueLatestRoutingChange('output-sink', async() => {
+    // 设备变更必须等待正在进行的元素重建，再绑定到最终硬件出口。
+    // 已被更新请求取代的任务不再触碰旧设备，避免 A→B 时短暂回到 A。
+    if (requestVersion !== outputSinkRequestVersion) return
+    await applyCurrentOutputSink(requestedSinkId)
+  })
 }
 
 export const setVolume = (volume: number) => {

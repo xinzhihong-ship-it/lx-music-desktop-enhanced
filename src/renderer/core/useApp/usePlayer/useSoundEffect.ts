@@ -16,10 +16,33 @@ import {
 
 import { appSetting } from '@renderer/store/setting'
 
+// These are the only convolution resources shipped with the renderer.
+/* eslint-disable @typescript-eslint/no-var-requires */
+const filterAssets: Record<string, string> = {
+  'bright-hall.wav': require('@renderer/assets/medias/filters/bright-hall.wav') as string,
+  'cardiod-35-10-spread.wav': require('@renderer/assets/medias/filters/cardiod-35-10-spread.wav') as string,
+  'cinema-diningroom.wav': require('@renderer/assets/medias/filters/cinema-diningroom.wav') as string,
+  'dining-living-true-stereo.wav': require('@renderer/assets/medias/filters/dining-living-true-stereo.wav') as string,
+  'feedback-spring.wav': require('@renderer/assets/medias/filters/feedback-spring.wav') as string,
+  'filter-telephone.wav': require('@renderer/assets/medias/filters/filter-telephone.wav') as string,
+  'living-bedroom-leveled.wav': require('@renderer/assets/medias/filters/living-bedroom-leveled.wav') as string,
+  'matrix-reverb1.wav': require('@renderer/assets/medias/filters/matrix-reverb1.wav') as string,
+  'matrix-reverb2.wav': require('@renderer/assets/medias/filters/matrix-reverb2.wav') as string,
+  'medium-room1.wav': require('@renderer/assets/medias/filters/medium-room1.wav') as string,
+  's2_r4_bd.wav': require('@renderer/assets/medias/filters/s2_r4_bd.wav') as string,
+  's3_r1_bd.wav': require('@renderer/assets/medias/filters/s3_r1_bd.wav') as string,
+  'spreader50-65ms.wav': require('@renderer/assets/medias/filters/spreader50-65ms.wav') as string,
+  'tim-omni-35-10-magnetic.wav': require('@renderer/assets/medias/filters/tim-omni-35-10-magnetic.wav') as string,
+}
+/* eslint-enable @typescript-eslint/no-var-requires */
+
 const cache = new Map<string, AudioBuffer>()
 const loadBuffer = async(name: string) => new Promise<AudioBuffer>((resolve, reject) => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const path = require('@renderer/assets/medias/filters/' + name) as string
+  const path = filterAssets[name]
+  if (!path) {
+    reject(new Error(`Invalid convolution filter: ${name}`))
+    return
+  }
   if (cache.has(path)) {
     resolve(cache.get(path)!)
     return
@@ -156,8 +179,11 @@ export default () => {
     appSetting['player.soundEffect.convolution.fileName'],
     appSetting['player.soundEffect.pitchShifter.playbackRate'],
     appSetting['player.soundEffect.panner.enable'],
+    appSetting['player.audioVisualization'],
   ], () => {
-    void applyAudioRoutingNow()
+    void applyAudioRoutingNow().catch((err: Error) => {
+      console.error('sound effect routing change failed:', err?.message ?? err)
+    })
   })
 
 

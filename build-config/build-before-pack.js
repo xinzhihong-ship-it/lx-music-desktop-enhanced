@@ -7,7 +7,7 @@ const {
   buildMpvVideoNative,
   buildMpvWindowNative,
 } = require('./build-mpv-video')
-const { buildVst3Host } = require('./build-vst3-host')
+const { buildVst3Host, getVst3HostPlan } = require('./build-vst3-host')
 
 const better_sqlite3_fileNameMap = {
   [Arch.x64]: 'linux-x64',
@@ -104,14 +104,14 @@ module.exports = async(context) => {
     if (!targetArch) { throw new Error(`Windows 视频宿主桥不支持目标架构：${arch}`) }
     if (!buildMpvWindowNative(targetArch)) { throw new Error('Windows 视频宿主桥构建失败') }
   }
-  // VST3 宿主只能原生编译：目标架构与构建机一致时打包携带，否则跳过（包内无 VST3 功能）。
+  // 未配置交叉 Rust/linker 时只为当前构建机生成匹配 host，其他包明确省略，禁止误用 stale binary。
   const vst3TargetArch = arch === Arch.x64 ? 'x64' : arch === Arch.arm64 ? 'arm64' : arch === Arch.ia32 ? 'ia32' : arch === Arch.armv7l ? 'armv7l' : ''
-  if (vst3TargetArch === process.arch) {
-    buildVst3Host()
+  const vst3Plan = getVst3HostPlan(electronPlatformName, vst3TargetArch || arch)
+  if (vst3Plan.supported) {
+    buildVst3Host(electronPlatformName, vst3TargetArch || arch)
   } else {
-    console.warn(
-      `[vst3] 目标架构 ${vst3TargetArch || arch} 与构建机 ${process.arch} 不一致，本包不携带 VST3 宿主`,
-    )
+    await fsPromises.unlink(vst3Plan.sourcePath).catch(() => {})
+    console.warn(`[vst3] ${vst3Plan.reason}; package will omit the VST3 host`)
   }
   if (electronPlatformName !== 'linux' || process.env.FORCE) return
   const bindingFilePath = path.join(

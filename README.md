@@ -91,7 +91,7 @@ ACRCloud 是听歌识曲的**可选第二引擎**，用于识别 Shazam 未收�
 
 - Linux
 - macOS
-- Windows 7 及以上
+- Windows 10 及以上（Win7 兼容包仅作为实验性测试产物）
 
 技术栈与原项目保持一致：Electron 40、Vue 3。
 
@@ -106,7 +106,7 @@ ACRCloud 是听歌识曲的**可选第二引擎**，用于识别 Shazam 未收�
 | MPV 引擎（安装包内置二进制） | ✅ | ✅（x64/arm64） | ⚠️ 需自行安装 mpv |
 | Audirvana 引擎 | ✅ | ❌（设置中不显示） | ❌ |
 
-> Windows x64 安装包已实测；Windows ARM64 与 Win7 专用包由同一 CI 构建，未单独实测。
+> Windows x64 安装包已实测；Windows ARM64、Linux ARM 包和 Win7 专用包由 CI 构建但未单独实测。当前 VST3 host 仅随匹配的 Windows x64、macOS x64/arm64、Linux x64 包提供。
 
 ## 播放引擎说明
 

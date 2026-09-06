@@ -20,11 +20,20 @@ const getDirectories = () => {
 
 const executablePath = () => {
   const name = process.platform === 'win32' ? 'lx-vst3-host.exe' : 'lx-vst3-host'
+  const appRoot = app.getAppPath()
+  const developmentRoots = [...new Set([appRoot, path.resolve(appRoot, '..')])]
   const candidates = app.isPackaged
     ? [path.join(process.resourcesPath, 'bin', name)]
-    : [path.join(process.cwd(), 'build/Release', name), path.join(process.cwd(), 'native/vst3-host/target/debug', name)]
+    : developmentRoots.flatMap(root => [
+      path.join(root, 'build/Release', name),
+      path.join(root, 'native/vst3-host/target/debug', name),
+    ])
   const executable = candidates.find(candidate => fs.existsSync(candidate))
-  if (!executable) throw new Error('VST3 host is not built. Run npm run build:native:vst3.')
+  if (!executable) throw new Error(`VST3 host is unavailable for ${process.platform}-${process.arch}. Build it with npm run build:native:vst3 or use a package containing the matching host.`)
+  const stat = fs.statSync(executable)
+  if (!stat.isFile() || (process.platform !== 'win32' && (stat.mode & 0o111) === 0)) {
+    throw new Error(`VST3 host is not executable for ${process.platform}-${process.arch}: ${executable}`)
+  }
   return executable
 }
 
