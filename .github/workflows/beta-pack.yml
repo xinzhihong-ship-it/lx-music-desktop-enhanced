@@ -24,7 +24,12 @@ jobs:
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
+      - name: Get npm cache directory
+        shell: bash
+        run: echo "NPM_CACHE=$(npm config get cache)" >> "$GITHUB_ENV"
       - name: Setup Node Env
+        env:
+          NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
       - name: Install Linux system dependencies
         run: sudo apt-get update && sudo apt-get install -y libxcb1-dev libxcb-cursor-dev libxkbcommon-dev
@@ -54,7 +59,12 @@ jobs:
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
+      - name: Get npm cache directory
+        shell: bash
+        run: echo "NPM_CACHE=$(npm config get cache)" >> "$GITHUB_ENV"
       - name: Setup Node Env
+        env:
+          NPM_CACHE: ${{ env.NPM_CACHE }}
         uses: ./.github/actions/setup
       - name: Build debug VST3 host
         run: cargo build --locked --manifest-path native/vst3-host/Cargo.toml
