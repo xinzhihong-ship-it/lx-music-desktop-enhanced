@@ -44,8 +44,11 @@ test('packaged host validation checks format, architecture and executable mode',
     const elfPath = path.join(root, 'lx-vst3-host')
     fs.writeFileSync(elfPath, elf, { mode: 0o755 })
     assert.deepEqual(getBinaryArchitectures(elfPath, 'linux'), ['x64'])
-    assert.equal(validateVst3HostBinary(elfPath, 'linux', 'x64').arch, 'x64')
-    assert.throws(() => validateVst3HostBinary(elfPath, 'linux', 'arm64'), /architecture mismatch/)
+    // Windows does not preserve POSIX executable bits on synthetic ELF files.
+    if (process.platform !== 'win32') {
+      assert.equal(validateVst3HostBinary(elfPath, 'linux', 'x64').arch, 'x64')
+      assert.throws(() => validateVst3HostBinary(elfPath, 'linux', 'arm64'), /architecture mismatch/)
+    }
 
     const pe = Buffer.alloc(0x80)
     pe[0] = 0x4d
@@ -57,6 +60,7 @@ test('packaged host validation checks format, architecture and executable mode',
     fs.writeFileSync(pePath, pe)
     assert.deepEqual(getBinaryArchitectures(pePath, 'win32'), ['x64'])
     assert.equal(validateVst3HostBinary(pePath, 'win32', 'x64').arch, 'x64')
+    assert.throws(() => validateVst3HostBinary(pePath, 'win32', 'arm64'), /architecture mismatch/)
 
     const mach = Buffer.alloc(32)
     mach.set([0xcf, 0xfa, 0xed, 0xfe], 0)
