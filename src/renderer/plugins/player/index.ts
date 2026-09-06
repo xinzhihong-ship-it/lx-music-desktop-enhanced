@@ -522,9 +522,6 @@ const stopSelectedAudioEngine = async() => {
     await audirvanaPlayer.setStop().catch(err => { console.error('audirvana stop before video failed', err) })
   } else if (audio) {
     if (vst3Node) resetVst3Audio(false)
-    for (const { event, listener } of elementEventListeners) {
-      audio.removeEventListener(event, listener)
-    }
     audio.pause()
     audio.src = ''
     audio.removeAttribute('src')
@@ -651,9 +648,6 @@ export const setStop = async(): Promise<void> => {
     return audirvanaPlayer.setStop().catch(err => {
       console.error('audirvana stop failed', err)
     })
-  }
-  for (const { event, listener } of elementEventListeners) {
-    audio?.removeEventListener(event, listener)
   }
   if (audio) {
     audio.src = ''
