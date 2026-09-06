@@ -74,6 +74,8 @@ let mediaSource: MediaElementAudioSourceNode
 // 当前 audio 元素是否已被 WebAudio 图捕获（capture 不可逆，切换模式只能重建元素）
 let elementCaptured = false
 let routingChange = Promise.resolve()
+// 注册在 audio 元素上的应用事件监听（重建元素时迁移到新元素）
+const elementEventListeners: Array<{ event: string, listener: EventListener }> = []
 // 效果处理后的音频经此隐藏元素输出：设备切换用元素级 setSinkId，
 // 绕开 AudioContext.setSinkId 在携带媒体源的上下文上永不决议的问题。
 let outputPipe: HTMLAudioElement | null = null
@@ -140,6 +142,9 @@ const createAudioElement = () => {
   el.autoplay = true
   el.preload = 'auto'
   el.crossOrigin = 'anonymous'
+  for (const { event, listener } of elementEventListeners) {
+    el.addEventListener(event, listener)
+  }
 
   // https://developer.chrome.com/blog/autoplay
   el.addEventListener('playing', () => {
@@ -789,6 +794,9 @@ const rebuildAudioElement = async(capture: boolean) => {
   if (capture) initAdvancedAudioFeatures()
   audio = createAudioElement()
   elementCaptured = capture
+  for (const { event, listener } of elementEventListeners) {
+    audio.addEventListener(event, listener)
+  }
   if (state.src) {
     audio.src = state.src
     audio.volume = state.volume
@@ -883,11 +891,16 @@ type PlayerSub = (callback: (...args: any[]) => void) => () => void
 const registerEvent = (event: string, mpvSub: PlayerSub, videoSub: PlayerSub, audirvanaSub: PlayerSub, callback: Noop): (() => void) => {
   const unsubs: Array<() => void> = []
   if (audio) {
-    const audioCallback = () => {
+    const audioCallback: EventListener = () => {
       if (!isBiliVideoActive() && appSetting['player.playEngine'] === 'electron') callback()
     }
+    elementEventListeners.push({ event, listener: audioCallback })
     audio.addEventListener(event, audioCallback)
-    unsubs.push(() => audio?.removeEventListener(event, audioCallback))
+    unsubs.push(() => {
+      audio?.removeEventListener(event, audioCallback)
+      const index = elementEventListeners.findIndex(item => item.event === event && item.listener === audioCallback)
+      if (index > -1) elementEventListeners.splice(index, 1)
+    })
   }
   unsubs.push(mpvSub(() => {
     if (!isBiliVideoActive() && isMpvEngine()) callback()
