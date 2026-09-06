@@ -30,7 +30,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-test('output sink is applied to the final element for each routing mode', async() => {
+test('visualization/effect mode uses outputPipe while transparent mode uses audio', async() => {
   const { applyOutputSink } = loadRoutingQueue()
   const calls = []
   const audio = sinkTarget(calls, 'audio')
@@ -116,5 +116,25 @@ test('latest routing requests skip stale tasks that have not started', async() =
     ['pipe', 'done', 'device-a'],
     ['pipe', 'start', 'device-c'],
     ['pipe', 'done', 'device-c'],
+  ])
+})
+
+test('a latest request follows an in-flight binding and becomes the final sink', async() => {
+  const { createRoutingQueue } = loadRoutingQueue()
+  const queue = createRoutingQueue()
+  const gate = deferred()
+  const calls = []
+  const first = queue.enqueueLatest('sink', () => sinkTarget(calls, 'pipe', gate).setSinkId('device-a'))
+  await new Promise(resolve => setImmediate(resolve))
+  const latest = queue.enqueueLatest('sink', () => sinkTarget(calls, 'pipe').setSinkId('device-b'))
+  assert.deepEqual(calls, [['pipe', 'start', 'device-a']])
+
+  gate.resolve()
+  await Promise.all([first, latest])
+  assert.deepEqual(calls, [
+    ['pipe', 'start', 'device-a'],
+    ['pipe', 'done', 'device-a'],
+    ['pipe', 'start', 'device-b'],
+    ['pipe', 'done', 'device-b'],
   ])
 })

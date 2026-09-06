@@ -36,7 +36,7 @@
 
 CI 工作流 `vst3-check` 在 Ubuntu、Windows、macOS 原生 runner 执行 host 构建及 Rust/单元测试；音频端到端测试仅在 macOS/Windows 运行，Linux 实时音频与 X11 编辑器仍待实机验证。当前发布流程未配置 ARM 或 Win32 Rust 交叉链接，因此对应目标包会明确省略 VST3 宿主。
 
-打包已接入：`beforePack` 阶段用 Rust 原生构建宿主（要求构建机装有 Rust），二进制经 `extraResources` 放入 `resources/bin/`；匹配的主流原生目标构建失败会直接阻止打包，未配置交叉链接的目标会删除旧 host 并明确省略，避免误用其他架构二进制。
+打包已接入：`beforePack` 阶段用 Rust 原生构建宿主（要求构建机装有 Rust），二进制经 `extraResources` 放入 `resources/bin/`；匹配的主流原生目标构建失败会直接阻止打包，未配置交叉链接的目标会删除旧 host 并明确省略，避免误用其他架构二进制。打包后和运行时都会校验宿主文件格式、可执行权限及原生架构，开发模式也不会启动不匹配的 stale host。
 
 另外，音频线程直写响应的协议安全性依赖客户端"同一时刻至多一个在途请求"的约定（chain.cjs 已保证）；Linux 编辑器还依赖库的 X11 事件服务，真机表现需实测确认。
 

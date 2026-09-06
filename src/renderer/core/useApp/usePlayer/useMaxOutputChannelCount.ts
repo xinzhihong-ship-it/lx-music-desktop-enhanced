@@ -4,11 +4,18 @@ import { setMaxOutputChannelCount } from '@renderer/plugins/player'
 import { appSetting } from '@renderer/store/setting'
 
 export default () => {
-  // console.log(appSetting['player.soundEffect.panner.enable'])
-  setMaxOutputChannelCount(appSetting['player.isMaxOutputChannelCount'])
+  const isElectronEngine = () => appSetting['player.playEngine'] === 'electron'
+  const applyMaxOutputChannelCount = (enabled: boolean) => {
+    if (!isElectronEngine()) return
+    setMaxOutputChannelCount(enabled)
+  }
 
+  applyMaxOutputChannelCount(appSetting['player.isMaxOutputChannelCount'])
   watch(() => appSetting['player.isMaxOutputChannelCount'], (val) => {
-    setMaxOutputChannelCount(val)
+    applyMaxOutputChannelCount(val)
+  })
+  watch(() => appSetting['player.playEngine'], () => {
+    applyMaxOutputChannelCount(appSetting['player.isMaxOutputChannelCount'])
   })
 }
 

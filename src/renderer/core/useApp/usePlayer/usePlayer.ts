@@ -3,6 +3,8 @@ import { useI18n } from '@renderer/plugins/i18n'
 import { setTitle } from '@renderer/utils'
 
 import {
+  createAudio,
+  applyAudioRoutingNow,
   getCurrentTime,
   getDuration,
   setPause,
@@ -62,12 +64,20 @@ export default () => {
   usePlayEvent()
   useLyric()
   useVolume()
-  if (appSetting['player.playEngine'] == 'electron') {
-    useMaxOutputChannelCount()
-    useSoundEffect()
-  } else {
-    // mpv / Audirvana 高保真模式走外部播放器 -> 系统音频输出，不经过 HTMLAudioElement/AudioContext，内置 EQ/混响/变调/声像/可视化音效链不生效。
+  useMaxOutputChannelCount()
+  useSoundEffect()
+  const ensureElectronAudio = () => {
+    if (appSetting['player.playEngine'] !== 'electron') return
+    // Audirvana can start without an HTMLAudioElement; create it before the
+    // routing transaction so switching back to Electron cannot be a no-op.
+    createAudio()
+    void applyAudioRoutingNow().catch((err: Error) => {
+      console.error('electron audio routing initialization failed:', err?.message ?? err)
+    })
   }
+  ensureElectronAudio()
+  watch(() => appSetting['player.playEngine'], ensureElectronAudio)
+  // mpv / Audirvana 高保真模式走外部播放器 -> 系统音频输出，不经过 HTMLAudioElement/AudioContext，内置 EQ/混响/变调/声像/可视化音效链不生效。
   usePlaybackRate()
   useWatchList()
   usePreloadNextMusic()

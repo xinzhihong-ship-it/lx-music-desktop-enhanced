@@ -104,11 +104,6 @@ const applyCurrentOutputSink = async(deviceId: string) => {
   }, normalizeOutputSinkId(deviceId))
 }
 
-const enqueueRoutingChange = async(task: () => Promise<void>) => {
-  routingChange = routingQueue.enqueue(task)
-  return routingChange
-}
-
 const enqueueLatestRoutingChange = async(key: string, task: () => Promise<void>) => {
   routingChange = routingQueue.enqueueLatest(key, task)
   return routingChange
@@ -1006,37 +1001,20 @@ const rebuildAudioElement = async(capture: boolean) => {
   }
 }
 
-// 按当前效果状态切换音频路由（串行化避免并发重建）
+// 按当前效果状态切换音频路由（串行化并只保留最新请求）
 const applyAudioRouting = async() => {
-  return enqueueRoutingChange(async() => {
+  return enqueueLatestRoutingChange('audio-routing', async() => {
     if (!audio && !mediaSource) return
     const wantEffects = hasActiveAudioEffect()
     if (wantEffects === elementCaptured) {
       await applyCurrentOutputSink(getDesiredOutputSinkId())
       return
     }
-    console.error('[device-debug] routing ->', wantEffects ? 'effects' : 'transparent')
     await rebuildAudioElement(wantEffects)
   })
 }
 
 export const applyAudioRoutingNow = async() => applyAudioRouting()
-
-// TEMP DEBUG（验证完成后移除）
-if (typeof window !== 'undefined') {
-  (window as any).__lxAudioDebug = () => ({
-    hasAudio: !!audio,
-    audioPaused: audio ? audio.paused : null,
-    audioSinkId: audio ? (audio as any).sinkId : null,
-    hasCtx: !!audioContext,
-    ctxState: audioContext ? audioContext.state : null,
-    hasPipe: !!outputPipe,
-    pipePaused: outputPipe ? outputPipe.paused : null,
-    pipeSinkId: outputPipe ? (outputPipe as any).sinkId : null,
-    captured: elementCaptured,
-    vst3Node: !!vst3Node,
-  })
-}
 
 let outputSinkRequestVersion = 0
 

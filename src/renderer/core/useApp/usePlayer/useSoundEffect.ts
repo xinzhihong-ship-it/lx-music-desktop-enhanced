@@ -75,28 +75,38 @@ const loadBuffer = async(name: string) => new Promise<AudioBuffer>((resolve, rej
   request.send()
 })
 
+const isElectronEngine = () => appSetting['player.playEngine'] === 'electron'
+
 export default () => {
-  // console.log(appSetting['player.soundEffect.panner.enable'])
-  if (appSetting['player.soundEffect.panner.enable']) startPanner()
-  setPannerSoundR(appSetting['player.soundEffect.panner.soundR'] / 10)
-  setPannerSpeed(2 * (appSetting['player.soundEffect.panner.speed'] / 10))
-  if (freqs.some(v => appSetting[`player.soundEffect.biquadFilter.hz${v}`] != 0)) {
-    const bfs = getBiquadFilter()
-    for (const item of freqs) {
-      bfs.get(`hz${item}`)!.gain.value = appSetting[`player.soundEffect.biquadFilter.hz${item}`]
+  const initializeElectronEffects = () => {
+    // Do not initialize Web Audio while MPV/Audirvana owns the output device.
+    if (!isElectronEngine()) return
+    if (appSetting['player.soundEffect.panner.enable']) startPanner()
+    setPannerSoundR(appSetting['player.soundEffect.panner.soundR'] / 10)
+    setPannerSpeed(2 * (appSetting['player.soundEffect.panner.speed'] / 10))
+    if (freqs.some(v => appSetting[`player.soundEffect.biquadFilter.hz${v}`] != 0)) {
+      const bfs = getBiquadFilter()
+      for (const item of freqs) {
+        bfs.get(`hz${item}`)!.gain.value = appSetting[`player.soundEffect.biquadFilter.hz${item}`]
+      }
+    }
+    if (appSetting['player.soundEffect.convolution.fileName']) {
+      void loadBuffer(appSetting['player.soundEffect.convolution.fileName']).then((buffer) => {
+        setConvolver(buffer, appSetting['player.soundEffect.convolution.mainGain'] / 10, appSetting['player.soundEffect.convolution.sendGain'] / 10)
+      }).catch(err => {
+        console.error('initial convolution filter load failed:', err)
+      })
+    }
+    if (appSetting['player.soundEffect.pitchShifter.playbackRate'] != 1) {
+      setPitchShifter(appSetting['player.soundEffect.pitchShifter.playbackRate'])
     }
   }
-  if (appSetting['player.soundEffect.convolution.fileName']) {
-    void loadBuffer(appSetting['player.soundEffect.convolution.fileName']).then((buffer) => {
-      setConvolver(buffer, appSetting['player.soundEffect.convolution.mainGain'] / 10, appSetting['player.soundEffect.convolution.sendGain'] / 10)
-    })
-  }
-  if (appSetting['player.soundEffect.pitchShifter.playbackRate'] != 1) {
-    setPitchShifter(appSetting['player.soundEffect.pitchShifter.playbackRate'])
-  }
 
+  initializeElectronEffects()
+  watch(() => appSetting['player.playEngine'], initializeElectronEffects)
 
   watch(() => appSetting['player.soundEffect.panner.enable'], (enable) => {
+    if (!isElectronEngine()) return
     if (enable) {
       startPanner()
     } else {
@@ -104,16 +114,21 @@ export default () => {
     }
   })
   watch(() => appSetting['player.soundEffect.panner.soundR'], (soundR) => {
+    if (!isElectronEngine()) return
     setPannerSoundR(soundR / 10)
   })
   watch(() => appSetting['player.soundEffect.panner.speed'], (speed) => {
+    if (!isElectronEngine()) return
     setPannerSpeed(2 * (speed / 10))
   })
   watch(() => appSetting['player.soundEffect.convolution.fileName'], (fileName) => {
     setTimeout(() => {
+      if (!isElectronEngine()) return
       if (fileName) {
         void loadBuffer(fileName).then((buffer) => {
           setConvolver(buffer, appSetting['player.soundEffect.convolution.mainGain'] / 10, appSetting['player.soundEffect.convolution.sendGain'] / 10)
+        }).catch(err => {
+          console.error('convolution filter load failed:', err)
         })
       } else {
         setConvolver(null, 0, 0)
@@ -121,55 +136,66 @@ export default () => {
     })
   })
   watch(() => appSetting['player.soundEffect.convolution.mainGain'], (mainGain) => {
-    if (!appSetting['player.soundEffect.convolution.fileName']) return
+    if (!isElectronEngine() || !appSetting['player.soundEffect.convolution.fileName']) return
     setConvolverMainGain(mainGain / 10)
   })
   watch(() => appSetting['player.soundEffect.convolution.sendGain'], (sendGain) => {
-    if (!appSetting['player.soundEffect.convolution.fileName']) return
+    if (!isElectronEngine() || !appSetting['player.soundEffect.convolution.fileName']) return
     setConvolverSendGain(sendGain / 10)
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz31'], (hz31) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz31')!.gain.value = hz31
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz62'], (hz62) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz62')!.gain.value = hz62
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz125'], (hz125) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz125')!.gain.value = hz125
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz250'], (hz250) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz250')!.gain.value = hz250
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz500'], (hz500) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz500')!.gain.value = hz500
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz1000'], (hz1000) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz1000')!.gain.value = hz1000
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz2000'], (hz2000) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz2000')!.gain.value = hz2000
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz4000'], (hz4000) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz4000')!.gain.value = hz4000
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz8000'], (hz8000) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz8000')!.gain.value = hz8000
   })
   watch(() => appSetting['player.soundEffect.biquadFilter.hz16000'], (hz16000) => {
+    if (!isElectronEngine()) return
     const bfs = getBiquadFilter()
     bfs.get('hz16000')!.gain.value = hz16000
   })
 
   watch(() => appSetting['player.soundEffect.pitchShifter.playbackRate'], (playbackRate) => {
+    if (!isElectronEngine()) return
     setPitchShifter(playbackRate)
   })
 
@@ -181,6 +207,7 @@ export default () => {
     appSetting['player.soundEffect.panner.enable'],
     appSetting['player.audioVisualization'],
   ], () => {
+    if (!isElectronEngine()) return
     void applyAudioRoutingNow().catch((err: Error) => {
       console.error('sound effect routing change failed:', err?.message ?? err)
     })

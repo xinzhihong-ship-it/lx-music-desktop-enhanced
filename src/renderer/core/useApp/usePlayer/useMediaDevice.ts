@@ -16,14 +16,14 @@ const getDevices = async() => {
 let isShowingTipAlert = false
 
 export default () => {
-  // MPV 引擎使用 mpv 自己的音频设备管理，Web Audio 设备列表里找不到 mpv 设备 ID，
+  // 外部引擎使用自己的音频设备管理，Web Audio 设备列表里找不到对应 ID，
   // 强行匹配会把 player.mediaDeviceId 重置回 default。
-  const isMpvEngine = () => appSetting['player.playEngine'] === 'mpv'
+  const isElectronEngine = () => appSetting['player.playEngine'] === 'electron'
 
   let prevDeviceLabel: string | null = null
   let prevDeviceId = ''
   let deviceRequestVersion = 0
-  let deviceChange = Promise.resolve()
+  let isDeviceListenerRegistered = false
 
   const getMediaDevice = async(deviceId: string) => {
     const requestedDeviceId = deviceId || 'default'
@@ -49,26 +49,25 @@ export default () => {
   }
 
   const setMediaDevice = async(deviceId: string, label: string, requestVersion: number, requestedDeviceId: string) => {
+    if (
+      requestVersion !== deviceRequestVersion ||
+      !isElectronEngine() ||
+      appSetting['player.mediaDeviceId'] !== requestedDeviceId
+    ) return
     prevDeviceLabel = label
-    deviceChange = deviceChange.catch(() => {}).then(async() => {
-      if (
-        requestVersion !== deviceRequestVersion ||
-        isMpvEngine() ||
-        appSetting['player.mediaDeviceId'] !== requestedDeviceId
-      ) return
-      try {
-        await setMediaDeviceId(deviceId)
-        // 只保存最后一次仍然有效且成功绑定的设备，避免旧请求覆盖新选择。
-        if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== requestedDeviceId) return
-        prevDeviceId = deviceId
-        saveMediaDeviceId(deviceId)
-      } catch (err: any) {
-        console.error('set media device failed:', err?.message ?? err)
-        // 路由重建期间的短暂失败不应把用户选择改写成 default；
-        // 下一次路由/设备变更会再次尝试当前设置。
-      }
-    })
-    await deviceChange
+    try {
+      // setMediaDeviceId owns the output-sink latest-wins queue. Do not add a
+      // second serial queue here: an old enumeration must not delay B behind A.
+      await setMediaDeviceId(deviceId)
+      // 只保存最后一次仍然有效且成功绑定的设备，避免旧请求覆盖新选择。
+      if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== requestedDeviceId) return
+      prevDeviceId = deviceId
+      saveMediaDeviceId(deviceId)
+    } catch (err: any) {
+      console.error('set media device failed:', err?.message ?? err)
+      // 路由重建期间的短暂失败不应把用户选择改写成 default；
+      // 下一次路由/设备变更会再次尝试当前设置。
+    }
   }
 
   const handleDeviceChange = (label: string) => {
@@ -89,7 +88,7 @@ export default () => {
   }
 
   const handleMediaListChange = async() => {
-    if (isMpvEngine()) return
+    if (!isElectronEngine()) return
     const mediaDeviceId = appSetting['player.mediaDeviceId']
     const requestVersion = ++deviceRequestVersion
     try {
@@ -103,8 +102,36 @@ export default () => {
     }
   }
 
+  // Keep the DOM event callback synchronous; the async body has its own catch
+  // and this wrapper also protects future changes from unhandled rejections.
+  const handleMediaListChangeEvent = () => {
+    void handleMediaListChange().catch(logDeviceRequestError)
+  }
+
+  const requestCurrentMediaDevice = () => {
+    if (!isElectronEngine()) return
+    const requestedDeviceId = appSetting['player.mediaDeviceId']
+    const requestVersion = ++deviceRequestVersion
+    void getMediaDevice(requestedDeviceId).then(async({ deviceId, label }) => {
+      if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== requestedDeviceId) return
+      await setMediaDevice(deviceId, label, requestVersion, requestedDeviceId)
+    }).catch(logDeviceRequestError)
+  }
+
+  const registerDeviceListener = () => {
+    if (isDeviceListenerRegistered || !isElectronEngine()) return
+    isDeviceListenerRegistered = true
+    navigator.mediaDevices.addEventListener('devicechange', handleMediaListChangeEvent)
+  }
+
+  const unregisterDeviceListener = () => {
+    if (!isDeviceListenerRegistered) return
+    isDeviceListenerRegistered = false
+    navigator.mediaDevices.removeEventListener('devicechange', handleMediaListChangeEvent)
+  }
+
   watch(() => appSetting['player.mediaDeviceId'], (id) => {
-    if (isMpvEngine() || prevDeviceId == id) return
+    if (!isElectronEngine() || prevDeviceId == id) return
     const requestVersion = ++deviceRequestVersion
     void getMediaDevice(id).then(async({ deviceId, label }) => {
       if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== id) return
@@ -112,21 +139,25 @@ export default () => {
     }).catch(logDeviceRequestError)
   })
 
-  if (!isMpvEngine()) {
-    const requestedDeviceId = appSetting['player.mediaDeviceId']
-    const requestVersion = ++deviceRequestVersion
-    void getMediaDevice(requestedDeviceId).then(async({ deviceId, label }) => {
-      if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== requestedDeviceId) return
-      await setMediaDevice(deviceId, label, requestVersion, requestedDeviceId)
-    }).catch(logDeviceRequestError)
+  // The player can switch MPV -> Electron without recreating this composable.
+  // Re-register the device listener and retry the persisted selection then.
+  watch(() => appSetting['player.playEngine'], () => {
+    deviceRequestVersion++
+    if (isElectronEngine()) {
+      registerDeviceListener()
+      requestCurrentMediaDevice()
+    } else {
+      unregisterDeviceListener()
+    }
+  })
 
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    navigator.mediaDevices.addEventListener('devicechange', handleMediaListChange)
+  if (isElectronEngine()) {
+    registerDeviceListener()
+    requestCurrentMediaDevice()
   }
 
   onBeforeUnmount(() => {
     deviceRequestVersion++
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    navigator.mediaDevices.removeEventListener('devicechange', handleMediaListChange)
+    unregisterDeviceListener()
   })
 }

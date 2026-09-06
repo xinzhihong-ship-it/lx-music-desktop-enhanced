@@ -64,7 +64,7 @@
     "build:renderer-scripts": "cross-env NODE_ENV=production webpack --config build-config/renderer-scripts/webpack.config.prod.js --progress",
     "build:native:mpv-video": "node build-config/build-mpv-video.js",
     "build:native:vst3": "node build-config/build-vst3-host.js",
-    "test:vst3": "cargo test --locked --manifest-path native/vst3-host/Cargo.toml && cargo build --locked --manifest-path native/vst3-host/Cargo.toml && node --test tests/vst3.test.cjs tests/vst3-worklet.test.cjs tests/routingQueue.test.cjs tests/mediaDevice.test.cjs tests/vst3-packaging.test.cjs",
+    "test:vst3": "cargo test --locked --manifest-path native/vst3-host/Cargo.toml && cargo build --locked --manifest-path native/vst3-host/Cargo.toml && node --test tests/vst3.test.cjs tests/vst3-worklet.test.cjs tests/routingQueue.test.cjs tests/mediaDevice.test.cjs tests/playerRouting.test.cjs tests/vst3-packaging.test.cjs",
     "test:vst3:audio": "electron tests/vst3-audio.cjs",
     "lint": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly src",
     "lint:fix": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly --fix src",

@@ -399,6 +399,8 @@ jobs:
   Create_Release:
     name: Create Prerelease
     runs-on: ubuntu-latest
+    # The release is blocked by this workflow's real Electron/native-host audio gate,
+    # not merely by the standalone vst3-check.yml compile/unit-test workflow.
     needs: [Windows, Windows_7, Mac, Linux, Vst3Audio]
     steps:
       - name: Check out git repository

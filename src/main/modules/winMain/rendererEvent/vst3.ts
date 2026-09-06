@@ -7,6 +7,7 @@ import { log } from '@common/utils'
 
 import { defaultDirectories, findPlugins, scanPlugins } from '../../../../../native/vst3-host/client.cjs'
 import { Vst3Chain } from '../../../../../native/vst3-host/chain.cjs'
+import { validateVst3HostBinary } from '../../../../../native/vst3-host/binary.cjs'
 
 let chain: Vst3Chain | null = null
 
@@ -30,9 +31,11 @@ const executablePath = () => {
     ])
   const executable = candidates.find(candidate => fs.existsSync(candidate))
   if (!executable) throw new Error(`VST3 host is unavailable for ${process.platform}-${process.arch}. Build it with npm run build:native:vst3 or use a package containing the matching host.`)
-  const stat = fs.statSync(executable)
-  if (!stat.isFile() || (process.platform !== 'win32' && (stat.mode & 0o111) === 0)) {
-    throw new Error(`VST3 host is not executable for ${process.platform}-${process.arch}: ${executable}`)
+  try {
+    validateVst3HostBinary(executable, process.platform, process.arch)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`VST3 host is not compatible with ${process.platform}-${process.arch}: ${message}`)
   }
   return executable
 }

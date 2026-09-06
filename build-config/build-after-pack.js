@@ -86,7 +86,8 @@ module.exports = async(context) => {
   const vst3Plan = getVst3HostPlan(electronPlatformName, targetArch)
   const vst3HostPath = path.join(resPath, 'bin', vst3Plan.name)
   if (vst3Plan.supported) {
-    validateVst3HostBinary(vst3HostPath, electronPlatformName, targetArch)
+    const validation = validateVst3HostBinary(vst3HostPath, electronPlatformName, targetArch)
+    console.log(`[vst3] verified packaged host ${vst3HostPath} (${validation.architectures.join(',')})`)
   } else {
     try {
       await fs.access(vst3HostPath)
@@ -94,6 +95,7 @@ module.exports = async(context) => {
     } catch (err) {
       if (err.code !== 'ENOENT') throw err
     }
+    console.log(`[vst3] verified host omitted for ${electronPlatformName}-${targetArch}`)
   }
   if (electronPlatformName !== 'darwin') return
 

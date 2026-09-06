@@ -9,8 +9,10 @@ function loadMediaDevice(mocks) {
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
-  let watchCallback
+  const watchCallbacks = []
   let deviceChangeCallback
+  let listenerAdds = 0
+  let listenerRemoves = 0
   const module = { exports: {} }
   const context = {
     console,
@@ -18,8 +20,8 @@ function loadMediaDevice(mocks) {
     clearTimeout,
     navigator: { mediaDevices: {
       enumerateDevices: mocks.enumerateDevices,
-      addEventListener: (_event, callback) => { deviceChangeCallback = callback },
-      removeEventListener: () => {},
+      addEventListener: (_event, callback) => { listenerAdds++; deviceChangeCallback = callback },
+      removeEventListener: () => { listenerRemoves++ },
     } },
     window: {
       i18n: { t: value => value },
@@ -29,7 +31,7 @@ function loadMediaDevice(mocks) {
   }
   const modules = {
     '@common/utils/vueTools': {
-      watch: (_source, callback) => { watchCallback = callback },
+      watch: (_source, callback) => { watchCallbacks.push(callback) },
       onBeforeUnmount: callback => { context.onBeforeUnmount = callback },
     },
     '@renderer/core/player/action': { pause: () => {} },
@@ -49,8 +51,11 @@ function loadMediaDevice(mocks) {
   })
   return {
     start: module.exports.default,
-    triggerSetting: id => watchCallback(id),
+    triggerSetting: id => watchCallbacks[0](id),
+    triggerEngine: engine => watchCallbacks[1](engine),
     triggerDeviceChange: () => deviceChangeCallback(),
+    listenerAdds: () => listenerAdds,
+    listenerRemoves: () => listenerRemoves,
     unmount: () => context.onBeforeUnmount(),
   }
 }
@@ -114,5 +119,35 @@ test('a temporarily missing device is retried without falling back or persisting
   assert.deepEqual(applied, ['missing-device'])
   assert.deepEqual(saved, [])
   assert.equal(appSetting['player.mediaDeviceId'], 'missing-device')
+  mediaDevice.unmount()
+})
+
+test('MPV to Electron registers the device listener and retries the persisted device', async() => {
+  const appSetting = { 'player.playEngine': 'mpv', 'player.mediaDeviceId': 'device-a' }
+  const enumerations = []
+  const applied = []
+  const mediaDevice = loadMediaDevice({
+    appSetting,
+    enumerateDevices: () => new Promise(resolve => enumerations.push(resolve)),
+    setMediaDeviceId: async id => { applied.push(id) },
+    saveMediaDeviceId: () => {},
+  })
+
+  mediaDevice.start()
+  assert.equal(enumerations.length, 0)
+  assert.equal(mediaDevice.listenerAdds(), 0)
+
+  appSetting['player.playEngine'] = 'electron'
+  mediaDevice.triggerEngine('electron')
+  assert.equal(enumerations.length, 1)
+  assert.equal(mediaDevice.listenerAdds(), 1)
+  enumerations[0]([outputDevice('device-a')])
+  await tick()
+  await tick()
+  assert.deepEqual(applied, ['device-a'])
+
+  appSetting['player.playEngine'] = 'mpv'
+  mediaDevice.triggerEngine('mpv')
+  assert.equal(mediaDevice.listenerRemoves(), 1)
   mediaDevice.unmount()
 })
