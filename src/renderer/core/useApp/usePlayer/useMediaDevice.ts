@@ -43,13 +43,14 @@ export default () => {
     return device ? { label: device.label, deviceId: device.deviceId } : { label: '', deviceId: '' }
   }
   const setMediaDevice = async(deviceId: string, label: string) => {
+    console.error('[device-debug] setMediaDevice ->', deviceId.slice(0, 12))
     prevDeviceLabel = label
     // console.log(device)
     setMediaDeviceId(deviceId).then(() => {
       prevDeviceId = deviceId
       saveMediaDeviceId(deviceId)
     }).catch((err: any) => {
-      console.log(err)
+      console.error('[device-debug] setSinkId failed, revert to default:', err && err.message)
       setMediaDeviceId('default').finally(() => {
         prevDeviceId = 'default'
         saveMediaDeviceId('default')

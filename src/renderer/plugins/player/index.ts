@@ -522,6 +522,9 @@ const stopSelectedAudioEngine = async() => {
     await audirvanaPlayer.setStop().catch(err => { console.error('audirvana stop before video failed', err) })
   } else if (audio) {
     if (vst3Node) resetVst3Audio(false)
+    for (const { event, listener } of elementEventListeners) {
+      audio.removeEventListener(event, listener)
+    }
     audio.pause()
     audio.src = ''
     audio.removeAttribute('src')
@@ -649,6 +652,9 @@ export const setStop = async(): Promise<void> => {
       console.error('audirvana stop failed', err)
     })
   }
+  for (const { event, listener } of elementEventListeners) {
+    audio?.removeEventListener(event, listener)
+  }
   if (audio) {
     audio.src = ''
     audio.removeAttribute('src')
@@ -765,7 +771,7 @@ const hasActiveAudioEffect = () =>
   appSetting['player.soundEffect.pitchShifter.playbackRate'] != 1 ||
   appSetting['player.soundEffect.panner.enable'] ||
   appSetting['player.audioVisualization'] ||
-  (appSetting['player.vst3.enabled'] && vst3Node != null)
+  appSetting['player.vst3.enabled']
 
 // 重建 audio 元素：capture 不可逆，透明直出与效果链之间切换只能换元素
 const rebuildAudioElement = async(capture: boolean) => {
@@ -794,13 +800,34 @@ const rebuildAudioElement = async(capture: boolean) => {
     defaultRate: audio.defaultPlaybackRate,
     preserves: audio.preservesPitch,
   }
+  // 先摘除应用事件监听：旧元素即将丢弃，清空 src 触发的空源错误不应进入恢复流程
+  for (const { event, listener } of elementEventListeners) {
+    audio.removeEventListener(event, listener)
+  }
   audio.pause()
   audio.removeAttribute('src')
   audio.load()
   // 先换新元素（capture 不可逆），再初始化图（捕获新元素）并应用用户所选输出设备
   audio = createAudioElement()
   elementCaptured = capture
-  if (capture) initAdvancedAudioFeatures()
+  // 效果链模式：把新元素捕获进图（capture 对每个元素只能发生一次）
+  if (capture) {
+    mediaSource = audioContext.createMediaElementSource(audio)
+    mediaSource.connect(analyser)
+    if (!outputPipe) {
+      outputPipe = new window.Audio()
+      outputPipe.srcObject = mediaStreamDest!.stream
+      void outputPipe.play().catch(err => {
+        console.error('effect output pipe start failed:', err)
+      })
+      const savedSinkId = appSetting['player.mediaDeviceId']
+      if (savedSinkId && savedSinkId != 'default') {
+        void outputPipe.setSinkId(savedSinkId).catch(err => {
+          console.error('apply saved media device to output pipe failed:', err)
+        })
+      }
+    }
+  }
   if (!capture && outputPipe) {
     outputPipe.pause()
     outputPipe.srcObject = null
@@ -812,6 +839,7 @@ const rebuildAudioElement = async(capture: boolean) => {
   // 透明直出时元素是唯一输出，必须应用用户所选的设备
   if (!capture) {
     const sinkId = appSetting['player.mediaDeviceId']
+    console.error('[device-debug] rebuilt transparent, apply sink:', sinkId == 'default' ? 'default' : String(sinkId).slice(0, 12))
     if (sinkId && sinkId != 'default') {
       void audio.setSinkId(sinkId).catch(err => {
         console.error('apply media device to rebuilt element failed:', err)
@@ -841,6 +869,7 @@ const applyAudioRouting = async() => {
     if (!audio && !mediaSource) return
     const wantEffects = hasActiveAudioEffect()
     if (wantEffects === elementCaptured) return
+    console.error('[device-debug] routing ->', wantEffects ? 'effects' : 'transparent')
     await rebuildAudioElement(wantEffects)
     // 模式切换后 VST3 节点需要跟随重建
     if (appSetting['player.vst3.enabled']) {
