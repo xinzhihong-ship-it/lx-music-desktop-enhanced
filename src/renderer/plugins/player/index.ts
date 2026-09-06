@@ -775,6 +775,12 @@ const rebuildAudioElement = async(capture: boolean) => {
     if (capture) {
       initAdvancedAudioFeatures()
       elementCaptured = true
+      const sinkId = appSetting['player.mediaDeviceId']
+      if (sinkId && sinkId != 'default' && outputPipe) {
+        void outputPipe.setSinkId(sinkId).catch(err => {
+          console.error('apply saved media device to output pipe failed:', err)
+        })
+      }
     }
     return
   }
@@ -791,11 +797,26 @@ const rebuildAudioElement = async(capture: boolean) => {
   audio.pause()
   audio.removeAttribute('src')
   audio.load()
-  if (capture) initAdvancedAudioFeatures()
+  // 先换新元素（capture 不可逆），再初始化图（捕获新元素）并应用用户所选输出设备
   audio = createAudioElement()
   elementCaptured = capture
+  if (capture) initAdvancedAudioFeatures()
+  if (!capture && outputPipe) {
+    outputPipe.pause()
+    outputPipe.srcObject = null
+    outputPipe = null
+  }
   for (const { event, listener } of elementEventListeners) {
     audio.addEventListener(event, listener)
+  }
+  // 透明直出时元素是唯一输出，必须应用用户所选的设备
+  if (!capture) {
+    const sinkId = appSetting['player.mediaDeviceId']
+    if (sinkId && sinkId != 'default') {
+      void audio.setSinkId(sinkId).catch(err => {
+        console.error('apply media device to rebuilt element failed:', err)
+      })
+    }
   }
   if (state.src) {
     audio.src = state.src
@@ -850,9 +871,8 @@ if (typeof window !== 'undefined') {
 export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
   if (isBiliVideoActive()) return
   if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
-  // 高级音频功能激活时输出走 outputPipe（元素级 setSinkId 即时可靠）；
-  // 图未初始化时直接设置 <audio> 元素。
-  if (outputPipe) return outputPipe.setSinkId(mediaDeviceId)
+  // 效果链模式：输出走管道；透明直出模式：<audio> 元素就是输出，元素级切换
+  if (elementCaptured && outputPipe) return outputPipe.setSinkId(mediaDeviceId)
   if (audio) await audio.setSinkId(mediaDeviceId)
 }
 
