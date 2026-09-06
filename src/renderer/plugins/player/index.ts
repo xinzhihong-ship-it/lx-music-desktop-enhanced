@@ -804,10 +804,13 @@ const rebuildAudioElement = async(capture: boolean) => {
   // 先换新元素（capture 不可逆），再初始化图（捕获新元素）并应用用户所选输出设备
   audio = createAudioElement()
   elementCaptured = capture
-  // 效果链模式：把新元素捕获进图（capture 对每个元素只能发生一次）
+  // 效果链模式：先确保 AudioContext 与效果节点就绪（内部捕获当前元素），再处理管道
   if (capture) {
-    mediaSource = audioContext.createMediaElementSource(audio)
-    mediaSource.connect(analyser)
+    if (!audioContext) initAdvancedAudioFeatures()
+    else {
+      mediaSource = audioContext.createMediaElementSource(audio)
+      mediaSource.connect(analyser)
+    }
     if (!outputPipe) {
       outputPipe = new window.Audio()
       outputPipe.srcObject = mediaStreamDest!.stream
