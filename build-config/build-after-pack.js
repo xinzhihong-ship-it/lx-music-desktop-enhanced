@@ -72,11 +72,13 @@ module.exports = async(context) => {
   const { productFilename } = context.packager.appInfo
   const targetArch = arch === Arch.arm64 || arch === 'arm64'
     ? 'arm64'
-    : arch === Arch.ia32 || arch === 'ia32'
+    : arch === Arch.ia32 || arch === 'ia32' || arch === 'x86'
       ? 'ia32'
       : arch === Arch.armv7l || arch === 'armv7l'
         ? 'armv7l'
-        : 'x64'
+        : arch === 'x86_64'
+          ? 'x64'
+          : 'x64'
   const appPath = electronPlatformName === 'darwin'
     ? path.join(appOutDir, `${productFilename}.app`)
     : appOutDir
