@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# GitHub's Ubuntu x64 archive does not serve ARM packages. Keep native archive
-# stanzas restricted to amd64 and fetch ARM packages from Ubuntu ports.
+# GitHub's Ubuntu x64 archive does not serve ARM packages. In CI, replace the
+# image's source list with explicit one-line sources so no amd64 archive is
+# queried for arm64/armhf packages and no deb822 stanza is rewritten.
 set -euo pipefail
 source /etc/os-release
 : "${VERSION_CODENAME:?Ubuntu codename is required}"
@@ -8,40 +9,22 @@ source /etc/os-release
 dpkg --add-architecture arm64
 dpkg --add-architecture armhf
 
-python3 - <<'PY'
-from pathlib import Path
-import re
+backup="$(mktemp -d)"
+# The runner image currently uses ubuntu.sources, but moving every existing
+# source makes this independent of that implementation detail. This script is
+# used only on disposable CI runners.
+for file in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+  [ -e "$file" ] || continue
+  mv "$file" "$backup/"
+done
 
-# Ubuntu runners use deb822 .sources files. Put the architecture field inside
-# every stanza; appending text after an incomplete stanza makes apt reject the
-# whole file as "Malformed stanza".
-for path in Path('/etc/apt/sources.list.d').glob('*.sources'):
-    blocks = []
-    for block in path.read_text().split('\n\n'):
-        if not block.strip():
-            continue
-        lines = [line for line in block.splitlines() if not line.startswith('Architectures:')]
-        insert_at = next((i + 1 for i, line in enumerate(lines) if line.startswith('Types:')), 0)
-        lines.insert(insert_at, 'Architectures: amd64')
-        blocks.append('\n'.join(lines))
-    path.write_text('\n\n'.join(blocks) + '\n')
-
-# Also cover older one-line .list sources without touching deb822 files.
-for path in [Path('/etc/apt/sources.list'), *Path('/etc/apt/sources.list.d').glob('*.list')]:
-    if not path.exists():
-        continue
-    lines = []
-    for line in path.read_text().splitlines():
-        if re.match(r'^\s*deb(?:-src)?\s+', line) and '[arch=' not in line:
-            line = re.sub(r'^(\s*deb(?:-src)?\s+)', r'\1[arch=amd64] ', line)
-        lines.append(line)
-    path.write_text('\n'.join(lines) + '\n')
-PY
-cat > /etc/apt/sources.list.d/lx-arm-ports.sources <<EOF
-Types: deb
-URIs: http://ports.ubuntu.com/ubuntu-ports
-Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-security
-Components: main universe restricted multiverse
-Architectures: arm64 armhf
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+cat > /etc/apt/sources.list <<EOF
+# Native packages for the x64 GitHub runner.
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ ${VERSION_CODENAME} main universe restricted multiverse
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ ${VERSION_CODENAME}-updates main universe restricted multiverse
+deb [arch=amd64] http://security.ubuntu.com/ubuntu/ ${VERSION_CODENAME}-security main universe restricted multiverse
+# Target packages for the cross compilers and XCB headers.
+deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports/ ${VERSION_CODENAME} main universe restricted multiverse
+deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports/ ${VERSION_CODENAME}-updates main universe restricted multiverse
+deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports/ ${VERSION_CODENAME}-security main universe restricted multiverse
 EOF
