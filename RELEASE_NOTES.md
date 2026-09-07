@@ -29,7 +29,7 @@
 - Windows arm64、Linux arm64、Linux armv7l 的构建流程现在会携带对应架构的 VST3 host；这些目标仍需在真实 ARM 设备上验证插件兼容性。Windows 7 兼容包继续不携带 VST3 host。
 - Windows 7 包仍属于兼容性测试产物，Electron、AudioWorklet、`setSinkId` 和原生插件编辑器尚未在真实 Windows 7 系统确认。
 - Linux Wayland、Linux X11 原生插件窗口交互、ARM 真机、长时间播放、重型插件链和非零延迟插件仍需用户反馈。
-- 当前 `ikun音源` 脚本没有声明 `mg`；咪咕需要使用支持 `mg.musicUrl` 的音源脚本。GitCode 音乐数据库地址若返回 404，Git 源也无法播放，需要配置有效的数据库地址。
+- 第三方音源和在线音乐库的可用性取决于其自身服务状态；遇到音源失败时，请通过 GitHub Issues 提供脱敏日志和复现步骤。
 - 发布包中的 beta 版本请手动下载安装；不要把本次版本当作正式稳定版。
 
 发现问题时请附上系统版本、CPU 架构、播放引擎、是否开启 VST3/可视化、输出设备名称以及 `VST3` 设置页错误信息。
