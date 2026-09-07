@@ -55,3 +55,51 @@ jobs:
       - name: Realtime audio end-to-end test
         run: npm run test:vst3:audio
         if: runner.os != 'Linux'
+
+  windows-arm64:
+    name: VST3 (Windows ARM64 cross-build)
+    runs-on: windows-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v6
+      - name: Install Rust ARM64 target
+        shell: pwsh
+        run: rustup target add aarch64-pc-windows-msvc
+      - name: Enable MSVC ARM64 cross toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
+      - name: Build Windows ARM64 host
+        shell: pwsh
+        run: cargo build --release --locked --manifest-path native/vst3-host/Cargo.toml --target aarch64-pc-windows-msvc
+
+  linux-arm:
+    name: VST3 (Linux ARM cross-build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v6
+      - name: Install ARM cross toolchains and XCB headers
+        run: |
+          sudo bash build-config/setup-linux-arm-apt.sh
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+            libc6-dev-arm64-cross libc6-dev-armhf-cross \
+            libxcb1-dev libxcb1-dev:arm64 libxcb1-dev:armhf
+      - name: Install Rust ARM targets
+        run: rustup target add aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf
+      - name: Build Linux ARM64 host
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          PKG_CONFIG_ALLOW_CROSS: '1'
+          PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+        run: cargo build --release --locked --manifest-path native/vst3-host/Cargo.toml --target aarch64-unknown-linux-gnu
+      - name: Build Linux ARMv7 host
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          PKG_CONFIG_ALLOW_CROSS: '1'
+          PKG_CONFIG_LIBDIR: /usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+          PKG_CONFIG_PATH: /usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+        run: cargo build --release --locked --manifest-path native/vst3-host/Cargo.toml --target armv7-unknown-linux-gnueabihf

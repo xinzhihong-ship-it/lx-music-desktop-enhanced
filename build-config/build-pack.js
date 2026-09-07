@@ -144,7 +144,7 @@ const withMpvResources = async (baseOptions, mpvPlatform, mpvArch) => {
 			},
 		];
 	}
-	// VST3 宿主由 beforePack 阶段构建；未配置交叉编译的目标明确省略。
+	// VST3 宿主由 beforePack 阶段构建；Windows/Linux ARM 目标使用对应交叉工具链。
 	const vst3Plan = getVst3HostPlan(mpvPlatform, mpvArch);
 	if (vst3Plan.supported) {
 		if (!fs.existsSync(vst3Plan.sourcePath))

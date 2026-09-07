@@ -76,7 +76,7 @@ const parseTools = {
 
     for (let line of lines) {
       line = line.trim()
-      let result = this.rxps.lineTime.exec(line)
+      let result = line.match(this.rxps.lineTime)
       if (!result) {
         if (line.startsWith('[offset')) {
           lxlrcLines.push(line)
@@ -96,7 +96,7 @@ const parseTools = {
       let times = words.match(this.rxps.wordTimeAll)
       if (!times) continue
       times = times.map(time => {
-        const result = /\((\d+),(\d+),\d+\)/.exec(time)
+        const result = time.match(/\((\d+),(\d+),\d+\)/)
         return `<${Math.max(parseInt(result[1]) - startMsTime, 0)},${result[2]}>`
       })
       const wordArr = words.split(this.rxps.wordTime)
@@ -140,7 +140,7 @@ const parseTools = {
     let temp = []
     let newLrc = []
     targetlrcLines.forEach((line) => {
-      const result = timeRxp.exec(line)
+      const result = line.match(timeRxp)
       if (!result) return
       const words = line.replace(timeRxp, '')
       if (!words.trim()) return
@@ -148,7 +148,7 @@ const parseTools = {
 
       while (lrcLines.length) {
         const lrcLine = lrcLines.shift()
-        const lrcLineResult = timeRxp.exec(lrcLine)
+        const lrcLineResult = lrcLine.match(timeRxp)
         if (!lrcLineResult) continue
         const t2 = this.getIntv(lrcLineResult[1])
         if (Math.abs(t1 - t2) < 100) {

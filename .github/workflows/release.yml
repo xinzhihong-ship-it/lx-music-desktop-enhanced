@@ -145,12 +145,21 @@ jobs:
           git status --porcelain
           npm run build
 
-      - name: Build package
+      - name: Build package x64
         run: |
           npm run pack:win:7z:x64
+          npm run pack:win:setup:x64
+      - name: Install Rust Windows ARM64 target
+        shell: pwsh
+        run: rustup target add aarch64-pc-windows-msvc
+      - name: Enable MSVC ARM64 cross toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
+      - name: Build package ARM64
+        run: |
           npm run pack:win:7z:arm64
           npm run pack:win:setup:arm64
-          npm run pack:win:setup:x64
 
       - name: Upload release assets
         uses: actions/upload-artifact@v7
@@ -281,11 +290,18 @@ jobs:
     name: Linux
     runs-on: ubuntu-latest
     steps:
-      - name: Install package
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools gcc-arm-linux-gnueabihf qemu-user-static libxcb1-dev
-
       - name: Check out git repository
         uses: actions/checkout@v6
+
+      - name: Install package and ARM cross toolchains
+        run: |
+          sudo bash build-config/setup-linux-arm-apt.sh
+          sudo apt-get update
+          sudo apt-get install -y rpm libarchive-tools qemu-user-static \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+            libc6-dev-arm64-cross libc6-dev-armhf-cross \
+            libxcb1-dev libxcb1-dev:arm64 libxcb1-dev:armhf
+          rustup target add aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf
 
       - name: Get npm cache directory
         shell: bash

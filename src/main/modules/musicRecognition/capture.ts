@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -33,11 +34,26 @@ export const isMusicRecognitionSupported = (): boolean => {
   return major > 23 || (major === 23 && minor >= 2)
 }
 
+const isTrustedExecutable = (filePath: string) => {
+  try {
+    const stats = fs.statSync(filePath)
+    return stats.isFile() && (stats.mode & 0o111) !== 0
+  } catch {
+    return false
+  }
+}
+
 const resolveBinaryPath = (): string => {
-  const binaryPath = process.env.NODE_ENV === 'development'
-    ? path.join(process.cwd(), 'node_modules', 'audiotee', 'bin', 'audiotee')
-    : path.join(process.resourcesPath, 'bin', 'music-recognition', 'audiotee')
-  if (!fs.existsSync(binaryPath)) throw new Error('未找到系统音频采集组件')
+  const trustedRoot = app.isPackaged
+    ? path.resolve(process.resourcesPath, 'bin', 'music-recognition')
+    : path.resolve(process.cwd(), 'node_modules', 'audiotee', 'bin')
+  const binaryPath = path.resolve(trustedRoot, 'audiotee')
+  const relativePath = path.relative(trustedRoot, binaryPath)
+  if (
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath) ||
+    !isTrustedExecutable(binaryPath)
+  ) throw new Error('未找到系统音频采集组件')
   return binaryPath
 }
 
@@ -88,6 +104,7 @@ export const captureSystemAudio = async(onProgress: (progress: number) => void):
       '--sample-rate', String(SAMPLE_RATE),
       '--chunk-duration', '0.2',
     ], {
+      shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     activeProcess = child

@@ -67,7 +67,7 @@ const matchInfo = (scriptInfo: string) => {
   const rxp = /^\s?\*\s?@(\w+)\s(.+)$/
   const infos: Partial<Record<keyof typeof INFO_NAMES, string>> = {}
   for (const info of infoArr) {
-    const result = rxp.exec(info)
+    const result = info.match(rxp)
     if (!result) continue
     const key = result[1] as keyof typeof INFO_NAMES
     if (INFO_NAMES[key] == null) continue
@@ -90,7 +90,7 @@ const parseScriptInfo = (script: string) => {
   }
   // 兼容带 BOM 或开头空白的脚本
   const trimmedScript = script.replace(/^\uFEFF\s*/, '')
-  const result = /^\/\*[\s\S]*?\*\//.exec(trimmedScript)
+  const result = trimmedScript.match(/^\/\*[\s\S]*?\*\//)
   if (!result) {
     log.error('[parseScriptInfo] failed to match script header')
     throw new Error('无效的自定义源文件')

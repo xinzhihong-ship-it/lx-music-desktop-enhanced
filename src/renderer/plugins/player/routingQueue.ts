@@ -39,5 +39,13 @@ export const applyOutputSink = async(state: AudioRoutingState, deviceId: string)
   if (typeof target.setSinkId !== 'function') {
     throw new Error('Selected output device is not supported by this Electron version')
   }
-  await target.setSinkId(sinkId)
+  try {
+    await target.setSinkId(sinkId)
+  } catch (err) {
+    const error = err as Error
+    if (error?.name === 'NotFoundError' || /Requested device not found/i.test(error?.message ?? '')) {
+      throw new Error('所选音频输出设备不可用，请在「设置 → 播放 → 音频输出设备」中重新选择当前设备。为避免意外外放，未自动切换到其他设备。')
+    }
+    throw err
+  }
 }

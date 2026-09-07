@@ -122,7 +122,7 @@ export const lrcTools = {
   },
   parseLine(line) {
     if (line.length < 6) return
-    let result = this.rxps.wordLine.exec(line)
+    let result = line.match(this.rxps.wordLine)
     if (result) {
       const time = result[1]
       let words = result[2]
@@ -134,7 +134,7 @@ export const lrcTools = {
       // console.log(wordTimes)
       let preTimeInfo
       for (const timeStr of wordTimes) {
-        const result = this.rxps.wordTime.exec(timeStr)
+        const result = timeStr.match(this.rxps.wordTime)
         const wordInfo = this.getWordInfo(result[1], result[2], preTimeInfo)
         words = words.replace(timeStr, wordInfo.timeStr)
         if (preTimeInfo?.newTimeStr) words = words.replace(preTimeInfo.timeStr, preTimeInfo.newTimeStr)
@@ -143,7 +143,7 @@ export const lrcTools = {
       this.lines.push(time + words)
       return
     }
-    result = this.rxps.tagLine.exec(line)
+    result = line.match(this.rxps.tagLine)
     if (!result) return
     if (result[1] == 'kuwo') {
       let content = result[2]

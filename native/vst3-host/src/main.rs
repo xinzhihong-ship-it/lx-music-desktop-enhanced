@@ -8,6 +8,17 @@ use vst3_host::{AudioBuffers, Plugin, PluginWindow, Vst3Host};
 
 const MAX_MESSAGE: usize = 32 * 1024 * 1024;
 const MAX_FRAMES: usize = 4096;
+const MAX_CHAIN_PLUGINS: usize = 16;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoadSpec {
+    id: String,
+    path: String,
+    sample_rate: u32,
+    block_size: usize,
+    state: Option<Vec<u8>>,
+}
 
 #[derive(Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
@@ -15,20 +26,35 @@ enum Command {
     Probe {
         path: String,
     },
+    // Kept for the standalone host test/API. The production chain uses load_chain so that
+    // all plugin instances live in one helper and one audio request crosses the process boundary.
     Load {
         path: String,
         sample_rate: u32,
         block_size: usize,
         state: Option<Vec<u8>>,
     },
-    Parameters {},
+    LoadChain {
+        plugins: Vec<LoadSpec>,
+    },
+    Parameters {
+        #[serde(default)]
+        plugin_id: Option<String>,
+    },
     SetParameter {
+        #[serde(default)]
+        plugin_id: Option<String>,
         id: u32,
         value: f64,
     },
-    SaveState {},
+    SaveState {
+        #[serde(default)]
+        plugin_id: Option<String>,
+    },
     Reset {},
     Editor {
+        #[serde(default)]
+        plugin_id: Option<String>,
         open: bool,
     },
     ProcessBinary {
@@ -37,17 +63,154 @@ enum Command {
     Unload {},
 }
 
-// The loaded plugin plus its sample rate, shared between the control thread (which swaps
-// it on load/unload) and the audio worker (which processes against it).
-type SharedPlugin = Arc<Mutex<Option<(Arc<Mutex<Plugin>>, f64)>>>;
+// A loaded plugin instance and its identity. The Arc is shared with the dedicated audio worker
+// and, when open, with the native editor window. The outer chain lock is only held while taking
+// a snapshot or atomically swapping the chain; DSP never holds it.
+#[derive(Clone)]
+struct PluginSlot {
+    id: String,
+    plugin: Arc<Mutex<Plugin>>,
+    sample_rate: f64,
+    latency_samples: usize,
+}
+
+type SharedPluginChain = Arc<Mutex<Vec<PluginSlot>>>;
 
 struct Session {
     window: Option<PluginWindow>,
-    plugin: Option<Arc<Mutex<Plugin>>>,
-    shared: SharedPlugin,
+    window_id: Option<String>,
+    shared: SharedPluginChain,
+}
+
+fn validate_load_spec(spec: &LoadSpec) -> Result<(), Box<dyn std::error::Error>> {
+    if !(8000..=384000).contains(&spec.sample_rate) || !(1..=MAX_FRAMES).contains(&spec.block_size) {
+        return Err("unsupported sample rate or block size".into());
+    }
+    if spec.id.is_empty()
+        || spec.id.len() > 128
+        || spec.id.contains('\0')
+        || spec.path.is_empty()
+        || spec.path.len() > 32 * 1024
+        || spec.path.contains('\0')
+        || spec.state.as_ref().is_some_and(|state| state.len() > MAX_MESSAGE)
+    {
+        return Err("invalid VST3 plugin load specification".into());
+    }
+    Ok(())
+}
+
+fn load_plugin(spec: &LoadSpec) -> Result<(PluginSlot, Value), Box<dyn std::error::Error>> {
+    validate_load_spec(spec)?;
+
+    let mut host = Vst3Host::builder()
+        .sample_rate(spec.sample_rate as f64)
+        .block_size(spec.block_size)
+        .input_channels(2)
+        .output_channels(2)
+        .build()?;
+    let mut plugin = host.load_plugin(&spec.path)?;
+    if let Some(state) = &spec.state {
+        plugin.load_state(state)?;
+    }
+
+    let buses = plugin.audio_bus_layout()?;
+    // VST3 bus index 0 is always the main bus; auxiliary buses (sidechains, stem outputs like
+    // Acon Remix's Vocals/Drums) are intentionally ignored by the player.
+    let main_input = buses
+        .inputs
+        .first()
+        .filter(|bus| bus.active)
+        .map(|bus| bus.channel_count)
+        .unwrap_or(0);
+    let main_output = buses
+        .outputs
+        .first()
+        .filter(|bus| bus.active)
+        .map(|bus| bus.channel_count)
+        .unwrap_or(0);
+    if main_input != 2 || main_output != 2 {
+        return Err(format!(
+            "plugin main bus is {main_input}in/{main_output}out, only stereo effects are supported"
+        )
+        .into());
+    }
+
+    plugin.start_processing()?;
+    plugin.set_playing(true)?;
+    let latency_samples = plugin.latency_samples() as usize;
+    let info = plugin.info().clone();
+    let shared = Arc::new(Mutex::new(plugin));
+    let slot = PluginSlot {
+        id: spec.id.clone(),
+        plugin: shared,
+        sample_rate: spec.sample_rate as f64,
+        latency_samples,
+    };
+    let response = json!({
+        "id": spec.id,
+        "info": info,
+        "latency_samples": latency_samples,
+    });
+    Ok((slot, response))
 }
 
 impl Session {
+    fn plugin_slot(
+        &self,
+        plugin_id: Option<&str>,
+    ) -> Result<PluginSlot, Box<dyn std::error::Error>> {
+        let slots = self
+            .shared
+            .lock()
+            .map_err(|_| "plugin chain lock poisoned")?;
+        match plugin_id {
+            Some(id) => slots
+                .iter()
+                .find(|slot| slot.id == id)
+                .cloned()
+                .ok_or_else(|| format!("no plugin with id '{id}'").into()),
+            None if slots.len() == 1 => Ok(slots[0].clone()),
+            None if slots.is_empty() => Err("no plugin loaded".into()),
+            None => Err("plugin_id is required when multiple plugins are loaded".into()),
+        }
+    }
+
+    fn load_chain(&mut self, specs: Vec<LoadSpec>) -> Result<Value, Box<dyn std::error::Error>> {
+        if specs.len() > MAX_CHAIN_PLUGINS {
+            return Err("too many VST3 plugins in chain".into());
+        }
+
+        let mut ids = std::collections::HashSet::with_capacity(specs.len());
+        let mut next = Vec::with_capacity(specs.len());
+        let mut response_plugins = Vec::with_capacity(specs.len());
+        for spec in &specs {
+            validate_load_spec(spec)?;
+            if !ids.insert(spec.id.as_str()) {
+                return Err(format!("duplicate plugin id '{}'", spec.id).into());
+            }
+            let (slot, response) = load_plugin(spec)?;
+            next.push(slot);
+            response_plugins.push(response);
+        }
+
+        // Load all new instances before swapping. If any plugin fails, the previous chain remains
+        // live and the caller can continue playback with it.
+        self.window = None;
+        self.window_id = None;
+        let total_latency = next
+            .iter()
+            .map(|slot| slot.latency_samples)
+            .sum::<usize>();
+        *self
+            .shared
+            .lock()
+            .map_err(|_| "plugin chain lock poisoned")? = next;
+        Ok(json!({
+            "plugins": response_plugins,
+            "latency_samples": total_latency,
+        }))
+    }
+
     fn execute(&mut self, command: Command) -> Result<Value, Box<dyn std::error::Error>> {
         match command {
             Command::Probe { path } => Ok(serde_json::to_value(
@@ -58,112 +221,110 @@ impl Session {
                 sample_rate,
                 block_size,
                 state,
-            } => {
-                if !(8000..=384000).contains(&sample_rate)
-                    || !(1..=MAX_FRAMES).contains(&block_size)
-                {
-                    return Err("unsupported sample rate or block size".into());
-                }
-                let mut host = Vst3Host::builder()
-                    .sample_rate(sample_rate as f64)
-                    .block_size(block_size)
-                    .input_channels(2)
-                    .output_channels(2)
-                    .build()?;
-                let mut plugin = host.load_plugin(path)?;
-                if let Some(state) = state {
-                    plugin.load_state(&state)?;
-                }
-                let buses = plugin.audio_bus_layout()?;
-                // VST3 bus index 0 is always the main bus; auxiliary buses (sidechains, stem
-                // outputs like Acon Remix's Vocals/Drums) are ignored. The flattened process
-                // path copies back only the first stereo output channels anyway.
-                let main_input = buses.inputs.first().filter(|b| b.active).map(|b| b.channel_count).unwrap_or(0);
-                let main_output = buses.outputs.first().filter(|b| b.active).map(|b| b.channel_count).unwrap_or(0);
-                if main_input != 2 || main_output != 2 {
-                    return Err(format!("plugin main bus is {main_input}in/{main_output}out, only stereo effects are supported").into());
-                }
-                plugin.start_processing()?;
-                plugin.set_playing(true)?;
-                let response = json!({"info": plugin.info(), "latency_samples": plugin.latency_samples(), "sample_rate": sample_rate});
-                let shared = Arc::new(Mutex::new(plugin));
-                *self
-                    .shared
-                    .lock()
-                    .map_err(|_| "plugin slot poisoned")? = Some((Arc::clone(&shared), sample_rate as f64));
-                self.window = None;
-                self.plugin = Some(shared);
-                Ok(response)
-            }
+            } => self.load_chain(vec![LoadSpec {
+                id: "default".to_string(),
+                path,
+                sample_rate,
+                block_size,
+                state,
+            }]),
+            Command::LoadChain { plugins } => self.load_chain(plugins),
             Command::Unload {} => {
                 self.window = None;
+                self.window_id = None;
                 *self
                     .shared
                     .lock()
-                    .map_err(|_| "plugin slot poisoned")? = None;
-                self.plugin = None;
+                    .map_err(|_| "plugin chain lock poisoned")? = Vec::new();
                 Ok(Value::Null)
             }
-            Command::Editor { open } => {
-                self.window = None;
-                if open {
-                    let plugin = self.plugin.as_ref().ok_or("no plugin loaded")?;
-                    let mut window = PluginWindow::new(plugin.clone());
-                    window.open()?;
-                    self.window = Some(window);
-                    // Newer macOS refuses to put a background accessory app's window onscreen
-                    // after orderFront; activate the host so the editor actually shows up.
-                    #[cfg(target_os = "macos")]
-                    {
-                        use objc2::MainThreadMarker;
-                        use objc2_app_kit::NSApplication;
-                        NSApplication::sharedApplication(
-                            MainThreadMarker::new().expect("editor must open on the main thread"),
-                        )
-                        .activate();
-                    }
+            Command::Editor { plugin_id, open } => {
+                if !open {
+                    self.window = None;
+                    self.window_id = None;
+                    return Ok(Value::Null);
+                }
+
+                let slot = self.plugin_slot(plugin_id.as_deref())?;
+                let mut window = PluginWindow::new(slot.plugin);
+                window.open()?;
+                self.window = Some(window);
+                self.window_id = Some(slot.id);
+
+                // Newer macOS refuses to put a background accessory app's window onscreen after
+                // orderFront; activate the helper so the editor actually shows up.
+                #[cfg(target_os = "macos")]
+                {
+                    use objc2::MainThreadMarker;
+                    use objc2_app_kit::NSApplication;
+                    NSApplication::sharedApplication(
+                        MainThreadMarker::new().expect("editor must open on the main thread"),
+                    )
+                    .activate();
                 }
                 Ok(Value::Null)
             }
-            command => {
-                let mut plugin = self
+            Command::Parameters { plugin_id } => {
+                let slot = self.plugin_slot(plugin_id.as_deref())?;
+                let plugin = slot
                     .plugin
-                    .as_ref()
-                    .ok_or("no plugin loaded")?
                     .lock()
                     .map_err(|_| "plugin lock poisoned")?;
-                match command {
-                    Command::Parameters {} => Ok(serde_json::to_value(plugin.get_parameters()?)?),
-                    Command::SetParameter { id, value } => {
-                        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-                            return Err("parameter must be finite and between 0 and 1".into());
-                        }
-                        plugin.set_parameter(id, value)?;
-                        plugin.service_host_requests()?;
-                        Ok(json!({"latency_samples": plugin.latency_samples()}))
-                    }
-                    Command::SaveState {} => Ok(json!({"state": plugin.save_state()?})),
-                    Command::Reset {} => {
-                        plugin.stop_processing()?;
-                        plugin.start_processing()?;
-                        plugin.set_playing(true)?;
-                        Ok(Value::Null)
-                    }
-                    // Only reachable when the audio worker is gone and the reader forwards
-                    // the request here for an error response.
-                    Command::ProcessBinary { .. } => Err("audio worker is not running".into()),
-                    _ => unreachable!(),
-                }
+                Ok(serde_json::to_value(plugin.get_parameters()?)?)
             }
+            Command::SetParameter {
+                plugin_id,
+                id,
+                value,
+            } => {
+                if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                    return Err("parameter must be finite and between 0 and 1".into());
+                }
+                let slot = self.plugin_slot(plugin_id.as_deref())?;
+                let mut plugin = slot
+                    .plugin
+                    .lock()
+                    .map_err(|_| "plugin lock poisoned")?;
+                plugin.set_parameter(id, value)?;
+                plugin.service_host_requests()?;
+                Ok(json!({
+                    "latency_samples": plugin.latency_samples() as usize,
+                }))
+            }
+            Command::SaveState { plugin_id } => {
+                let slot = self.plugin_slot(plugin_id.as_deref())?;
+                let plugin = slot
+                    .plugin
+                    .lock()
+                    .map_err(|_| "plugin lock poisoned")?;
+                Ok(json!({ "state": plugin.save_state()? }))
+            }
+            Command::Reset {} => {
+                let slots = self
+                    .shared
+                    .lock()
+                    .map_err(|_| "plugin chain lock poisoned")?
+                    .clone();
+                for slot in slots {
+                    let mut plugin = slot
+                        .plugin
+                        .lock()
+                        .map_err(|_| "plugin lock poisoned")?;
+                    plugin.stop_processing()?;
+                    plugin.start_processing()?;
+                    plugin.set_playing(true)?;
+                }
+                Ok(Value::Null)
+            }
+            // Process requests are routed to the dedicated audio worker before reaching here.
+            Command::ProcessBinary { .. } => Err("audio worker is not running".into()),
         }
     }
 }
 
-// Runs on the dedicated audio worker thread. The plugin mutex is shared with the editor
-// on the main thread; VST3 plugins are built for exactly this arrangement (process off
-// the UI thread). Heavy UI work that holds the mutex (preset loads) bounds the stalls —
-// upstream answers those with dry passthrough — but editor menus, which block the main
-// thread in a modal loop without holding the mutex, no longer affect processing at all.
+// Runs on the dedicated audio worker thread. The control thread and this worker share plugin
+// instances, but the outer chain lock is only held for the short snapshot. Each VST3 instance is
+// then called directly in sequence, so a whole chain crosses the helper boundary once.
 fn decode_payload(payload: &[u8], frames: usize) -> Result<Vec<Vec<f32>>, String> {
     if payload.len() != frames * 2 * 4 {
         return Err(format!(
@@ -177,56 +338,79 @@ fn decode_payload(payload: &[u8], frames: usize) -> Result<Vec<Vec<f32>>, String
     for frame in 0..frames {
         let offset = frame * 4;
         left.push(f32::from_le_bytes(
-            payload[offset..offset + 4].try_into().unwrap(),
+            payload[offset..offset + 4]
+                .try_into()
+                .map_err(|_| "invalid left PCM sample")?,
         ));
         right.push(f32::from_le_bytes(
             payload[frames * 4 + offset..frames * 4 + offset + 4]
                 .try_into()
-                .unwrap(),
+                .map_err(|_| "invalid right PCM sample")?,
         ));
     }
     Ok(vec![left, right])
 }
 
-fn encode_outputs(outputs: &[Vec<f32>], frames: usize) -> Vec<u8> {
-    // 平面格式（与客户端 decodePcm 对应）：每个声道连续存放
+fn encode_outputs(outputs: &[Vec<f32>], frames: usize) -> Result<Vec<u8>, String> {
+    if outputs.len() != 2 || outputs.iter().any(|channel| channel.len() != frames) {
+        return Err("plugin returned an invalid stereo buffer".to_string());
+    }
+    if outputs.iter().flatten().any(|sample| !sample.is_finite()) {
+        return Err("plugin returned non-finite audio".to_string());
+    }
+
+    // Planar format: all left samples followed by all right samples. This avoids an interleave /
+    // deinterleave pass in the renderer and matches the client's decodePcm layout.
     let mut bytes = Vec::with_capacity(frames * 2 * 4);
     for channel in outputs {
-        for frame in 0..frames {
-            bytes.extend_from_slice(&channel[frame].to_le_bytes());
+        for sample in channel {
+            bytes.extend_from_slice(&sample.to_le_bytes());
         }
     }
-    bytes
-}
-
-fn write_json_line(output: &mut dyn Write, value: &Value) -> io::Result<()> {
-    serde_json::to_writer(&mut *output, value)?;
-    output.write_all(b"\n")?;
-    output.flush()
+    Ok(bytes)
 }
 
 fn process_binary_block(
-    plugin: &Arc<Mutex<Plugin>>,
-    sample_rate: f64,
+    shared: &SharedPluginChain,
     frames: usize,
     payload: &[u8],
-) -> Result<(usize, Vec<u8>), String> {
-    let inputs = decode_payload(payload, frames)?;
-    let mut plugin = plugin.lock().map_err(|_| "plugin lock poisoned".to_string())?;
-    validate_audio(&inputs, plugin.block_size()).map_err(|error| error.to_string())?;
-    let mut buffers = AudioBuffers::new(2, 2, frames, sample_rate);
-    buffers.inputs = inputs;
-    plugin.process_audio(&mut buffers).map_err(|error| error.to_string())?;
-    if buffers
-        .outputs
-        .iter()
-        .flatten()
-        .any(|sample| !sample.is_finite())
-    {
-        return Err("plugin returned non-finite audio".to_string());
+) -> Result<(usize, Vec<Value>, Vec<u8>), String> {
+    let slots = shared
+        .lock()
+        .map_err(|_| "plugin chain lock poisoned".to_string())?
+        .clone();
+    if slots.is_empty() {
+        return Err("no plugin loaded".to_string());
     }
-    let latency_samples = plugin.latency_samples();
-    Ok((latency_samples as usize, encode_outputs(&buffers.outputs, frames)))
+
+    let mut inputs = decode_payload(payload, frames)?;
+    let mut latencies = Vec::with_capacity(slots.len());
+    for slot in slots {
+        let mut plugin = slot
+            .plugin
+            .lock()
+            .map_err(|_| "plugin lock poisoned".to_string())?;
+        validate_audio(&inputs, plugin.block_size()).map_err(str::to_string)?;
+        let mut buffers = AudioBuffers::new(2, 2, frames, slot.sample_rate);
+        buffers.inputs = inputs;
+        plugin
+            .process_audio(&mut buffers)
+            .map_err(|error| error.to_string())?;
+        let latency_samples = plugin.latency_samples() as usize;
+        latencies.push(json!({
+            "id": slot.id,
+            "latency_samples": latency_samples,
+        }));
+        inputs = buffers.outputs;
+    }
+
+    let total_latency = latencies
+        .iter()
+        .filter_map(|item| item.get("latency_samples").and_then(Value::as_u64))
+        .map(|value| value as usize)
+        .sum();
+    let output = encode_outputs(&inputs, frames)?;
+    Ok((total_latency, latencies, output))
 }
 
 fn validate_audio(inputs: &[Vec<f32>], block_size: usize) -> Result<(), &'static str> {
@@ -241,30 +425,35 @@ fn validate_audio(inputs: &[Vec<f32>], block_size: usize) -> Result<(), &'static
     Ok(())
 }
 
+fn write_json_line(output: &mut dyn Write, value: &Value) -> io::Result<()> {
+    serde_json::to_writer(&mut *output, value)?;
+    output.write_all(b"\n")?;
+    output.flush()
+}
+
 fn write_response(output: &mut dyn Write, result: Result<Value, String>) -> io::Result<()> {
     let response = match result {
         Ok(value) => json!({ "ok": true, "result": value }),
         Err(error) => json!({ "ok": false, "error": error }),
     };
-    serde_json::to_writer(&mut *output, &response)?;
-    output.write_all(b"\n")?;
-    output.flush()
+    write_json_line(output, &response)
 }
 
-// Native editor menus run AppKit's modal tracking loop, which stops our main loop from
-// servicing the plugin's run loop — editor timers starve and the UI appears frozen while
-// the menu stays open. A timer scheduled in NSRunLoopCommonModes keeps firing inside that
-// modal loop, so the editor stays alive for as long as the user browses it.
+// Native editor menus run AppKit's modal tracking loop, which stops our main loop from servicing
+// the plugin's run loop. A common-mode timer keeps plugin callbacks alive inside that modal loop.
 #[cfg(target_os = "macos")]
-fn schedule_plugin_servicer(shared: SharedPlugin) -> objc2::rc::Retained<objc2_foundation::NSTimer> {
+fn schedule_plugin_servicer(
+    shared: SharedPluginChain,
+) -> objc2::rc::Retained<objc2_foundation::NSTimer> {
     use block2::RcBlock;
     use core::ptr::NonNull;
     use objc2_foundation::{NSRunLoop, NSRunLoopCommonModes, NSTimer};
 
     let timer_block = RcBlock::new(move |_timer: NonNull<NSTimer>| {
-        if let Ok(slot) = shared.lock() {
-            if let Some((plugin, _)) = slot.as_ref() {
-                if let Ok(mut plugin) = plugin.lock() {
+        let slots = shared.lock().map(|slots| slots.clone());
+        if let Ok(slots) = slots {
+            for slot in slots {
+                if let Ok(mut plugin) = slot.plugin.lock() {
                     if let Err(error) = plugin.service_host_requests() {
                         eprintln!("vst3 service_host_requests: {error}");
                     }
@@ -314,10 +503,9 @@ fn pump_events() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Keep plugin stdout separate from the production protocol.
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // The audio path (reader -> worker -> response) must never touch the main thread:
-    // native editor menus block it inside a modal loop for as long as they stay open.
-    // The client keeps at most one request in flight, which keeps the split writers
-    // (worker for process, main for control commands) from ever interleaving.
+    // The audio path (reader -> worker -> response) must never touch the main thread: native
+    // editor menus can block it inside a modal loop. The client keeps at most one request in
+    // flight, so the two writers cannot interleave protocol messages.
     let (mut input, mut output, new_worker_writer): (
         Box<dyn BufRead + Send>,
         Box<dyn Write + Send>,
@@ -333,9 +521,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if !address.ip().is_loopback() {
             return Err("only loopback connections are allowed".into());
         }
-        let mut stream = TcpStream::connect_timeout(&address, std::time::Duration::from_secs(5))?;
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))?;
         stream.set_nodelay(true)?;
-        writeln!(stream, "{}", json!({"token": args[2]}))?;
+        writeln!(stream, "{}", json!({ "token": args[2] }))?;
         let worker_stream = stream.try_clone()?;
         (
             Box::new(BufReader::new(stream.try_clone()?)),
@@ -353,40 +541,39 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         app.finishLaunching();
     }
 
-
-    let shared: SharedPlugin = Arc::new(Mutex::new(None));
-    let (jobs, job_rx) = mpsc::channel::<(usize, Vec<u8>)>();
+    let shared: SharedPluginChain = Arc::new(Mutex::new(Vec::new()));
+    // A bounded queue prevents a misbehaving peer from growing an unbounded PCM backlog.
+    let (jobs, job_rx) = mpsc::sync_channel::<(usize, Vec<u8>)>(2);
     #[cfg(target_os = "macos")]
     let _servicing_timer = schedule_plugin_servicer(Arc::clone(&shared));
     {
-        // Audio worker: processes blocks and writes responses end to end. Lives for the
-        // whole process; plugin loads swap the shared slot underneath it.
+        // Audio worker: processes a complete chain and writes each response end to end. It lives
+        // for the whole process; load_chain atomically swaps the shared plugin snapshot.
         let worker_shared = Arc::clone(&shared);
         let mut worker_output = new_worker_writer()?;
         std::thread::Builder::new()
             .name("vst3-audio".into())
             .spawn(move || {
                 for (frames, payload) in job_rx {
-                    let current = worker_shared
-                        .lock()
-                        .ok()
-                        .and_then(|slot| slot.clone());
-                    let outcome = match current {
-                        Some((plugin, sample_rate)) => {
-                            process_binary_block(&plugin, sample_rate, frames, &payload)
-                        }
-                        None => Err("no plugin loaded".to_string()),
-                    };
+                    let outcome = process_binary_block(&worker_shared, frames, &payload);
                     let write_failed = match outcome {
-                        Ok((latency_samples, out_bytes)) => {
-                            let header = json!({"ok": true, "result": {"latency_samples": latency_samples, "frames": frames, "binary_bytes": out_bytes.len()}});
+                        Ok((latency_samples, latencies, out_bytes)) => {
+                            let header = json!({
+                                "ok": true,
+                                "result": {
+                                    "latency_samples": latency_samples,
+                                    "latencies": latencies,
+                                    "frames": frames,
+                                    "binary_bytes": out_bytes.len(),
+                                }
+                            });
                             write_json_line(&mut *worker_output, &header).is_err()
                                 || worker_output.write_all(&out_bytes).is_err()
                                 || worker_output.flush().is_err()
                         }
                         Err(error) => write_json_line(
                             &mut *worker_output,
-                            &json!({"ok": false, "error": error}),
+                            &json!({ "ok": false, "error": error }),
                         )
                         .is_err(),
                     };
@@ -411,9 +598,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             Ok(_) => {
-                // Route process requests straight to the audio worker so they never wait
-                // behind the main thread; everything else goes to the control loop. If the
-                // worker is gone, fall through so the control loop answers with an error.
+                // Route process requests straight to the audio worker so they never wait behind
+                // the control loop. If the worker is gone, let the control loop produce an error.
                 let routed = match serde_json::from_slice::<Command>(&line) {
                     Ok(Command::ProcessBinary { frames }) => {
                         if frames == 0 || frames > MAX_FRAMES {
@@ -444,7 +630,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut session = Session {
         window: None,
-        plugin: None,
+        window_id: None,
         shared,
     };
     loop {
@@ -453,19 +639,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             window.service_platform_events()?;
             if window.closed_by_user() {
                 session.window = None;
+                session.window_id = None;
             }
         }
-        if let Some(plugin) = &session.plugin {
-            let mut plugin = plugin
+
+        // Restart requests (latency changes, lifecycle transitions) must be serviced on the
+        // control thread, never on the audio worker. Snapshot the chain before taking plugin
+        // locks so a load/unload can still swap the chain between callbacks.
+        let slots = session
+            .shared
+            .lock()
+            .map_err(|_| "plugin chain lock poisoned")?
+            .clone();
+        for slot in slots {
+            let mut plugin = slot
+                .plugin
                 .lock()
                 .map_err(|_| "plugin lock poisoned")?;
-            // Restart requests (latency changes, lifecycle transitions) must be serviced on
-            // the plugin control thread — this one — never from the audio worker.
             if let Err(error) = plugin.service_host_requests() {
                 eprintln!("vst3 service_host_requests: {error}");
             }
             plugin.service_run_loop();
         }
+
         let line = match receiver.recv_timeout(Duration::from_millis(10)) {
             Ok(line) => line?,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -505,14 +701,30 @@ mod tests {
             assert!(validate_audio(&input, 512).is_err());
         }
         assert!(serde_json::from_str::<Command>(r#"{"command":"unload","extra":true}"#).is_err());
-        let shared: SharedPlugin = Arc::new(Mutex::new(None));
-        let mut session = Session {
-            window: None,
-            plugin: None,
-            shared: Arc::clone(&shared),
+        assert!(serde_json::from_str::<Command>(
+            r#"{"command":"load_chain","plugins":[{"id":"a","path":"/tmp/a.vst3","sample_rate":48000,"block_size":512}],"extra":true}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn planar_pcm_round_trip_has_expected_size() {
+        let output = encode_outputs(&[vec![0.25; 4], vec![-0.5; 4]], 4).unwrap();
+        assert_eq!(output.len(), 32);
+        let decoded = decode_payload(&output, 4).unwrap();
+        assert_eq!(decoded[0], vec![0.25; 4]);
+        assert_eq!(decoded[1], vec![-0.5; 4]);
+    }
+
+    #[test]
+    fn load_spec_rejects_duplicate_or_invalid_ids() {
+        let invalid = LoadSpec {
+            id: String::new(),
+            path: "/tmp/a.vst3".into(),
+            sample_rate: 48000,
+            block_size: 512,
+            state: None,
         };
-        assert!(session.execute(Command::SaveState {}).is_err());
-        assert!(session.execute(Command::Unload {}).is_ok());
-        assert!(shared.lock().unwrap().is_none());
+        assert!(validate_load_spec(&invalid).is_err());
     }
 }

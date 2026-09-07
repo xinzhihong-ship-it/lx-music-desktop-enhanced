@@ -59,13 +59,21 @@ test('real plugin loads, processes PCM and round-trips its state', { skip: !proc
     assert.ok(saved.state.length > 0)
     await host.request({ command: 'unload' })
     await host.request({ ...load, state: saved.state })
-    const processed = await host.request({ command: 'process', inputs: [Array(512).fill(0), Array(512).fill(0)] })
-    assert.deepEqual(processed.outputs.map(channel => channel.length), [512, 512])
-    assert.ok(processed.outputs.flat().every(Number.isFinite))
+    const payload = Buffer.alloc(512 * 2 * 4)
+    const processed = await host.request({ command: 'process_binary', frames: 512 }, payload)
+    assert.equal(processed.result.binary_bytes, payload.length)
+    const outputBytes = new Uint8Array(processed.payload.length)
+    outputBytes.set(processed.payload)
+    const outputs = [
+      new Float32Array(outputBytes.buffer, 0, 512),
+      new Float32Array(outputBytes.buffer, 512 * 4, 512),
+    ]
+    assert.deepEqual(outputs.map(channel => channel.length), [512, 512])
+    assert.ok(outputs.flatMap(channel => [...channel]).every(Number.isFinite))
   } finally { host.close() }
 })
 
-test('chain preserves hosts on reorder and failed load, saves bypass state and recovers a crashed helper', { skip: !process.env.LX_VST3_TEST_PLUGIN }, async () => {
+test('chain reuses one host, preserves failed-load state and recovers a crashed helper', { skip: !process.env.LX_VST3_TEST_PLUGIN }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lx-vst3-chain-'))
   const chain = new Vst3Chain(executable, root)
   const plugin = process.env.LX_VST3_TEST_PLUGIN
@@ -74,18 +82,21 @@ test('chain preserves hosts on reorder and failed load, saves bypass state and r
   try {
     await chain.configure(entries, 48000, allowed)
     const hosts = chain.slots.map(slot => slot.host)
+    assert.equal(new Set(hosts.map(host => host.pid)).size, 1)
     await chain.configure([...entries].reverse(), 48000, allowed)
-    assert.deepEqual(chain.slots.map(slot => slot.host.pid), hosts.map(host => host.pid).reverse())
+    assert.equal(new Set(chain.slots.map(slot => slot.host.pid)).size, 1)
+    assert.equal(chain.slots[0].host.pid, hosts[0].pid)
     await assert.rejects(chain.configure([...entries, { id: randomUUID(), path: '/missing.vst3', enabled: true }], 48000, allowed))
     assert.deepEqual(chain.slots.map(slot => slot.id), entries.map(entry => entry.id).reverse())
     await chain.configure(entries.map(entry => ({ ...entry, enabled: false })), 48000, allowed)
+    assert.equal(chain.slots.every(slot => slot.host === null), true)
     for (const entry of entries) assert.ok((await fs.stat(path.join(root, `${entry.id}.json`))).size > 0)
     const inputs = [Array(512).fill(0.25), Array(512).fill(-0.25)]
     assert.deepEqual((await chain.process(inputs)).outputs, inputs)
     await chain.configure(entries, 48000, allowed)
     const crashed = chain.slots[0].host
     process.kill(crashed.pid)
-    await assert.rejects(crashed.request({ command: 'parameters' }))
+    await assert.rejects(crashed.request({ command: 'parameters', plugin_id: entries[0].id }))
     await chain.configure(entries, 48000, allowed)
     assert.notEqual(chain.slots[0].host.pid, crashed.pid)
     assert.equal((await chain.process(inputs)).outputs.length, 2)

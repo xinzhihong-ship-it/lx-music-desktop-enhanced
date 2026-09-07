@@ -1,12 +1,13 @@
 const fs = require('fs')
 const { jp, formatTime } = require('./index')
-const pkgDir = '../../package.json'
-const pkg = require(pkgDir)
+const pkgPath = jp('../../package.json')
+const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
 const version = require('../version.json')
 const chalk = require('chalk')
 const pkg_bak = JSON.stringify(pkg, null, 2)
 const version_bak = JSON.stringify(version, null, 2)
 const changelogPath = jp('../../CHANGELOG.md')
+const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 const { parseChangelog } = require('./parseChangelog')
 
 // const md_renderer = markdownStr => new (require('markdown-it'))({
@@ -24,8 +25,9 @@ const getPrevVer = () => parseChangelog(fs.readFileSync(changelogPath, 'utf-8').
 const updateChangeLog = async(newVerNum, newChangeLog) => {
   let changeLog = fs.readFileSync(changelogPath, 'utf-8')
   const prevVer = await getPrevVer()
-  const log = `## [${newVerNum}](${pkg.repository.url.replace(/^git\+(http.+)\.git$/, '$1')}/compare/v${prevVer}...v${newVerNum}) - ${formatTime()}\n\n${newChangeLog}`
-  fs.writeFileSync(changelogPath, changeLog.replace(/(## \[(?:\d+\.))/, log + '\n$1'), 'utf-8')
+  const repositoryUrl = pkg.repository.url.replace(/^git\+(https?:\/\/[^/]+(?:\/[^/]+)+)\.git$/, '$1')
+  const log = `## [${newVerNum}](${repositoryUrl}/compare/v${prevVer}...v${newVerNum}) - ${formatTime()}\n\n${newChangeLog}`
+  fs.writeFileSync(changelogPath, changeLog.replace(/(## \[(?:\d+\.))/, (_, heading) => log + '\n' + heading), 'utf-8')
 }
 
 // const renderChangeLog = md => md_renderer(md)
@@ -33,6 +35,9 @@ const updateChangeLog = async(newVerNum, newChangeLog) => {
 
 module.exports = async newVerNum => {
   if (!newVerNum) newVerNum = pkg.version
+  if (typeof newVerNum !== 'string' || !versionPattern.test(newVerNum)) {
+    throw new Error(`Invalid version: ${newVerNum}`)
+  }
   const newMDChangeLog = fs.readFileSync(jp('../changeLog.md'), 'utf-8')
   // const newChangeLog = renderChangeLog(newMDChangeLog)
   version.history.unshift({
@@ -47,7 +52,7 @@ module.exports = async newVerNum => {
 
   fs.writeFileSync(jp('../version.json'), JSON.stringify(version) + '\n', 'utf-8')
 
-  fs.writeFileSync(jp(pkgDir), JSON.stringify(pkg, null, 2) + '\n', 'utf-8')
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf-8')
 
   await updateChangeLog(newVerNum, newMDChangeLog)
 

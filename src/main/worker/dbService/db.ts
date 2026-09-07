@@ -1,23 +1,41 @@
 import Database from 'better-sqlite3'
-import path from 'path'
+import path from 'node:path'
 import tables, { DB_VERSION } from './tables'
 import verifyDB from './verifyDB'
 import migrateData from './migrate'
 
 let db: Database.Database
 
+const DATABASE_FILE_NAME = 'lx.data.db'
 
-const initTables = (db: Database.Database) => {
-  db.exec(`
-    ${Array.from(tables.values()).join('\n')}
-    INSERT INTO "main"."db_info" ("field_name", "field_value") VALUES ('version', '${DB_VERSION}');
-  `)
+const isPathInside = (root: string, candidate: string) => {
+  const relativePath = path.relative(path.resolve(root), path.resolve(candidate))
+  return relativePath === '' || (
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  )
 }
 
+const initTables = (db: Database.Database) => {
+  const createTables = db.transaction(() => {
+    for (const sql of tables.values()) {
+      const statement = db.prepare(sql)
+      statement.run()
+    }
+    db.prepare(
+      'INSERT INTO "main"."db_info" ("field_name", "field_value") VALUES (?, ?)',
+    ).run('version', DB_VERSION)
+  })
+  createTables()
+}
 
 // 打开、初始化数据库
 export const init = (lxDataPath: string): boolean | null => {
-  const databasePath = path.join(lxDataPath, 'lx.data.db')
+  const dataRoot = path.resolve(lxDataPath)
+  const databasePath = path.resolve(dataRoot, DATABASE_FILE_NAME)
+  if (!isPathInside(dataRoot, databasePath) || path.basename(databasePath) !== DATABASE_FILE_NAME) {
+    throw new Error('数据库路径无效')
+  }
   const nativeBinding = path.join(__dirname, '../node_modules/better-sqlite3/build/Release/better_sqlite3.node')
   let dbFileExists = true
 
@@ -41,14 +59,14 @@ export const init = (lxDataPath: string): boolean | null => {
   if (dbFileExists) migrateData(db)
 
   // https://www.sqlite.org/pragma.html#pragma_optimize
-  if (dbFileExists) db.exec('PRAGMA optimize;')
+  if (dbFileExists) db.prepare('PRAGMA optimize;').run()
   if (!verifyDB(db)) {
     db.close()
     return null
   }
 
   // https://www.sqlite.org/lang_vacuum.html
-  // db.exec('VACUUM "main"')
+  // VACUUM is intentionally not run during startup.
 
   process.on('exit', () => db.close())
   console.log('db inited')

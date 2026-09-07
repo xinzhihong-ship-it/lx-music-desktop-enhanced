@@ -262,8 +262,7 @@ export default {
     const splitExtraArgs = (str) => {
       const args = []
       const regex = /[^\s"]+|"([^"]*)"/g
-      let match
-      while ((match = regex.exec(str)) != null) {
+      for (const match of str.matchAll(regex)) {
         args.push(match[1] ?? match[0])
       }
       return args.filter(Boolean)

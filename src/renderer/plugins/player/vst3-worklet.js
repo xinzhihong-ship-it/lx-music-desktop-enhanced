@@ -1,15 +1,19 @@
 /* global AudioWorkletProcessor, registerProcessor */
 const BLOCK = 512
-const DELAY = 4096
-const CAPACITY = 8192
-// Plugin editors share the host's main thread with PCM processing, so presets and UI
-// interaction can stall blocks for seconds. Missing blocks play as silence — the main
-// process answers dry passthrough once its queue backs up, and a dead host is caught
-// via request errors — so stalls never pause playback here.
+// Keep four 512-frame blocks of intentional bridge latency. The native chain is now a single
+// bounded helper request; this is half the old delay while leaving room for normal IPC jitter.
+const DELAY = 2048
+const CAPACITY = 32768
+// Plugin editors share the host's control thread with PCM processing, so presets and UI
+// interaction can stall blocks. Missing blocks play as silence; the main process coalesces
+// pending audio to the newest block and answers superseded blocks with dry passthrough. A dead
+// host is still reported via request errors, so only protocol/host failures pause playback.
 
 class Vst3Processor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super()
+    const requested = options?.processorOptions?.bufferFrames
+    this.delay = [1024, 2048, 4096, 8192, 16384].includes(requested) ? requested : DELAY
     this.input = [new Float32Array(BLOCK), new Float32Array(BLOCK)]
     this.output = [new Float32Array(CAPACITY), new Float32Array(CAPACITY)]
     this.tags = new Int32Array(CAPACITY / BLOCK).fill(-1)
@@ -19,6 +23,7 @@ class Vst3Processor extends AudioWorkletProcessor {
     this.fault = false
     this.port.onmessage = ({ data }) => {
       if (data.action === 'reset') {
+        if ([1024, 2048, 4096, 8192, 16384].includes(data.bufferFrames)) this.delay = data.bufferFrames
         this.epoch = data.epoch
         this.frame = 0
         this.tags.fill(-1)
@@ -28,7 +33,7 @@ class Vst3Processor extends AudioWorkletProcessor {
         return
       }
       if (data.epoch !== this.epoch || this.fault) return
-      const start = data.sequence * BLOCK + DELAY
+      const start = data.sequence * BLOCK + this.delay
       if (!Number.isInteger(data.sequence) || !Array.isArray(data.outputs) || data.outputs.length !== 2 ||
         data.outputs.some(channel => channel.length !== BLOCK || channel.some(sample => !Number.isFinite(sample)))) {
         this.fail()
@@ -60,8 +65,8 @@ class Vst3Processor extends AudioWorkletProcessor {
       const offset = this.frame % BLOCK
       this.input[0][offset] = source?.[0]?.[i] ?? 0
       this.input[1][offset] = source?.[1]?.[i] ?? this.input[0][offset]
-      if (this.frame >= DELAY) {
-        const sequence = Math.floor((this.frame - DELAY) / BLOCK)
+      if (this.frame >= this.delay) {
+        const sequence = Math.floor((this.frame - this.delay) / BLOCK)
         const index = this.frame % CAPACITY
         if (this.tags[Math.floor(index / BLOCK)] !== sequence) {
           // Block not processed in time (host busy with the plugin UI): stay silent and

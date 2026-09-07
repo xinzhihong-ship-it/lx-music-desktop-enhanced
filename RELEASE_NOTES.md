@@ -1,8 +1,8 @@
-# LX Music 增强版 3.2.1-beta.1
+# LX Music 增强版 3.2.1-beta.2
 
-这是面向跨平台用户的测试版，重点验证 VST3 开关、音频输出设备切换和播放状态稳定性。请通过 GitHub Release 手动下载测试，不承诺 beta 自动更新。
+这是面向跨平台用户的测试版，重点验证 VST3 音频链、采样率显示、音频输出设备切换和 B 站视频播放。请通过 GitHub Release 手动下载测试，不承诺 beta 自动更新。
 
-本次 beta 中，**macOS arm64 是唯一已有完整本机 VST3 插件/编辑器证据的目标**；其他目标均按下方验证范围和已知限制标注，不把 CI 打包等同于实机验证。
+本次 beta 中，**macOS arm64 已完成本机验证**；Windows/Linux 及 ARM 目标由 CI 构建后仍需用户实机反馈，不把 CI 打包等同于实机验证。
 
 ## 本次修复
 
@@ -11,6 +11,9 @@
 - 设备枚举和路由绑定失败时不再把用户选择强制改写为 `default`。
 - 路由重建失败时保留原有播放源、进度、音量和播放状态，不再因为临时设备错误替换成空元素。
 - 增加 VST3 host 打包计划检查，交叉架构不会误复用旧的 host 二进制；host 缺失时显示明确错误。
+- VST3 改为整条插件链共用一个宿主进程，限制过期音频积压，并提供可调桥接缓冲。
+- 增加 WAV、FLAC、MP3、AAC、M4A、Ogg/Opus 等格式的轻量采样率识别；Opus 按实际播放输出显示 48 kHz，无法确认时显示未知。
+- B 站音频探测复用 CDN 所需请求头；修复开发启动时 MPV 视频原生桥路径和构建竞态。
 - beta 打包增加 lint、应用构建和 VST3 测试门禁，并保留跨平台 CI 检查。
 
 ## 测试范围
@@ -23,9 +26,10 @@
 ## 已知限制
 
 - VST3 仍是实验性功能，仅支持内置播放引擎；mpv 和 Audirvana 不支持 VST3 音频链路。
-- Windows arm64、Linux arm64、Linux armv7l 以及 Windows 7 兼容包在当前构建流程中不携带 VST3 host，不宣称这些包支持 VST3；普通播放功能与 VST3 能力分开验证。
+- Windows arm64、Linux arm64、Linux armv7l 的构建流程现在会携带对应架构的 VST3 host；这些目标仍需在真实 ARM 设备上验证插件兼容性。Windows 7 兼容包继续不携带 VST3 host。
 - Windows 7 包仍属于兼容性测试产物，Electron、AudioWorklet、`setSinkId` 和原生插件编辑器尚未在真实 Windows 7 系统确认。
-- Linux Wayland、Linux X11 原生插件窗口交互、长时间播放、重型插件链和非零延迟插件仍需用户反馈。
+- Linux Wayland、Linux X11 原生插件窗口交互、ARM 真机、长时间播放、重型插件链和非零延迟插件仍需用户反馈。
+- 当前 `ikun音源` 脚本没有声明 `mg`；咪咕需要使用支持 `mg.musicUrl` 的音源脚本。GitCode 音乐数据库地址若返回 404，Git 源也无法播放，需要配置有效的数据库地址。
 - 发布包中的 beta 版本请手动下载安装；不要把本次版本当作正式稳定版。
 
 发现问题时请附上系统版本、CPU 架构、播放引擎、是否开启 VST3/可视化、输出设备名称以及 `VST3` 设置页错误信息。

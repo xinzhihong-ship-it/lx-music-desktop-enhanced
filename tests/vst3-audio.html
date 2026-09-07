@@ -12,7 +12,7 @@ const { ipcRenderer } = require('electron')
   // Exercise the complete realtime graph without making sound on the user's speakers.
   const mute = new GainNode(context, { gain: 0 })
   source.connect(node).connect(mute).connect(context.destination)
-  let serial = Promise.resolve()
+  let inFlight = 0
   let blocks = 0
   let maxRoundTripMs = 0
   let error = ''
@@ -20,21 +20,26 @@ const { ipcRenderer } = require('electron')
   node.port.onmessage = ({ data }) => {
     if (data.action === 'fault') { error = 'Realtime audio deadline missed'; return }
     if (data.action !== 'process') return
+    // Mirror production: the main-side chain coalesces audio, so this is only a final backstop.
+    if (inFlight >= 16) return
+    inFlight++
     const start = performance.now()
-    serial = serial.then(async () => {
-      const result = await ipcRenderer.invoke('process', data.inputs.map(channel => Array.from(channel)))
+    void ipcRenderer.invoke('process', data.inputs.map(channel => channel)).then(result => {
       if (result.outputs.length !== 2 || result.outputs.some(channel => channel.length !== 512 || channel.some(sample => !Number.isFinite(sample)))) throw new Error('Invalid native PCM output')
       maxRoundTripMs = Math.max(maxRoundTripMs, performance.now() - start)
       blocks++
       node.port.postMessage({ ...result, epoch: data.epoch, sequence: data.sequence })
-    }).catch(failure => { error = failure.message })
+    }).catch(failure => { error = failure.message }).finally(() => { inFlight-- })
   }
   node.port.postMessage({ action: 'reset', epoch: 1, active: true })
   source.start()
   await context.resume()
   await new Promise(resolve => setTimeout(resolve, 7000))
   await context.suspend()
-  await serial
+  await new Promise(resolve => {
+    const wait = () => inFlight ? setTimeout(wait, 10) : resolve()
+    wait()
+  })
   await context.close()
   if (blocks < 500) error ||= 'Audio clock did not advance'
   ipcRenderer.send('result', { error, blocks, maxRoundTripMs, sampleRate: context.sampleRate })

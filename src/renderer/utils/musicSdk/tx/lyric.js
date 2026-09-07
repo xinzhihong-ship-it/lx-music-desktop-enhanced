@@ -37,7 +37,7 @@ const parseTools = {
 
     for (let line of lines) {
       line = line.trim()
-      let result = this.rxps.lineTime.exec(line)
+      let result = line.match(this.rxps.lineTime)
       if (!result) {
         if (line.startsWith('[offset')) {
           lxlrcLines.push(line)
@@ -61,7 +61,7 @@ const parseTools = {
       let times = words.match(this.rxps.wordTimeAll)
       if (!times) continue
       times = times.map(time => {
-        const result = /\((\d+),(\d+)\)/.exec(time)
+        const result = time.match(/\((\d+),(\d+)\)/)
         return `<${Math.max(parseInt(result[1]) - startMsTime, 0)},${result[2]}>`
       })
       const wordArr = words.split(this.rxps.wordTime)
@@ -83,7 +83,7 @@ const parseTools = {
 
     for (let line of lines) {
       line = line.trim()
-      let result = this.rxps.lineTime.exec(line)
+      let result = line.match(this.rxps.lineTime)
       if (!result) continue
 
       const startMsTime = parseInt(result[1])
@@ -115,7 +115,7 @@ const parseTools = {
     // let temp = []
     let newLrc = []
     rlrcLines.forEach((line) => {
-      const result = this.rxps.lineTime2.exec(line)
+      const result = line.match(this.rxps.lineTime2)
       if (!result) return
       const words = line.replace(this.rxps.lineTime2, '')
       if (!words.trim()) return
@@ -123,7 +123,7 @@ const parseTools = {
 
       while (lrcLines.length) {
         const lrcLine = lrcLines.shift()
-        const lrcLineResult = this.rxps.lineTime2.exec(lrcLine)
+        const lrcLineResult = lrcLine.match(this.rxps.lineTime2)
         if (!lrcLineResult) continue
         const t2 = this.getIntv(lrcLineResult[1])
         if (Math.abs(t1 - t2) < 100) {
@@ -145,7 +145,7 @@ const parseTools = {
     // let temp = []
     let newLrc = []
     tlrcLines.forEach((line) => {
-      const result = this.rxps.lineTime2.exec(line)
+      const result = line.match(this.rxps.lineTime2)
       if (!result) return
       const words = line.replace(this.rxps.lineTime2, '')
       if (!words.trim()) return
@@ -157,7 +157,7 @@ const parseTools = {
 
       while (lrcLines.length) {
         const lrcLine = lrcLines.shift()
-        const lrcLineResult = this.rxps.lineTime2.exec(lrcLine)
+        const lrcLineResult = lrcLine.match(this.rxps.lineTime2)
         if (!lrcLineResult) continue
         const t2 = this.getIntv(lrcLineResult[1])
         if (Math.abs(t1 - t2) < 100) {

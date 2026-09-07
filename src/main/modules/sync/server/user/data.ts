@@ -1,8 +1,7 @@
 import fs from 'node:fs'
-import path from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { throttle } from '@common/utils/common'
-import { filterFileName, toMD5 } from '../utils'
+import { filterFileName, resolvePathWithin, toMD5 } from '../utils'
 import { File } from '@common/constants_sync'
 import { exists } from '../../utils'
 
@@ -15,15 +14,18 @@ interface DevicesInfo {
   userName: string
   clients: Record<string, LX.Sync.ServerKeyInfo>
 }
+const serverDataPath = () => resolvePathWithin(global.lxDataPath, File.serverDataPath)
+const serverInfoPath = () => resolvePathWithin(serverDataPath(), File.serverInfoJSON)
+
 const saveServerInfoThrottle = throttle(() => {
-  fs.writeFile(path.join(global.lxDataPath, File.serverDataPath, File.serverInfoJSON), JSON.stringify(serverInfo), (err) => {
+  fs.writeFile(serverInfoPath(), JSON.stringify(serverInfo), (err) => {
     if (err) console.error(err)
   })
 })
 let serverInfo: ServerInfo
 export const initServerInfo = async() => {
   if (serverInfo != null) return
-  const serverInfoFilePath = path.join(global.lxDataPath, File.serverDataPath, File.serverInfoJSON)
+  const serverInfoFilePath = serverInfoPath()
   if (await exists(serverInfoFilePath)) {
     // eslint-disable-next-line require-atomic-updates
     serverInfo = JSON.parse((await fs.promises.readFile(serverInfoFilePath)).toString())
@@ -33,7 +35,7 @@ export const initServerInfo = async() => {
       serverId: randomBytes(4 * 4).toString('base64'),
       version: 2,
     }
-    const syncDataPath = path.join(global.lxDataPath, File.serverDataPath)
+    const syncDataPath = serverDataPath()
     if (!await exists(syncDataPath)) {
       await fs.promises.mkdir(syncDataPath, { recursive: true })
     }
@@ -134,9 +136,9 @@ export class UserDataManage {
 
   constructor(userName: string) {
     this.userName = userName
-    const syncDataPath = path.join(global.lxDataPath, File.serverDataPath)
+    const syncDataPath = serverDataPath()
     this.userDir = syncDataPath
-    this.devicesFilePath = path.join(this.userDir, File.userDevicesJSON)
+    this.devicesFilePath = resolvePathWithin(this.userDir, File.userDevicesJSON)
     this.devicesInfo = fs.existsSync(this.devicesFilePath) ? JSON.parse(fs.readFileSync(this.devicesFilePath).toString()) : { userName, clients: {} }
 
     this.saveDevicesInfoThrottle = throttle(() => {

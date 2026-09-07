@@ -14,6 +14,33 @@ const windowSourceFile = path.join(
 )
 const windowTargetFile = path.join(root, 'build/Release/lx_mpv_window.node')
 const nodeGyp = path.join(root, 'node_modules/node-gyp/bin/node-gyp.js')
+const allowedMpvRoots = ['/opt/homebrew', '/usr/local']
+const allowedMpvPrefixes = allowedMpvRoots.map(rootPath => path.join(rootPath, 'opt/mpv'))
+const isWithin = (rootPath, candidatePath) => {
+  const relativePath = path.relative(rootPath, candidatePath)
+  return relativePath === '' || (
+    relativePath !== '..' &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  )
+}
+
+const resolveMpvPrefix = prefix => {
+  if (typeof prefix !== 'string' || !allowedMpvPrefixes.includes(prefix)) {
+    throw new Error('LX_MPV_PREFIX must be a supported Homebrew mpv prefix')
+  }
+  const resolvedPrefix = fs.realpathSync(prefix)
+  if (!allowedMpvRoots.some(rootPath => isWithin(rootPath, resolvedPrefix))) {
+    throw new Error(`Unsupported mpv prefix: ${prefix}`)
+  }
+  return resolvedPrefix
+}
+
+const assertToolPath = (value, label) => {
+  if (typeof value !== 'string' || value.startsWith('-') || value.includes('\0')) {
+    throw new Error(`Invalid ${label}`)
+  }
+}
 
 const getDylibDependencies = (filePath) =>
   execFileSync('otool', ['-L', filePath], { encoding: 'utf8' })
@@ -27,6 +54,9 @@ const isHomebrewPath = (filePath) =>
 
 const bundleMpvRuntime = (mpvPrefix) => {
   const mpvLibrary = path.join(mpvPrefix, 'lib/libmpv.2.dylib')
+  if (!allowedMpvRoots.some(rootPath => isWithin(rootPath, mpvPrefix))) {
+    throw new Error(`Unsupported mpv prefix: ${mpvPrefix}`)
+  }
   fs.rmSync(runtimeDir, { recursive: true, force: true })
   fs.mkdirSync(runtimeDir, { recursive: true })
 
@@ -36,6 +66,8 @@ const bundleMpvRuntime = (mpvPrefix) => {
     const sourcePath = queue.shift()
     const sourceRealPath = fs.realpathSync(sourcePath)
     const targetName = path.basename(sourcePath)
+    assertToolPath(sourceRealPath, 'dylib path')
+    assertToolPath(targetName, 'dylib name')
     if (dependencies.has(targetName)) {
       if (dependencies.get(targetName) !== sourceRealPath) { throw new Error(`macOS MPV 依赖重名：${targetName}`) }
       continue
@@ -49,8 +81,10 @@ const bundleMpvRuntime = (mpvPrefix) => {
 
   for (const [targetName, sourcePath] of dependencies) {
     const targetPath = path.join(runtimeDir, targetName)
+    assertToolPath(targetPath, 'target dylib path')
     for (const dependency of getDylibDependencies(sourcePath)) {
       if (!isHomebrewPath(dependency)) continue
+      assertToolPath(dependency, 'dylib dependency')
       execFileSync('install_name_tool', [
         '-change',
         dependency,
@@ -59,6 +93,7 @@ const bundleMpvRuntime = (mpvPrefix) => {
       ])
     }
     try {
+      assertToolPath(targetName, 'dylib name')
       execFileSync('install_name_tool', [
         '-id',
         `@rpath/${targetName}`,
@@ -74,6 +109,8 @@ const bundleMpvRuntime = (mpvPrefix) => {
     } catch {}
   }
 
+  assertToolPath(mpvLibrary, 'mpv library path')
+  assertToolPath(targetFile, 'native bridge path')
   execFileSync('install_name_tool', [
     '-change',
     mpvLibrary,
@@ -89,9 +126,10 @@ const buildMpvVideoNative = () => {
     process.arch === 'arm64'
       ? ['/opt/homebrew/opt/mpv', '/usr/local/opt/mpv']
       : ['/usr/local/opt/mpv', '/opt/homebrew/opt/mpv']
-  const mpvPrefix =
-    process.env.LX_MPV_PREFIX ||
-    defaultPrefixes.find(
+  const configuredPrefix = process.env.LX_MPV_PREFIX
+  const mpvPrefix = configuredPrefix
+    ? resolveMpvPrefix(configuredPrefix)
+    : defaultPrefixes.find(
       (prefix) =>
         fs.existsSync(path.join(prefix, 'include/mpv/client.h')) &&
         fs.existsSync(path.join(prefix, 'lib/libmpv.2.dylib')),
@@ -118,6 +156,7 @@ const buildMpvVideoNative = () => {
     ],
     {
       cwd: root,
+      shell: false,
       stdio: 'inherit',
       env: { ...process.env, MPV_PREFIX: mpvPrefix },
     },
@@ -137,6 +176,7 @@ const buildMpvWindowNative = (arch) => {
     [nodeGyp, 'rebuild', '--directory', windowSourceDir, `--arch=${arch}`],
     {
       cwd: root,
+      shell: false,
       stdio: 'inherit',
     },
   )

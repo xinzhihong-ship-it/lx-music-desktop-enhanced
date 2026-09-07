@@ -4,8 +4,9 @@ import * as mpvVideoPlayer from './mpvVideo'
 import * as audirvanaPlayer from './audirvana'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { watch } from '@common/utils/vueTools'
-import { createVst3Node, configureVst3Audio, closeVst3Audio, prepareVst3Audio, resetVst3Audio, vst3Runtime, cleanVst3Error } from './vst3'
+import { createVst3Node, configureVst3Audio, closeVst3Audio, prepareVst3Audio, resetVst3Audio, vst3Runtime, cleanVst3Error, restoreVst3Node } from './vst3'
 import { applyOutputSink, createRoutingQueue } from './routingQueue'
+import { readSourceSampleRate } from './sourceSampleRate'
 
 let vst3Node: AudioWorkletNode | null = null
 let vst3Change = Promise.resolve()
@@ -55,11 +56,15 @@ const syncVst3 = async() => {
       if (vst3Node && !await prepareVst3Audio()) return
       await audio?.play()
     }
+  }).catch((err: Error) => {
+    // A rejected sink must not poison all later setResource/setPlay calls. The routing
+    // transaction retains the old output; keep the error visible and allow a retry.
+    vst3Runtime.error = cleanVst3Error(err)
   })
   return vst3Change
 }
 
-watch(() => [appSetting['player.vst3.enabled'], appSetting['player.vst3.chain'], appSetting['player.playEngine'], isBiliVideoActive()], () => {
+watch(() => [appSetting['player.vst3.enabled'], appSetting['player.vst3.chain'], appSetting['player.vst3.bufferFrames'], appSetting['player.playEngine'], isBiliVideoActive()], () => {
   void syncVst3().catch((err: Error) => {
     // 切换失败不暂停播放，仅记录错误；音频保持直通输出。
     vst3Runtime.error = cleanVst3Error(err)
@@ -257,15 +262,18 @@ const createOutputPipe = (stream: MediaStream, start = true) => {
 
 // `deferOutputPipe` is used while an audio element is being staged.  It keeps
 // the old route authoritative until the new final output has accepted its sink.
-const initAdvancedAudioFeatures = (sourceAudio: HTMLAudioElementChrome | null = audio, deferOutputPipe = false) => {
-  if (audioContext) return
+const initAdvancedAudioFeatures = (sourceAudio: HTMLAudioElementChrome | null = audio, deferOutputPipe = false, replacement?: AudioContext) => {
+  if (audioContext && !replacement) return
   if (!sourceAudio) {
     createAudio()
     sourceAudio = audio
   }
   if (!sourceAudio) return
   if (!deferOutputPipe) elementCaptured = true
-  audioContext = new window.AudioContext({ latencyHint: 'playback' })
+  const requestedRate = appSetting['player.audioSampleRate']
+  const sampleRate = [44100, 48000, 88200, 96000, 176400, 192000].includes(requestedRate) ? requestedRate : undefined
+  audioContext = replacement ?? new window.AudioContext({ latencyHint: 'playback', sampleRate })
+  if (!replacement) vst3Runtime.sampleRate = audioContext.sampleRate
   defaultChannelCount = audioContext.destination.channelCount
 
   initAnalyser()
@@ -582,8 +590,31 @@ const stopSelectedAudioEngine = async() => {
   }
 }
 
+let sourceRateProbe: AbortController | null = null
+const updateSourceSampleRate = (src: string) => {
+  sourceRateProbe?.abort()
+  const controller = new AbortController()
+  sourceRateProbe = controller
+  vst3Runtime.sourceSampleRate = 0
+  vst3Runtime.readingSourceRate = !!src
+  if (!src) return
+  const timer = setTimeout(() => {
+    controller.abort()
+    if (sourceRateProbe === controller) vst3Runtime.readingSourceRate = false
+  }, 8000)
+  void readSourceSampleRate(src, controller.signal).then(rate => {
+    if (sourceRateProbe === controller && !controller.signal.aborted) vst3Runtime.sourceSampleRate = rate ?? 0
+  }).catch(() => {
+    // Unsupported containers, CORS and protected streams are explicitly shown as unknown.
+  }).finally(() => {
+    clearTimeout(timer)
+    if (sourceRateProbe === controller) vst3Runtime.readingSourceRate = false
+  })
+}
+
 export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string, videoAudioUrl?: string): Promise<void> => {
   const revision = ++playbackRevision
+  updateSourceSampleRate(videoAudioUrl ?? src)
   seekResume = false
   if (vst3Node) resetVst3Audio(false)
   if (isBiliVideoActive()) {
@@ -691,6 +722,7 @@ export const setPause = () => {
 }
 
 export const setStop = async(): Promise<void> => {
+  updateSourceSampleRate('')
   playbackRevision++
   seekResume = false
   if (vst3Node) resetVst3Audio(false)
@@ -1000,6 +1032,200 @@ const rebuildAudioElement = async(capture: boolean) => {
     oldOutputPipe.srcObject = null
   }
 }
+
+// All graph references are snapshotted together: a failed live rate change must not leave
+// a new analyser/EQ attached to the old source or discard the previous worklet.
+const snapshotAudioGraph = () => ({
+  audio,
+  audioContext,
+  mediaSource,
+  outputPipe,
+  mediaStreamDest,
+  elementCaptured,
+  analyser,
+  biquads,
+  convolver,
+  convolverSourceGainNode,
+  convolverOutputGainNode,
+  convolverDynamicsCompressor,
+  gainNode,
+  panner,
+  vst3Node,
+  defaultChannelCount,
+  pitchShifterNode,
+  pitchShifterNodePitchFactor,
+  pitchShifterNodeLoadStatus,
+  isConnected,
+})
+const restoreAudioGraph = (graph: ReturnType<typeof snapshotAudioGraph>) => {
+  ;({
+    audio, audioContext, mediaSource, outputPipe, mediaStreamDest, elementCaptured,
+    analyser, biquads, convolver, convolverSourceGainNode, convolverOutputGainNode,
+    convolverDynamicsCompressor, gainNode, panner, vst3Node, defaultChannelCount,
+    pitchShifterNode, pitchShifterNodePitchFactor, pitchShifterNodeLoadStatus, isConnected,
+  } = graph)
+  restoreVst3Node(vst3Node)
+}
+
+const changeAudioSampleRate = async() => {
+  if (!audioContext || !audio || appSetting['player.playEngine'] !== 'electron' || isBiliVideoActive()) return
+  const requested = appSetting['player.audioSampleRate']
+  const nextContext = new window.AudioContext({
+    latencyHint: 'playback',
+    sampleRate: [44100, 48000, 88200, 96000, 176400, 192000].includes(requested) ? requested : undefined,
+  })
+  if (nextContext.sampleRate === audioContext.sampleRate) {
+    await nextContext.close()
+    return
+  }
+  // A module still loading against the old graph cannot safely publish into a new one.
+  if (pitchShifterNodeLoadStatus === 'loading') {
+    await nextContext.close()
+    throw new Error('变调模块正在加载，请稍后重新选择采样率')
+  }
+  const old = snapshotAudioGraph()
+  const previousAudio = audio
+  const revision = playbackRevision
+  const playing = !previousAudio.paused
+  const time = previousAudio.currentTime
+  const nextAudio = createAudioElement(false)
+  nextAudio.autoplay = false
+  let staged: ReturnType<typeof snapshotAudioGraph> | undefined
+  for (const { event, listener } of elementEventListeners) previousAudio.removeEventListener(event, listener)
+  // Pause before changing any graph references so old element listeners still see the old graph.
+  previousAudio.pause()
+  old.isConnected = isConnected
+  old.pitchShifterNodeLoadStatus = pitchShifterNodeLoadStatus
+  if (old.vst3Node) resetVst3Audio(false)
+  try {
+    initAdvancedAudioFeatures(old.elementCaptured ? nextAudio : createAudioElement(false), true, nextContext)
+    staged = snapshotAudioGraph()
+    for (const [key, filter] of biquads) filter.gain.value = old.biquads.get(key)!.gain.value
+    gainNode.gain.value = old.gainNode.gain.value
+    panner.positionX.value = old.panner.positionX.value
+    panner.positionY.value = old.panner.positionY.value
+    panner.positionZ.value = old.panner.positionZ.value
+    convolverSourceGainNode.gain.value = old.convolverSourceGainNode.gain.value
+    convolverOutputGainNode.gain.value = old.convolverOutputGainNode.gain.value
+    if (old.convolver.buffer) {
+      const buffer = old.convolver.buffer
+      const offline = new OfflineAudioContext(buffer.numberOfChannels,
+        Math.ceil(buffer.duration * nextContext.sampleRate), nextContext.sampleRate)
+      const source = offline.createBufferSource()
+      source.buffer = buffer
+      source.connect(offline.destination)
+      source.start()
+      convolver.buffer = await offline.startRendering()
+    }
+    const nextGraph = snapshotAudioGraph()
+    nextGraph.audio = nextAudio
+    nextGraph.elementCaptured = old.elementCaptured
+    if (!old.elementCaptured) nextGraph.mediaSource = null
+    nextGraph.vst3Node = null
+    nextGraph.isConnected = true
+    nextGraph.pitchShifterNodeLoadStatus = 'none'
+    restoreAudioGraph(nextGraph)
+    if (pitchShifterNodeTempValue !== 1) {
+      await nextContext.audioWorklet.addModule(new URL('./pitch-shifter/phase-vocoder.js', import.meta.url))
+      const pitch = new AudioWorkletNode(nextContext, 'phase-vocoder-processor', { outputChannelCount: [2] })
+      const factor = pitch.parameters.get('pitchFactor')
+      if (!factor) throw new Error('变调模块缺少 pitchFactor 参数')
+      const graph = snapshotAudioGraph()
+      graph.pitchShifterNode = pitch
+      graph.pitchShifterNodePitchFactor = factor
+      restoreAudioGraph(graph)
+      connectPitchShifterNode()
+    }
+    if (appSetting['player.vst3.enabled']) {
+      const next = await createVst3Node(nextContext, () => {
+        audio?.pause()
+        window.app_event.pause()
+      })
+      gainNode.disconnect(mediaStreamDest!)
+      gainNode.connect(next)
+      next.connect(mediaStreamDest!)
+      const graph = snapshotAudioGraph()
+      graph.vst3Node = next
+      restoreAudioGraph(graph)
+    }
+    staged = snapshotAudioGraph()
+    nextAudio.volume = previousAudio.volume
+    nextAudio.muted = previousAudio.muted
+    nextAudio.playbackRate = previousAudio.playbackRate
+    nextAudio.defaultPlaybackRate = previousAudio.defaultPlaybackRate
+    nextAudio.preservesPitch = previousAudio.preservesPitch
+    nextAudio.loop = previousAudio.loop
+    if (previousAudio.getAttribute('src')) {
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timer)
+          nextAudio.removeEventListener('loadedmetadata', ready)
+          nextAudio.removeEventListener('error', failed)
+        }
+        const ready = () => { cleanup(); resolve() }
+        const failed = () => { cleanup(); reject(new Error('切换采样率时音频重新加载失败')) }
+        const timer = setTimeout(failed, 15000)
+        nextAudio.addEventListener('loadedmetadata', ready)
+        nextAudio.addEventListener('error', failed)
+        nextAudio.src = previousAudio.src
+        nextAudio.load()
+      })
+      nextAudio.currentTime = time
+    }
+    await applyCurrentOutputSink(getDesiredOutputSinkId())
+    await nextContext.resume()
+    if (old.elementCaptured) await outputPipe!.play()
+    if (playing && revision === playbackRevision) {
+      if (vst3Node && !await prepareVst3Audio()) throw new Error('音频准备被取消')
+      await nextAudio.play()
+    }
+    for (const { event, listener } of elementEventListeners) nextAudio.addEventListener(event, listener)
+    nextAudio.autoplay = true
+    old.vst3Node?.disconnect()
+    old.vst3Node?.port.close()
+    old.outputPipe?.pause()
+    if (old.outputPipe) old.outputPipe.srcObject = null
+    previousAudio.removeAttribute('src')
+    previousAudio.load()
+    await old.audioContext.close().catch(() => {})
+    vst3Runtime.sampleRate = nextContext.sampleRate
+    vst3Runtime.error = ''
+  } catch (err) {
+    nextAudio.pause()
+    nextAudio.removeAttribute('src')
+    nextAudio.load()
+    const failedNode = vst3Node !== old.vst3Node ? vst3Node : null
+    failedNode?.disconnect()
+    failedNode?.port.close()
+    const failedPipe = staged?.outputPipe ?? (outputPipe !== old.outputPipe ? outputPipe : null)
+    failedPipe?.pause()
+    if (failedPipe) failedPipe.srcObject = null
+    restoreAudioGraph(old)
+    await nextContext.close().catch(() => {})
+    try {
+      if (old.vst3Node) await configureVst3Audio(old.audioContext)
+      if (playing && revision === playbackRevision) {
+        if (!old.vst3Node || await prepareVst3Audio()) await previousAudio.play()
+      }
+    } finally {
+      for (const { event, listener } of elementEventListeners) previousAudio.addEventListener(event, listener)
+    }
+    throw err
+  }
+}
+
+watch(() => appSetting['player.audioSampleRate'], async() => {
+  vst3Change = vst3Change.catch(() => {}).then(async() => {
+    vst3Runtime.switchingRate = true
+    try {
+      await enqueueLatestRoutingChange('audio-sample-rate', changeAudioSampleRate)
+    } finally {
+      vst3Runtime.switchingRate = false
+    }
+  })
+  vst3Change = vst3Change.catch((err: Error) => { vst3Runtime.error = cleanVst3Error(err) })
+  await vst3Change
+})
 
 // 按当前效果状态切换音频路由（串行化并只保留最新请求）
 const applyAudioRouting = async() => {

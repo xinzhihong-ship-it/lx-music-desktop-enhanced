@@ -182,9 +182,9 @@ export default {
       if (!this.regExps.listDetailLink.test(id)) {
         id = await this.handleParseId(id)
       }
-      let result = this.regExps.listDetailLink.exec(id)
+      let result = id.match(this.regExps.listDetailLink)
       if (!result) {
-        result = this.regExps.listDetailLink2.exec(id)
+        result = id.match(this.regExps.listDetailLink2)
         if (!result) throw new Error('failed')
       }
       id = result[1]

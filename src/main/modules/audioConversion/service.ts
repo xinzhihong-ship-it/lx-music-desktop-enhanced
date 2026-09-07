@@ -1,5 +1,6 @@
+import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { lstatSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -14,17 +15,39 @@ const taskFilePath = () =>
   path.join(global.lxDataPath, 'audio-conversion-tasks.json')
 
 const getPlatformArch = () => `${process.platform}-${process.arch}`
+const isAbsolutePath = (value: unknown): value is string => (
+  typeof value === 'string' &&
+  value.length > 0 &&
+  value.length <= 4096 &&
+  !value.includes('\0') &&
+  path.isAbsolute(value)
+)
+
+const isTrustedExecutable = (filePath: string) => {
+  try {
+    const stats = lstatSync(filePath)
+    return stats.isFile() && !stats.isSymbolicLink() && (process.platform === 'win32' || (stats.mode & 0o111) !== 0)
+  } catch {
+    return false
+  }
+}
+
 const getBinaryPath = (name: 'ffmpeg' | 'ffprobe') => {
   const fileName = process.platform === 'win32' ? `${name}.exe` : name
-  return process.env.NODE_ENV === 'development'
-    ? path.join(
-      process.cwd(),
-      'resources',
-      'ffmpeg',
-      getPlatformArch(),
-      fileName,
-    )
-    : path.join(process.resourcesPath, 'bin', fileName)
+  const resourceRoot = app.isPackaged
+    ? path.resolve(process.resourcesPath, 'bin')
+    : path.resolve(process.cwd(), 'resources', 'ffmpeg', getPlatformArch())
+  const binaryPath = path.resolve(resourceRoot, fileName)
+  const relativePath = path.relative(resourceRoot, binaryPath)
+  if (
+    path.basename(binaryPath) !== fileName ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath) ||
+    !isTrustedExecutable(binaryPath)
+  ) {
+    throw new Error(`未找到受控 ${name}：${binaryPath}`)
+  }
+  return binaryPath
 }
 
 const getOutputPath = (
@@ -74,21 +97,46 @@ export class AudioConversionService {
   getTasks = () => this.tasks.map((task) => ({ ...task }))
 
   async add(params: LX.AudioConversion.AddParams) {
-    await fs.mkdir(params.outputDir, { recursive: true })
+    if (
+      !params ||
+      !Array.isArray(params.filePaths) ||
+      params.filePaths.length === 0 ||
+      params.filePaths.length > 256 ||
+      !isAbsolutePath(params.outputDir) ||
+      typeof params.deleteSource !== 'boolean' ||
+      (params.useCurrentDownloadDeleteSetting != null && typeof params.useCurrentDownloadDeleteSetting !== 'boolean')
+    ) throw new Error('音频转换参数无效')
+    const inputPaths = params.filePaths.map((inputPath) => {
+      if (!isAbsolutePath(inputPath)) throw new Error('音频输入路径无效')
+      return path.resolve(inputPath)
+    })
+    const outputDir = path.resolve(params.outputDir)
+    await fs.mkdir(outputDir, { recursive: true })
+    const outputStats = await fs.stat(outputDir)
+    if (!outputStats.isDirectory()) throw new Error('音频输出目录无效')
     const format = normalizeFormat(params.format) as LX.AudioConversion.Format
     // 只读一次目录，避免 Windows 上对每个文件、每个重名序号同步访问文件系统导致 IPC 长时间阻塞。
-    const usedNames = new Set(await fs.readdir(params.outputDir))
-    const tasks = params.filePaths.map((inputPath) => ({
-      id: randomUUID(),
-      inputPath,
-      outputPath: getOutputPath(inputPath, params.outputDir, format, usedNames),
-      outputDir: params.outputDir,
-      format,
-      deleteSource: params.deleteSource,
-      useCurrentDownloadDeleteSetting: params.useCurrentDownloadDeleteSetting,
-      status: 'waiting' as const,
-      progress: 0,
-      createdAt: Date.now(),
+    const usedNames = new Set(await fs.readdir(outputDir))
+    const tasks = await Promise.all(inputPaths.map(async(inputPath) => {
+      const inputStats = await fs.lstat(inputPath)
+      if (!inputStats.isFile() || inputStats.isSymbolicLink()) throw new Error('音频输入文件无效')
+      const outputPath = getOutputPath(inputPath, outputDir, format, usedNames)
+      const relativeOutput = path.relative(outputDir, outputPath)
+      if (relativeOutput.startsWith(`..${path.sep}`) || path.isAbsolute(relativeOutput)) {
+        throw new Error('音频输出路径无效')
+      }
+      return {
+        id: randomUUID(),
+        inputPath,
+        outputPath,
+        outputDir,
+        format,
+        deleteSource: params.deleteSource,
+        useCurrentDownloadDeleteSetting: params.useCurrentDownloadDeleteSetting,
+        status: 'waiting' as const,
+        progress: 0,
+        createdAt: Date.now(),
+      }
     }))
     this.tasks.push(...tasks)
     this.persist()
@@ -174,7 +222,6 @@ export class AudioConversionService {
 
   private async probe(filePath: string) {
     const binary = getBinaryPath('ffprobe')
-    if (!existsSync(binary)) throw new Error(`未找到受控 ffprobe：${binary}`)
     return new Promise<{ duration: number }>((resolve, reject) => {
       let output = ''
       let stderr = ''
@@ -188,7 +235,7 @@ export class AudioConversionService {
         '-of',
         'json',
         filePath,
-      ])
+      ], { shell: false })
       child.stdout.on('data', (chunk) => {
         output += chunk.toString()
       })
@@ -241,9 +288,11 @@ export class AudioConversionService {
     if (this.running) return
     const task = this.tasks.find((task) => task.status === 'waiting')
     if (!task) return
-    const ffmpeg = getBinaryPath('ffmpeg')
-    if (!existsSync(ffmpeg)) {
-      this.finish(task, 'error', `未找到受控 FFmpeg：${ffmpeg}`)
+    let ffmpeg: string
+    try {
+      ffmpeg = getBinaryPath('ffmpeg')
+    } catch (error: any) {
+      this.finish(task, 'error', error?.message || '未找到受控 FFmpeg')
       await this.runNext()
       return
     }
@@ -270,7 +319,7 @@ export class AudioConversionService {
           '-1',
           ...formatInfo[task.format].args,
           tempPath,
-        ])
+        ], { shell: false })
         this.running = child
         child.stderr.on('data', (chunk) => {
           const text = chunk.toString()

@@ -20,6 +20,25 @@ const tar = require('tar')
 
 const RESOURCES_DIR = path.join(__dirname, '..', 'resources', 'mpv')
 const TEMP_DIR = path.join(__dirname, '..', 'build', 'mpv-downloads')
+const SUPPORTED_PLATFORMS = new Set(['darwin', 'win32', 'linux'])
+const SUPPORTED_ARCHES = new Set(['x64', 'arm64', 'armv7l', 'x86'])
+
+const isWithin = (rootDir, candidatePath) => {
+  const relativePath = path.relative(rootDir, candidatePath)
+  return relativePath === '' || (
+    relativePath !== '..' &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  )
+}
+
+const safePath = (rootDir, ...segments) => {
+  const candidatePath = path.resolve(rootDir, ...segments)
+  if (!isWithin(rootDir, candidatePath)) {
+    throw new Error(`Refusing path outside ${rootDir}: ${candidatePath}`)
+  }
+  return candidatePath
+}
 
 // 可配置的下载源。macOS 26 构建使用 mpv 官方滚动发布，避免把二进制提交到仓库。
 const SOURCES = {
@@ -94,10 +113,16 @@ const getGitHubLatestAssetUrl = (repo, pattern) => getGitHubReleaseAssetUrl(repo
 
 const extractTarGz = async (archivePath, outDir) => {
   ensureDir(outDir)
-  await tar.x({ file: archivePath, C: outDir })
+  await tar.x({
+    file: archivePath,
+    C: outDir,
+    preservePaths: false,
+    filter: (_entryPath, entry) => entry.type === 'File' || entry.type === 'Directory',
+  })
 }
 
 const extract7z = async (archivePath, outDir) => {
+  if (!isWithin(TEMP_DIR, outDir)) throw new Error(`Refusing extraction outside ${TEMP_DIR}`)
   ensureDir(outDir)
   const sevenZip = await find7z()
   execFileSync(sevenZip, ['x', archivePath, `-o${outDir}`, '-y'], { stdio: 'inherit' })
@@ -137,13 +162,15 @@ const find7z = async () => {
 }
 
 const findBinary = (dir, name) => {
-  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  const safeDir = path.resolve(dir)
+  if (!isWithin(TEMP_DIR, safeDir)) throw new Error(`Refusing search outside ${TEMP_DIR}`)
+  const entries = fs.readdirSync(safeDir, { withFileTypes: true })
   for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name)
+    const fullPath = safePath(safeDir, entry.name)
     if (entry.isDirectory()) {
       const found = findBinary(fullPath, name)
       if (found) return found
-    } else if (entry.name === name) {
+    } else if (entry.name === name && entry.isFile()) {
       return fullPath
     }
   }
@@ -151,10 +178,12 @@ const findBinary = (dir, name) => {
 }
 
 const findDir = (dir, name) => {
-  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  const safeDir = path.resolve(dir)
+  if (!isWithin(TEMP_DIR, safeDir)) throw new Error(`Refusing search outside ${TEMP_DIR}`)
+  const entries = fs.readdirSync(safeDir, { withFileTypes: true })
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
-    const fullPath = path.join(dir, entry.name)
+    const fullPath = safePath(safeDir, entry.name)
     if (entry.name === name) return fullPath
     const found = findDir(fullPath, name)
     if (found) return found
@@ -164,16 +193,16 @@ const findDir = (dir, name) => {
 
 const downloadDarwin = async (arch) => {
   const source = SOURCES.darwin
-  const targetDir = path.join(RESOURCES_DIR, `darwin-${arch}`)
-  const binaryPath = path.join(targetDir, 'mpv.app', 'Contents', 'MacOS', 'mpv')
+  const targetDir = safePath(RESOURCES_DIR, `darwin-${arch}`)
+  const binaryPath = safePath(targetDir, 'mpv.app', 'Contents', 'MacOS', 'mpv')
   if (fs.existsSync(binaryPath)) {
     console.log(`[darwin-${arch}] mpv already exists, skipping.`)
   } else {
     ensureDir(TEMP_DIR)
-    const archivePath = path.join(TEMP_DIR, `mpv-darwin-${arch}.tar.gz`)
+    const archivePath = safePath(TEMP_DIR, `mpv-darwin-${arch}.tar.gz`)
     await download(source.url, archivePath)
 
-    const extractDir = path.join(TEMP_DIR, `extract-darwin-${arch}`)
+    const extractDir = safePath(TEMP_DIR, `extract-darwin-${arch}`)
     await extractTarGz(archivePath, extractDir)
 
     const appBundleDir = findDir(extractDir, 'mpv.app')
@@ -189,7 +218,7 @@ const downloadDarwin = async (arch) => {
 
   // Apple Silicon macOS 26+ 变体来自 mpv 官方滚动发布。其 ZIP 内包含 mpv.tar.gz。
   if (arch === 'arm64') {
-    const variantBinaryPath = path.join(targetDir, 'mpv-macos26.app', 'Contents', 'MacOS', 'mpv')
+    const variantBinaryPath = safePath(targetDir, 'mpv-macos26.app', 'Contents', 'MacOS', 'mpv')
     if (fs.existsSync(variantBinaryPath)) {
       console.log(`[darwin-${arch}] macOS 26+ variant already exists, skipping.`)
       return
@@ -200,18 +229,18 @@ const downloadDarwin = async (arch) => {
       source.macos26.release,
       source.macos26.assetNamePattern,
     )
-    const zipPath = path.join(TEMP_DIR, `mpv-macos26-darwin-${arch}.zip`)
-    const zipExtractDir = path.join(TEMP_DIR, `extract-macos26-zip-darwin-${arch}`)
+    const zipPath = safePath(TEMP_DIR, `mpv-macos26-darwin-${arch}.zip`)
+    const zipExtractDir = safePath(TEMP_DIR, `extract-macos26-zip-darwin-${arch}`)
     await download(assetUrl, zipPath)
     fs.rmSync(zipExtractDir, { recursive: true, force: true })
     ensureDir(zipExtractDir)
     execFileSync('ditto', ['-x', '-k', zipPath, zipExtractDir])
 
-    const nestedArchivePath = path.join(zipExtractDir, 'mpv.tar.gz')
+    const nestedArchivePath = safePath(zipExtractDir, 'mpv.tar.gz')
     if (!fs.existsSync(nestedArchivePath)) {
       throw new Error(`[darwin-${arch}] mpv.tar.gz not found in macOS 26 asset.`)
     }
-    const extractDir = path.join(TEMP_DIR, `extract-macos26-darwin-${arch}`)
+    const extractDir = safePath(TEMP_DIR, `extract-macos26-darwin-${arch}`)
     fs.rmSync(extractDir, { recursive: true, force: true })
     await extractTarGz(nestedArchivePath, extractDir)
     const appBundleDir = findDir(extractDir, 'mpv.app')
@@ -228,8 +257,8 @@ const downloadDarwin = async (arch) => {
 
 const downloadWin32 = async (arch) => {
   const source = SOURCES.win32
-  const targetDir = path.join(RESOURCES_DIR, `win32-${arch}`)
-  const binaryPath = path.join(targetDir, 'mpv.exe')
+  const targetDir = safePath(RESOURCES_DIR, `win32-${arch}`)
+  const binaryPath = safePath(targetDir, 'mpv.exe')
   if (fs.existsSync(binaryPath)) {
     console.log(`[win32-${arch}] mpv.exe already exists, skipping.`)
     return
@@ -237,10 +266,10 @@ const downloadWin32 = async (arch) => {
 
   const assetUrl = await getGitHubLatestAssetUrl(source.repo, source.assetNamePattern(arch))
   ensureDir(TEMP_DIR)
-  const archivePath = path.join(TEMP_DIR, `mpv-win32-${arch}.7z`)
+  const archivePath = safePath(TEMP_DIR, `mpv-win32-${arch}.7z`)
   await download(assetUrl, archivePath)
 
-  const extractDir = path.join(TEMP_DIR, `extract-win32-${arch}`)
+  const extractDir = safePath(TEMP_DIR, `extract-win32-${arch}`)
   await extract7z(archivePath, extractDir)
 
   // shinchiro 的 7z 包中 mpv.exe 与所需 DLL 通常位于同一目录，整体复制才能运行
@@ -262,8 +291,8 @@ const downloadLinux = async (arch) => {
     console.warn(`[linux-${arch}] No configured static mpv source. Skipping. Linux users will need to install mpv via their package manager, or you can set SOURCES.linux.url manually.`)
     return
   }
-  const targetDir = path.join(RESOURCES_DIR, `linux-${arch}`)
-  const binaryPath = path.join(targetDir, 'mpv')
+  const targetDir = safePath(RESOURCES_DIR, `linux-${arch}`)
+  const binaryPath = safePath(targetDir, 'mpv')
   if (fs.existsSync(binaryPath)) {
     console.log(`[linux-${arch}] mpv already exists, skipping.`)
     return
@@ -271,7 +300,7 @@ const downloadLinux = async (arch) => {
 
   ensureDir(TEMP_DIR)
   const fileName = path.basename(new URL(source.url).pathname) || `mpv-linux-${arch}`
-  const archivePath = path.join(TEMP_DIR, fileName)
+  const archivePath = safePath(TEMP_DIR, fileName)
   await download(source.url, archivePath)
 
   ensureDir(targetDir)
@@ -279,7 +308,7 @@ const downloadLinux = async (arch) => {
     fs.copyFileSync(archivePath, binaryPath)
     fs.chmodSync(binaryPath, 0o755)
   } else if (source.archiveType === 'tar.gz') {
-    const extractDir = path.join(TEMP_DIR, `extract-linux-${arch}`)
+    const extractDir = safePath(TEMP_DIR, `extract-linux-${arch}`)
     await extractTarGz(archivePath, extractDir)
     const found = findBinary(extractDir, 'mpv')
     if (!found) throw new Error(`[linux-${arch}] mpv not found in extracted archive.`)
@@ -297,13 +326,17 @@ const parseArgs = () => {
   const args = process.argv.slice(2)
   const result = {}
   for (const arg of args) {
-    const [key, value] = arg.replace(/^--/, '').split('=')
-    result[key] = value
+    const match = /^--(platform|arch)=(.+)$/.exec(arg)
+    if (!match) throw new Error(`Unknown argument: ${arg}`)
+    result[match[1]] = match[2]
   }
   return result
 }
 
 const downloadMpv = async (platform, arch) => {
+  if (!SUPPORTED_PLATFORMS.has(platform) || !SUPPORTED_ARCHES.has(arch)) {
+    throw new Error(`Unsupported platform/architecture: ${platform}/${arch}`)
+  }
   ensureDir(RESOURCES_DIR)
 
   switch (platform) {

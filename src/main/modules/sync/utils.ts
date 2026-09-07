@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, publicEncrypt, privateDecrypt, consta
 import os from 'node:os'
 import fs from 'node:fs'
 import zlib from 'node:zlib'
-import cp from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 
 
 // https://stackoverflow.com/a/75309339
@@ -14,13 +14,19 @@ export const getComputerName = () => {
       break
     case 'darwin':
       try {
-        name = cp.execSync('scutil --get ComputerName').toString().trim()
+        name = execFileSync('scutil', ['--get', 'ComputerName'], {
+          shell: false,
+          encoding: 'utf8',
+        }).trim()
       } catch {}
       break
     case 'linux':
       // Don't fail even if hostnamectl is unavailable
       try {
-        name = cp.execSync('hostnamectl --pretty').toString().trim()
+        name = execFileSync('hostnamectl', ['--pretty'], {
+          shell: false,
+          encoding: 'utf8',
+        }).trim()
       } catch {}
       break
   }

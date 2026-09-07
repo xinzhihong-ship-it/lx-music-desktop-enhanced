@@ -15,7 +15,7 @@ const filterExtendedLyricLabel = (lrcTimeLabels: Set<string>, extendedLyric: str
   const lines: string[] = []
   for (let i = 0; i < extendedLines.length; i++) {
     let line = extendedLines[i].trim()
-    let result = timeFieldExp.exec(line)
+    let result = line.match(timeFieldExp)
     if (!result) continue
 
     const timeField = result[0]
@@ -44,7 +44,7 @@ const parseLrcTimeLabel = (lrc: string) => {
   const length = lines.length
   for (let i = 0; i < length; i++) {
     const line = lines[i].trim()
-    let result = timeFieldExp.exec(line)
+    let result = line.match(timeFieldExp)
     if (result) {
       const timeField = result[0]
       const text = line.replace(timeFieldExp, '').trim()

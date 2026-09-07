@@ -62,6 +62,16 @@ const getBiliCookie = () => {
     .join('; ')
 }
 
+export const getBiliCdnHeaders = () => {
+  const cookie = getBiliCookie()
+  return {
+    Referer: 'https://www.bilibili.com/',
+    Origin: 'https://www.bilibili.com',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+    ...(cookie ? { Cookie: cookie } : {}),
+  }
+}
+
 let native: NativeMpvVideo | null = null
 let nativeWindowHost: NativeMpvWindow | null = null
 let initialized = false
@@ -182,13 +192,10 @@ const getNative = (): NativeMpvVideo => {
   if (native) return native
   if (!useNativeMacVideo) throw new Error('当前平台未启用 macOS 视频原生桥')
   const candidates =
-    process.env.NODE_ENV === 'development'
+    !app.isPackaged
       ? [
-          path.join(
-            process.cwd(),
-            'native/mpv-video/build/Release/lx_mpv_video.node',
-          ),
           path.join(process.cwd(), 'build/Release/lx_mpv_video.node'),
+          path.join(process.cwd(), 'native/mpv-video/build/Release/lx_mpv_video.node'),
         ]
       : [
           path.join(__dirname, '../build/Release/lx_mpv_video.node'),
@@ -209,13 +216,10 @@ const getNativeWindowHost = (): NativeMpvWindow => {
   if (nativeWindowHost) return nativeWindowHost
   if (!useNativeWindowsVideoHost) { throw new Error('当前平台未启用 Windows 视频宿主桥') }
   const candidates =
-    process.env.NODE_ENV === 'development'
+    !app.isPackaged
       ? [
-          path.join(
-            process.cwd(),
-            'native/mpv-window/build/Release/lx_mpv_window.node',
-          ),
           path.join(process.cwd(), 'build/Release/lx_mpv_window.node'),
+          path.join(process.cwd(), 'native/mpv-window/build/Release/lx_mpv_window.node'),
         ]
       : [
           path.join(__dirname, '../build/Release/lx_mpv_window.node'),

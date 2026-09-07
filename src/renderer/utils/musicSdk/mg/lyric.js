@@ -16,7 +16,7 @@ const mrcTools = {
 
     for (const line of lines) {
       if (line.length < 6) continue
-      let result = this.rxps.lineTime.exec(line)
+      let result = line.match(this.rxps.lineTime)
       if (!result) continue
 
       const startTime = parseInt(result[1])
@@ -35,7 +35,7 @@ const mrcTools = {
       let times = words.match(this.rxps.wordTimeAll)
       if (!times) continue
       times = times.map(time => {
-        const result = /\((\d+),(\d+)\)/.exec(time)
+        const result = time.match(/\((\d+),(\d+)\)/)
         return `<${parseInt(result[1]) - startTime},${result[2]}>`
       })
       const wordArr = words.split(this.rxps.wordTime)

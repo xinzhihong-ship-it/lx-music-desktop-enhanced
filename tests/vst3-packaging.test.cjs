@@ -10,23 +10,34 @@ const {
   validateVst3HostBinary,
 } = require('../build-config/build-vst3-host')
 
-test('native VST3 host plans only advertise matching native builds', () => {
+test('native VST3 host plans include supported Windows/Linux ARM builds', () => {
   const native = getVst3HostPlan(process.platform, process.arch)
   if (process.arch !== 'arm') assert.equal(native.supported, true)
   assert.match(native.name, process.platform === 'win32' ? /\.exe$/ : /^lx-vst3-host$/)
 
-  const cross = getVst3HostPlan('linux', 'arm64')
-  if (process.platform !== 'linux' || process.arch !== 'arm64') assert.equal(cross.supported, false)
+  const linuxArm64 = getVst3HostPlan('linux', 'arm64')
+  const linuxArmv7 = getVst3HostPlan('linux', 'armv7l')
+  if (process.platform === 'linux') {
+    assert.equal(linuxArm64.supported, true)
+    assert.equal(linuxArmv7.supported, true)
+  } else {
+    assert.equal(linuxArm64.supported, false)
+    assert.equal(linuxArmv7.supported, false)
+  }
+
+  const windowsArm64 = getVst3HostPlan('win32', 'arm64')
+  if (process.platform === 'win32') assert.equal(windowsArm64.supported, true)
+  else assert.equal(windowsArm64.supported, false)
 
   const win32 = getVst3HostPlan('win32', 'x86')
-  if (process.platform !== 'win32' || !['ia32', 'x86'].includes(process.arch)) assert.equal(win32.supported, false)
+  assert.equal(win32.supported, false)
 })
 
 test('unsupported target plans never reuse a stale host binary', () => {
-  const plan = getVst3HostPlan('linux', 'armv7l')
+  const plan = getVst3HostPlan('win32', 'x86')
   assert.equal(plan.supported, false)
-  assert.match(plan.reason, /cross-build is not configured/)
-  assert.match(plan.sourcePath, /build[\\/]Release[\\/]lx-vst3-host$/)
+  assert.match(plan.reason, /VST3 host build is unavailable/)
+  assert.match(plan.sourcePath, /build[\\/]Release[\\/]lx-vst3-host(?:\.exe)?$/)
 })
 
 test('native host plans carry an explicit Rust target', () => {
@@ -76,12 +87,14 @@ test('packaged host validation checks format, architecture and executable mode',
 test('post-pack validation rejects stale unsupported hosts and accepts native hosts', async() => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-vst3-after-pack-test-'))
   const context = {
-    electronPlatformName: 'linux',
-    arch: 'arm64',
+    // Windows x86 remains intentionally unsupported, so this test is independent of whether
+    // the suite itself runs on the Linux cross-build runner.
+    electronPlatformName: 'win32',
+    arch: 'x86',
     appOutDir: root,
     packager: { appInfo: { productFilename: 'lx-music-desktop' } },
   }
-  const hostPath = path.join(root, 'resources/bin/lx-vst3-host')
+  const hostPath = path.join(root, 'resources/bin', getVst3HostPlan(context.electronPlatformName, context.arch).name)
   try {
     fs.mkdirSync(path.dirname(hostPath), { recursive: true })
     fs.writeFileSync(hostPath, 'stale host')

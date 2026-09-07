@@ -25,7 +25,7 @@ const parseExtendedLyric = (lrcLinesMap, extendedLyric) => {
   const extendedLines = extendedLyric.split(/\r\n|\n|\r/)
   for (let i = 0; i < extendedLines.length; i++) {
     const line = extendedLines[i].trim()
-    let result = timeFieldExp.exec(line)
+    let result = line.match(timeFieldExp)
     if (result) {
       const timeField = result[0]
       const text = line.replace(timeFieldExp, '').trim()
@@ -86,7 +86,7 @@ export default class LinePlayer {
     const linesMap = {}
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim()
-      let result = timeFieldExp.exec(line)
+      let result = line.match(timeFieldExp)
       if (result) {
         const timeField = result[0]
         const text = line.replace(timeFieldExp, '').trim()

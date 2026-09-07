@@ -1,6 +1,6 @@
 import { File } from '../../../common/constants_sync'
 import fs from 'node:fs'
-import path from 'node:path'
+import { resolvePathWithin } from '@common/utils/nodejs'
 import { exists } from './utils'
 
 interface ServerKeyInfo {
@@ -16,23 +16,23 @@ interface ServerKeyInfo {
 
 // 迁移 v2 sync 数据
 export default async(dataPath: string) => {
-  const syncDataPath = path.join(dataPath, 'sync')
+  const syncDataPath = resolvePathWithin(dataPath, 'sync')
   // console.log(syncDataPath)
   if (await exists(syncDataPath)) return
-  const oldInfoPath = path.join(dataPath, 'sync.json')
+  const oldInfoPath = resolvePathWithin(dataPath, 'sync.json')
   // console.log(oldInfoPath)
   if (!await exists(oldInfoPath)) return
-  const serverSyncDataPath = path.join(dataPath, File.serverDataPath)
-  const clientSyncDataPath = path.join(dataPath, File.clientDataPath)
+  const serverSyncDataPath = resolvePathWithin(dataPath, File.serverDataPath)
+  const clientSyncDataPath = resolvePathWithin(dataPath, File.clientDataPath)
 
   await fs.promises.mkdir(serverSyncDataPath, { recursive: true })
   await fs.promises.mkdir(clientSyncDataPath, { recursive: true })
   const info = JSON.parse((await fs.promises.readFile(oldInfoPath)).toString())
 
 
-  const serverInfoPath = path.join(serverSyncDataPath, File.serverInfoJSON)
-  const devicesInfoPath = path.join(serverSyncDataPath, File.userDevicesJSON)
-  const listDir = path.join(serverSyncDataPath, File.listDir)
+  const serverInfoPath = resolvePathWithin(serverSyncDataPath, File.serverInfoJSON)
+  const devicesInfoPath = resolvePathWithin(serverSyncDataPath, File.userDevicesJSON)
+  const listDir = resolvePathWithin(serverSyncDataPath, File.listDir)
   await fs.promises.mkdir(listDir)
 
 
@@ -54,22 +54,24 @@ export default async(dataPath: string) => {
   }
   await fs.promises.writeFile(serverInfoPath, JSON.stringify({ serverId: info.serverId, version: 2 }))
   await fs.promises.writeFile(devicesInfoPath, JSON.stringify(devicesInfo))
-  await fs.promises.writeFile(path.join(listDir, File.listSnapshotInfoJSON), JSON.stringify(snapshotInfo))
+  await fs.promises.writeFile(resolvePathWithin(listDir, File.listSnapshotInfoJSON), JSON.stringify(snapshotInfo))
 
-  const snapshotPath = path.join(listDir, File.listSnapshotDir)
+  const snapshotPath = resolvePathWithin(listDir, File.listSnapshotDir)
   await fs.promises.mkdir(snapshotPath)
   const snapshots = (await fs.promises.readdir(dataPath)).filter(name => name.startsWith('snapshot_'))
   if (snapshots.length) {
     for (const file of snapshots) {
-      await fs.promises.copyFile(path.join(dataPath, file), path.join(snapshotPath, file))
+      const sourcePath = resolvePathWithin(dataPath, file)
+      const targetPath = resolvePathWithin(snapshotPath, file)
+      await fs.promises.copyFile(sourcePath, targetPath)
     }
   }
 
 
-  await fs.promises.writeFile(path.join(clientSyncDataPath, File.syncAuthKeysJSON), JSON.stringify(info.syncAuthKey))
+  await fs.promises.writeFile(resolvePathWithin(clientSyncDataPath, File.syncAuthKeysJSON), JSON.stringify(info.syncAuthKey))
 
   for (const file of snapshots) {
-    await fs.promises.unlink(path.join(dataPath, file))
+    await fs.promises.unlink(resolvePathWithin(dataPath, file))
   }
   await fs.promises.unlink(oldInfoPath)
 }

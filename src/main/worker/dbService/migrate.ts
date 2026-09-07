@@ -31,7 +31,7 @@ const migrateV1 = (db: Database.Database) => {
   const existsTable = db.prepare('SELECT name FROM "main".sqlite_master WHERE type=\'table\' AND name=\'dislike_list\';').get()
   if (!existsTable) {
     const sql = tables.get('dislike_list')!
-    db.exec(sql)
+    db.prepare(sql).run()
   }
 }
 

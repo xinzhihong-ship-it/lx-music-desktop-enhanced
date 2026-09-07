@@ -26,6 +26,8 @@ const wrapWav = (pcm: Buffer): Buffer => {
 }
 
 // https://docs.acrcloud.cn/api/identification-api.html
+// ACRCloud's documented Identification API requires HMAC-SHA1 for this signature.
+// The user-supplied access secret is used only as the request-signing secret.
 const buildSignature = (accessKey: string, timestamp: string, accessSecret: string): string => {
   const stringToSign = ['POST', '/v1/identify', accessKey, 'audio', '1', timestamp].join('\n')
   return createHmac('sha1', accessSecret).update(stringToSign, 'utf8').digest('base64')

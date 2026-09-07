@@ -268,7 +268,7 @@ function electronLog(data, color) {
   }
 }
 
-function init() {
+async function init() {
   const Spinnies = require('spinnies')
   const spinners = new Spinnies({ color: 'blue' })
   spinners.add('main', { text: 'main compiling' })
@@ -281,9 +281,11 @@ function init() {
   function handleFail(name) {
     spinners.fail(name, { text: name + ' compile fail!' })
   }
-  replaceLib({ electronPlatformName: process.platform, arch: Arch[process.arch] })
+  // Build/copy native bridges before the first renderer can request MPV video.
+  // The previous fire-and-forget call raced Electron startup and left the bridge absent.
+  await replaceLib({ electronPlatformName: process.platform, arch: Arch[process.arch] })
 
-  Promise.all([
+  await Promise.all([
     startRenderer().then(() => handleSuccess('renderer')).catch((err) => {
       console.error(err.message)
       return handleFail('renderer')
@@ -302,4 +304,7 @@ function init() {
   })
 }
 
-init()
+init().catch(err => {
+  console.error('Failed to prepare native development bridges:', err)
+  process.exitCode = 1
+})

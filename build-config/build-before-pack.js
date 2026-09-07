@@ -104,7 +104,7 @@ module.exports = async(context) => {
     if (!targetArch) { throw new Error(`Windows 视频宿主桥不支持目标架构：${arch}`) }
     if (!buildMpvWindowNative(targetArch)) { throw new Error('Windows 视频宿主桥构建失败') }
   }
-  // 未配置交叉 Rust/linker 时只为当前构建机生成匹配 host，其他包明确省略，禁止误用 stale binary。
+  // Windows/Linux 的 ARM 包使用对应交叉 Rust/linker 构建；不支持的目标明确省略，禁止误用 stale binary。
   const vst3TargetArch = arch === Arch.x64 ? 'x64' : arch === Arch.arm64 ? 'arm64' : arch === Arch.ia32 ? 'ia32' : arch === Arch.armv7l ? 'armv7l' : ''
   const vst3Plan = getVst3HostPlan(electronPlatformName, vst3TargetArch || arch)
   if (vst3Plan.supported) {

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const vm = require('node:vm')
 
-function worklet() {
+function worklet(bufferFrames) {
   let Processor
   const messages = []
   class AudioWorkletProcessor {
@@ -13,20 +13,20 @@ function worklet() {
     AudioWorkletProcessor,
     registerProcessor: (_, value) => { Processor = value },
   })
-  const processor = new Processor()
+  const processor = new Processor({ processorOptions: { bufferFrames } })
   const receive = data => processor.port.onmessage({ data })
   receive({ action: 'reset', epoch: 1, active: true })
   return { processor, messages, receive }
 }
 
-test('PCM bridge preserves sample order across wraparound with exactly 4096 frames latency', () => {
+test('PCM bridge preserves sample order across wraparound with exactly 2048 frames latency', () => {
   const { processor, messages, receive } = worklet()
   for (let frame = 0; frame < 16384; frame += 128) {
     const input = Float32Array.from({ length: 128 }, (_, i) => (frame + i) / 16384)
     const output = [new Float32Array(128), new Float32Array(128)]
     processor.process([[input]], [output])
     for (let i = 0; i < 128; i++) {
-      const expected = frame + i < 4096 ? 0 : (frame + i - 4096) / 16384
+      const expected = frame + i < 2048 ? 0 : (frame + i - 2048) / 16384
       assert.equal(output[0][i], expected)
       assert.equal(output[1][i], expected)
     }
@@ -38,12 +38,44 @@ test('PCM bridge preserves sample order across wraparound with exactly 4096 fram
   assert.equal(processor.fault, false)
 })
 
+test('every selectable buffer preserves PCM across ring wraparound', () => {
+  for (const delay of [1024, 2048, 4096, 8192, 16384]) {
+    const { processor, messages, receive } = worklet(delay)
+    for (let frame = 0; frame < 98304; frame += 128) {
+      const input = Float32Array.from({ length: 128 }, (_, i) => (frame + i) / 131072)
+      const output = [new Float32Array(128), new Float32Array(128)]
+      processor.process([[input]], [output])
+      for (let i = 0; i < 128; i++) {
+        assert.equal(output[0][i], frame + i < delay ? 0 : (frame + i - delay) / 131072)
+        assert.equal(output[1][i], output[0][i])
+      }
+      for (const request of messages.splice(0)) {
+        assert.equal(request.action, 'process')
+        receive({ epoch: request.epoch, sequence: request.sequence, outputs: request.inputs })
+      }
+    }
+    assert.equal(processor.fault, false)
+  }
+  assert.equal(worklet(-1).processor.delay, 2048)
+})
+
+test('buffer can change on reset without recreating the processor', () => {
+  const { processor, receive } = worklet(1024)
+  receive({ action: 'reset', epoch: 2, active: true, bufferFrames: 8192 })
+  assert.equal(processor.delay, 8192)
+  assert.equal(processor.frame, 0)
+  receive({ action: 'reset', epoch: 3, active: true, bufferFrames: 123 })
+  assert.equal(processor.delay, 8192)
+  receive({ epoch: 2, sequence: 0, outputs: [Array(512).fill(1), Array(512).fill(1)] })
+  assert.ok(processor.tags.every(tag => tag === -1))
+})
+
 test('seek discards old-epoch replies; host stalls gap silently and never pause playback', () => {
   const { processor, messages, receive } = worklet()
   receive({ action: 'reset', epoch: 2, active: true })
   receive({ epoch: 1, sequence: 0, outputs: [Array(512).fill(1), Array(512).fill(1)] })
-  // 4096-frame bridge delay plus a transient stall well under the miss limit: stay silent, keep playing.
-  for (let frame = 0; frame < 4096 + 2048; frame += 128) {
+  // 2048-frame bridge delay plus a transient stall well under the miss limit: stay silent, keep playing.
+  for (let frame = 0; frame < 2048 + 2048; frame += 128) {
     const output = [new Float32Array(128), new Float32Array(128)]
     processor.process([[new Float32Array(128)]], [output])
     assert.ok(output.every(channel => channel.every(sample => sample === 0)))
@@ -68,7 +100,7 @@ test('seek discards old-epoch replies; host stalls gap silently and never pause 
   // Host stalls never pause playback here: a long busy stretch just stays silent until
   // dry passthrough resumes; only protocol corruption or a dead host faults.
   receive({ action: 'reset', epoch: 3, active: true })
-  for (let frame = 0; frame < 4096 + 10 * 48000; frame += 128) {
+  for (let frame = 0; frame < 2048 + 10 * 48000; frame += 128) {
     processor.process([[new Float32Array(128)]], [output])
     assert.ok(output.every(channel => channel.every(sample => sample === 0)))
   }

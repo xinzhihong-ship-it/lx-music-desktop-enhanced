@@ -76,10 +76,24 @@ const getBiliCookie = () => {
 
 const existsFile = (filePath: string) => {
   try {
-    return fs.existsSync(filePath) && fs.statSync(filePath).isFile()
+    const stats = fs.statSync(filePath)
+    return stats.isFile() && (isWin || (stats.mode & 0o111) !== 0)
   } catch {
     return false
   }
+}
+
+const isTrustedPath = (filePath: string, trustedRoots: string[]) => {
+  const resolvedPath = path.resolve(filePath)
+  return trustedRoots.some((root) => {
+    const resolvedRoot = path.resolve(root)
+    const relativePath = path.relative(resolvedRoot, resolvedPath)
+    return (
+      relativePath !== '' &&
+      !relativePath.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relativePath)
+    )
+  })
 }
 
 const resolvePlatformArch = () => {
@@ -125,12 +139,25 @@ const bundledMacMpvAppNames = getBundledMacMpvAppNames(
 
 export const resolveMpvPath = (): MpvPathInfo => {
   const customPath = global.lx.appSetting['player.mpv.path']
-  log.info(`resolveMpvPath - player.mpv.path: ${customPath}`)
-  if (customPath && existsFile(customPath)) { return { path: customPath, source: 'custom' } }
-
+  log.info(`resolveMpvPath - player.mpv.path configured=${Boolean(customPath)}`)
   const exeName = isWin ? 'mpv.exe' : 'mpv'
-  const bundledPath = path.join(process.resourcesPath, 'bin', exeName)
-  if (process.env.NODE_ENV == 'production' && existsFile(bundledPath)) { return { path: bundledPath, source: 'bundled' } }
+  const bundledRoot = path.resolve(process.resourcesPath, 'bin')
+  const bundledPath = path.join(bundledRoot, exeName)
+  if (
+    typeof customPath == 'string' &&
+    path.isAbsolute(customPath) &&
+    customPath.length > 0 &&
+    path.basename(customPath) === exeName &&
+    existsFile(customPath)
+  ) {
+    return { path: path.resolve(customPath), source: 'custom' }
+  }
+
+  if (
+    app.isPackaged &&
+    isTrustedPath(bundledPath, [bundledRoot]) &&
+    existsFile(bundledPath)
+  ) { return { path: bundledPath, source: 'bundled' } }
 
   // Production macOS: only use the runtime selected for this OS and architecture.
   if (isMac && process.env.NODE_ENV == 'production') {
@@ -143,7 +170,12 @@ export const resolveMpvPath = (): MpvPathInfo => {
       'MacOS',
       exeName,
     )
-    if (existsFile(appBundledProdPath)) {
+    if (
+      isTrustedPath(appBundledProdPath, [
+        path.join(process.resourcesPath, 'bin', appName),
+      ]) &&
+      existsFile(appBundledProdPath)
+    ) {
       return {
         path: appBundledProdPath,
         source:
@@ -152,29 +184,35 @@ export const resolveMpvPath = (): MpvPathInfo => {
     }
   }
 
-  const devBundledPath = path.join(
+  const devBundledRoot = path.resolve(
     process.cwd(),
     'resources',
     'mpv',
     resolvePlatformArch(),
-    exeName,
   )
-  if (existsFile(devBundledPath)) { return { path: devBundledPath, source: 'dev-bundled' } }
+  const devBundledPath = path.join(devBundledRoot, exeName)
+  if (isTrustedPath(devBundledPath, [devBundledRoot]) && existsFile(devBundledPath)) { return { path: devBundledPath, source: 'dev-bundled' } }
 
   // Dev fallback: only use the runtime selected for this OS and architecture.
   if (isMac) {
     const appName = bundledMacMpvAppNames[0]
-    const appBundlePath = path.join(
+    const appBundleRoot = path.resolve(
       process.cwd(),
       'resources',
       'mpv',
       resolvePlatformArch(),
       appName,
+    )
+    const appBundlePath = path.join(
+      appBundleRoot,
       'Contents',
       'MacOS',
       exeName,
     )
-    if (existsFile(appBundlePath)) {
+    if (
+      isTrustedPath(appBundlePath, [appBundleRoot]) &&
+      existsFile(appBundlePath)
+    ) {
       return {
         path: appBundlePath,
         source:
@@ -189,14 +227,17 @@ export const resolveMpvPath = (): MpvPathInfo => {
   if (process.arch == 'arm64' || process.arch == 'arm') {
     const fallbackDir =
       process.platform == 'darwin' ? 'darwin-x64' : 'linux-x64'
-    const x64FallbackPath = path.join(
+    const x64FallbackRoot = path.resolve(
       process.cwd(),
       'resources',
       'mpv',
       fallbackDir,
-      exeName,
     )
-    if (existsFile(x64FallbackPath)) { return { path: x64FallbackPath, source: 'dev-bundled-x64-fallback' } }
+    const x64FallbackPath = path.join(x64FallbackRoot, exeName)
+    if (
+      isTrustedPath(x64FallbackPath, [x64FallbackRoot]) &&
+      existsFile(x64FallbackPath)
+    ) { return { path: x64FallbackPath, source: 'dev-bundled-x64-fallback' } }
   }
 
   for (const commonPath of getCommonPaths()) {

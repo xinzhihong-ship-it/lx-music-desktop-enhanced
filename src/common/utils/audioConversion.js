@@ -10,7 +10,7 @@ exports.formatInfo = {
 exports.normalizeFormat = format => exports.formatInfo[format] ? format : 'flac'
 
 exports.parseFfmpegTime = value => {
-  const match = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(value)
+  const match = value.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/)
   return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) : null
 }
 

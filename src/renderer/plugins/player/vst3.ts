@@ -3,9 +3,21 @@ import { shallowReactive } from '@common/utils/vueTools'
 import { appSetting } from '@renderer/store/setting'
 import { WIN_MAIN_RENDERER_EVENT_NAME as IPC } from '@common/ipcNames'
 
+const getBridgeFrames = () => {
+  const value = appSetting['player.vst3.bufferFrames']
+  return [1024, 2048, 4096, 8192, 16384].includes(value) ? value : 4096
+}
+
+// Retain the old worklet during a staged AudioContext replacement so it can be restored.
+export const restoreVst3Node = (previous: AudioWorkletNode | null) => { node = previous }
+
 export const vst3Runtime = shallowReactive({
   latencyMs: 0,
   bridgeMs: 0,
+  sampleRate: 0,
+  sourceSampleRate: 0,
+  readingSourceRate: false,
+  switchingRate: false,
   error: '',
   // 宿主忙于插件界面（如加载预设）时链路临时直通；true 表示正处于直通状态。
   notice: false,
@@ -45,7 +57,11 @@ let bypassSince = 0
 
 export const resetVst3Audio = (active: boolean) => {
   epoch++
-  node?.port.postMessage({ action: 'reset', epoch, active })
+  if (!active) {
+    bypassSince = 0
+    vst3Runtime.notice = false
+  }
+  node?.port.postMessage({ action: 'reset', epoch, active, bufferFrames: getBridgeFrames() })
 }
 
 export const prepareVst3Audio = async() => {
@@ -63,14 +79,14 @@ export const configureVst3Audio = async(audioContext: AudioContext) => {
   const status = await ipcRenderer.invoke(IPC.vst3_configure, audioContext.sampleRate)
   applyStatus(status)
   vst3Runtime.latencyMs = status.latencySamples / audioContext.sampleRate * 1000
-  vst3Runtime.bridgeMs = 4096 / audioContext.sampleRate * 1000
+  vst3Runtime.bridgeMs = getBridgeFrames() / audioContext.sampleRate * 1000
   vst3Runtime.error = ''
 }
 
 export const createVst3Node = async(audioContext: AudioContext, onFault: () => void) => {
   await configureVst3Audio(audioContext)
   await audioContext.audioWorklet.addModule(new URL('./vst3-worklet.js', import.meta.url))
-  node = new AudioWorkletNode(audioContext, 'lx-vst3', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] })
+  node = new AudioWorkletNode(audioContext, 'lx-vst3', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { bufferFrames: getBridgeFrames() } })
   const current = node
   const fail = (message: string) => {
     // 关闭/停用过程中的预期报错（链路已拆除）不算故障
@@ -85,15 +101,16 @@ export const createVst3Node = async(audioContext: AudioContext, onFault: () => v
     if (data.epoch !== epoch || current !== node) return
     if (data.action === 'fault') { fail('VST3 processing missed the audio deadline; playback paused'); return }
     if (data.action !== 'process') return
-    // Backstop only: the chain answers dry passthrough once its queue backs up (48), so
-    // this cap must stay above that depth or the dry answers never reach the worklet.
-    if (inFlight >= 96) return
+    // The main-side chain keeps at most one active block plus one newest pending block. This is
+    // only a final renderer backstop for a wedged IPC call; it must not become an audio queue.
+    if (inFlight >= 16) return
     inFlight++
-    // Requests must not be serialized here: the chain queue serializes them and its dry
-    // passthrough only engages once enough requests actually reach it. Every reply carries
-    // its sequence tag, so out-of-order or stale replies are dropped by the worklet anyway.
+    // Do not serialize renderer requests here. The main-side chain coalesces them and every reply
+    // carries a sequence tag, so stale/out-of-order replies are safely discarded by the worklet.
     // Audio uses direct IPC to avoid the general renderer helper's payload logging.
-    void ipcRenderer.invoke(IPC.vst3_process, data.inputs.map((channel: Float32Array) => Array.from(channel))).then((result) => {
+    // Structured clone preserves typed arrays without first expanding every sample into a JS
+    // number array. The native side still validates and encodes the planar PCM payload.
+    void ipcRenderer.invoke(IPC.vst3_process, data.inputs.map((channel: Float32Array) => channel)).then((result) => {
       if (data.epoch !== epoch || current !== node) return
       vst3Runtime.latencyMs = result.latencySamples / audioContext.sampleRate * 1000
       // 直通持续超过 4 秒才提示：冷启动突发、打开插件界面/加载预设的瞬时直通不打扰用户
@@ -126,6 +143,7 @@ export const closeVst3Audio = async() => {
     vst3Runtime.latencyMs = 0
     vst3Runtime.bridgeMs = 0
     vst3Runtime.notice = false
+    bypassSince = 0
     vst3Runtime.slots = []
   }
 }

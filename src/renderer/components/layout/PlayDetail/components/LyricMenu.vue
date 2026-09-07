@@ -62,7 +62,7 @@ const removeLyric = debounce(musicInfo => {
 })
 
 const getOffset = lrc => {
-  let offset = offsetTagRxp.exec(lrc)
+  let offset = lrc.match(offsetTagRxp)
   if (offset) {
     offset = parseInt(offset[1])
     if (Number.isNaN(offset)) offset = 0

@@ -341,9 +341,9 @@ export default {
     }
   },
   async getListDetailMusicListByBD(id, page) {
-    const uid = /uid=(\d+)/.exec(id)?.[1]
-    const listId = /playlistId=(\d+)/.exec(id)?.[1]
-    const source = /source=(\d+)/.exec(id)?.[1]
+    const uid = id.match(/uid=(\d+)/)?.[1]
+    const listId = id.match(/playlistId=(\d+)/)?.[1]
+    const source = id.match(/source=(\d+)/)?.[1]
     if (!listId) return Promise.reject(new Error('failed'))
 
     const task = [this.getListDetailMusicListByBDList(listId, source, page)]

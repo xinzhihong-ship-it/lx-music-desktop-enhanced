@@ -108,6 +108,8 @@ declare global {
       'player.playEngine': 'electron' | 'mpv' | 'audirvana'
       'player.vst3.directories': string[]
       'player.vst3.enabled': boolean
+      'player.vst3.bufferFrames': number
+      'player.audioSampleRate': number
       'player.vst3.chain': Array<{ id: string, path: string, enabled: boolean }>
 
       /**

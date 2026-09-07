@@ -22,7 +22,8 @@ export const getQualityRank = quality => {
   return index == -1 ? QUALITY_RANK.length : index
 }
 
-const WBI_MIXIN_KEY_ENC_TAB = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52]
+// Bilibili's public WBI protocol permutation table; it is not a secret key.
+const BILI_WBI_MIXIN_KEY_ENC_TAB = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52]
 
 let wbiKey = ''
 let wbiKeyLoadedAt = 0
@@ -103,7 +104,7 @@ const getWbiKey = () => {
     const subKey = String(data?.data?.wbi_img?.sub_url || '').split('/').pop().split('.')[0]
     if (!imgKey || !subKey) throw new Error('bili wbi key was not found')
     const raw = imgKey + subKey
-    wbiKey = WBI_MIXIN_KEY_ENC_TAB.map(i => raw[i]).join('').slice(0, 32)
+    wbiKey = BILI_WBI_MIXIN_KEY_ENC_TAB.map(i => raw[i]).join('').slice(0, 32)
     wbiKeyLoadedAt = Date.now()
     return wbiKey
   }).finally(() => {
@@ -122,6 +123,7 @@ export const wbiSign = async params => {
   const query = Object.keys(signedParams).sort()
     .map(k => `${k}=${encodeURIComponent(String(signedParams[k]).replace(/[!'()*]/g, ''))}`)
     .join('&')
+  // w_rid is a legacy Bilibili protocol MD5 signature, not password hashing.
   const wRid = crypto.createHash('md5').update(query + key).digest('hex')
   return `${query}&w_rid=${wRid}`
 }

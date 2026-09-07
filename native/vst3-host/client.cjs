@@ -7,7 +7,8 @@ const os = require('node:os')
 
 const MAX_MESSAGE = 32 * 1024 * 1024
 
-// One helper per plugin. A crash or timeout invalidates that instance and its pending request.
+// One helper per active chain. A crash or timeout invalidates that helper and its pending request;
+// scanner probes remain short-lived helpers so a bad plugin cannot poison the playback host.
 async function startHost(executable, timeout = 15000) {
   const token = randomBytes(32).toString('hex')
   const server = net.createServer()

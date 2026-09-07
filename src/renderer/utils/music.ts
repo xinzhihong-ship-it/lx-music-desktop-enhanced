@@ -143,7 +143,7 @@ export const getLocalMusicFilePic = async(path: string) => {
 
 //   for (let i = 0; i < lines.length; i++) {
 //     const line = lines[i].trim()
-//     let result = timeExp.exec(line)
+//     const result = line.match(timeExp)
 //     if (result) {
 //       const index = map.get(result[1]) ?? 0
 //       if (!lyrics[index]) lyrics[index] = []

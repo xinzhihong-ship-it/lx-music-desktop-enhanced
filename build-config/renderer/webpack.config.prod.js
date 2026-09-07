@@ -1,5 +1,5 @@
 const path = require('path')
-const { execSync } = require('child_process')
+const { execFileSync } = require('child_process')
 const webpack = require('webpack')
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin')
 const TerserPlugin = require('terser-webpack-plugin')
@@ -19,15 +19,20 @@ const gitInfo = {
 }
 
 try {
-  let isClean = !execSync('git status --porcelain').toString().trim()
+  const gitCommand = (args) => execFileSync('git', args, {
+    shell: false,
+    windowsHide: true,
+    encoding: 'utf8',
+  }).trim()
+  let isClean = !gitCommand(['status', '--porcelain'])
   if (process.env.BUILD_WIN7) {
     console.warn('BUILD_WIN7 is set, skipping git status check.')
-    console.log('Workspace status:', execSync('git status --porcelain').toString().trim())
+    console.log('Workspace status:', gitCommand(['status', '--porcelain']))
     isClean = true
   }
   if (isClean) {
-    gitInfo.commit_id = execSync('git log -1 --pretty=format:"%H"').toString().trim()
-    gitInfo.commit_date = execSync('git log -1 --pretty=format:"%ad" --date=iso-strict').toString().trim()
+    gitInfo.commit_id = gitCommand(['log', '-1', '--pretty=format:%H'])
+    gitInfo.commit_date = gitCommand(['log', '-1', '--pretty=format:%ad', '--date=iso-strict'])
   } else if (process.env.IS_CI) {
     throw new Error('Working directory is not clean')
   }

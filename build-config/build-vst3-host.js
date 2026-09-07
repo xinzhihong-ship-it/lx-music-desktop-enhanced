@@ -26,10 +26,41 @@ const rustTargetMap = {
 }
 
 const getRustTarget = (platform, arch) => rustTargetMap[platform]?.[normalizeArch(arch)] ?? null
+// Windows and Linux release jobs build x64 hosts plus their ARM targets from the native x64
+// runner. macOS stays native because the package also needs an architecture-matched native
+// editor/runtime environment.
 const supportedNativeTargets = {
-  win32: new Set(['x64']),
+  win32: new Set(['x64', 'arm64']),
   darwin: new Set(['x64', 'arm64']),
-  linux: new Set(['x64']),
+  linux: new Set(['x64', 'arm64', 'armv7l']),
+}
+
+const linuxCrossToolchains = {
+  arm64: {
+    linker: 'aarch64-linux-gnu-gcc',
+    pkgConfigDir: '/usr/lib/aarch64-linux-gnu/pkgconfig',
+  },
+  armv7l: {
+    linker: 'arm-linux-gnueabihf-gcc',
+    pkgConfigDir: '/usr/lib/arm-linux-gnueabihf/pkgconfig',
+  },
+}
+
+const getCargoBuildEnvironment = (platform, arch) => {
+  const env = { ...process.env }
+  if (platform !== 'linux' || !linuxCrossToolchains[arch] || normalizeArch(process.arch) === normalizeArch(arch)) return env
+
+  const toolchain = linuxCrossToolchains[arch]
+  const target = normalizeArch(arch) === 'arm64'
+    ? 'AARCH64_UNKNOWN_LINUX_GNU'
+    : 'ARMV7_UNKNOWN_LINUX_GNUEABIHF'
+  env[`CARGO_TARGET_${target}_LINKER`] ??= toolchain.linker
+  // The xcb crate links the target system's libxcb. Keep pkg-config from accidentally selecting
+  // the host x64 metadata when a cross build is running on Ubuntu x64.
+  env.PKG_CONFIG_ALLOW_CROSS ??= '1'
+  env.PKG_CONFIG_LIBDIR ??= `${toolchain.pkgConfigDir}${path.delimiter}/usr/share/pkgconfig`
+  env.PKG_CONFIG_PATH ??= env.PKG_CONFIG_LIBDIR
+  return env
 }
 
 const getVst3HostPlan = (platform = process.platform, arch = process.arch) => {
@@ -38,7 +69,12 @@ const getVst3HostPlan = (platform = process.platform, arch = process.arch) => {
   const name = hostBinaryName(platform)
   const rustTarget = getRustTarget(platform, targetArch)
   const win7Disabled = platform === 'win32' && process.env.BUILD_WIN7 === 'true'
-  const supported = !win7Disabled && !!rustTarget && supportedNativeTargets[platform]?.has(targetArch) === true && platform === process.platform && targetArch === buildArch
+  const targetSupported = !!rustTarget && supportedNativeTargets[platform]?.has(targetArch) === true
+  // Windows/Linux CI runners have the native toolchains needed for the listed ARM targets.
+  // Keep macOS architecture matching strict because the rest of the native packaging pipeline
+  // (notably the mpv bridge) is also native-only.
+  const architectureSupported = platform !== 'darwin' || targetArch === buildArch
+  const supported = !win7Disabled && targetSupported && platform === process.platform && architectureSupported
   return {
     platform,
     arch: targetArch,
@@ -47,7 +83,7 @@ const getVst3HostPlan = (platform = process.platform, arch = process.arch) => {
     supported,
     reason: win7Disabled
       ? 'VST3 host is disabled for the Windows 7 compatibility package'
-      : supported ? '' : `VST3 host cross-build is not configured for ${platform}-${targetArch} on ${process.platform}-${buildArch}`,
+      : supported ? '' : `VST3 host build is unavailable for ${platform}-${targetArch} on ${process.platform}-${buildArch}`,
     sourcePath: path.join(root, 'build/Release', name),
   }
 }
@@ -58,7 +94,12 @@ const buildVst3Host = (platform, arch) => {
   if (!plan.supported) throw new Error(plan.reason)
   const cargoArgs = ['build', '--release', '--locked']
   if (plan.rustTarget) cargoArgs.push('--target', plan.rustTarget)
-  const result = spawnSync('cargo', cargoArgs, { cwd, stdio: 'inherit', shell: false })
+  const result = spawnSync('cargo', cargoArgs, {
+    cwd,
+    stdio: 'inherit',
+    shell: false,
+    env: getCargoBuildEnvironment(plan.platform, plan.arch),
+  })
   if (result.error?.code === 'ENOENT') {
     throw new Error('Rust toolchain (cargo) is required to build the VST3 host: https://rustup.rs')
   }
@@ -83,6 +124,7 @@ module.exports = {
   buildVst3Host,
   getVst3HostPlan,
   getRustTarget,
+  getCargoBuildEnvironment,
   getBinaryArchitectures,
   validateVst3HostBinary,
   hostBinaryName: hostBinaryName(process.platform),

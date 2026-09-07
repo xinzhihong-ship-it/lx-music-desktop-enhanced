@@ -7,6 +7,21 @@ import { log } from '@common/utils'
 
 export const joinPath = (...paths: string[]): string => path.join(...paths)
 
+/**
+ * Resolve a path below a trusted directory without allowing traversal outside it.
+ * This is a lexical check; callers that handle attacker-controlled symlinks must
+ * additionally validate the resolved filesystem target before accessing it.
+ */
+export const resolvePathWithin = (basePath: string, ...paths: string[]): string => {
+  const base = path.resolve(basePath)
+  const target = path.resolve(base, ...paths)
+  const relative = path.relative(base, target)
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Path escapes the permitted directory')
+  }
+  return target
+}
+
 export const extname = (p: string): string => path.extname(p)
 export const basename = (p: string, ext?: string): string => path.basename(p, ext)
 export const dirname = (p: string): string => path.dirname(p)
@@ -111,10 +126,14 @@ export const readFile = async(path: string) => fs.promises.readFile(path)
 
 
 /**
- * 创建 MD5 hash
+ * Legacy MD5 digest used for sync/provider protocol compatibility and stable IDs.
+ * This is not password hashing or an integrity/authentication primitive.
  * @param {*} str
  */
 export const toMD5 = (str: string) => crypto.createHash('md5').update(str).digest('hex')
+
+/** Use this for new non-protocol fingerprints that need a modern digest. */
+export const toSHA256 = (str: string) => crypto.createHash('sha256').update(str).digest('hex')
 
 export const gzipData = async(str: string): Promise<Buffer> => {
   return new Promise((resolve, reject) => {

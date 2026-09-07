@@ -14,6 +14,7 @@ import download from './download'
 import audioConversion, { initAudioConversion } from './audioConversion'
 import soundEffect from './soundEffect'
 import vst3 from './vst3'
+import audioSourceSampleRate from './audioSourceSampleRate'
 import mpv from './mpv'
 import mpvVideo from './mpvVideo'
 import audirvana from './audirvana'
@@ -48,6 +49,7 @@ export default () => {
   void initAudioConversion()
   soundEffect()
   vst3()
+  audioSourceSampleRate()
   mpv()
   mpvVideo()
   audirvana()

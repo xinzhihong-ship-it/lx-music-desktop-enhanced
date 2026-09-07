@@ -148,6 +148,13 @@ jobs:
           path: build/*win_x64-green.7z
           if-no-files-found: error
 
+      - name: Install Rust Windows ARM64 target
+        shell: pwsh
+        run: rustup target add aarch64-pc-windows-msvc
+      - name: Enable MSVC ARM64 cross toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
       - name: Build Package Setup arm64
         run: npm run pack:win:setup:arm64
       - name: Upload Artifact Setup arm64
@@ -311,11 +318,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: CheckCode
     steps:
-      - name: Install package
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools gcc-arm-linux-gnueabihf qemu-user-static libxcb1-dev
-
       - name: Check out git repository
         uses: actions/checkout@v6
+
+      - name: Install package and ARM cross toolchains
+        run: |
+          sudo bash build-config/setup-linux-arm-apt.sh
+          sudo apt-get update
+          sudo apt-get install -y rpm libarchive-tools qemu-user-static \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+            libc6-dev-arm64-cross libc6-dev-armhf-cross \
+            libxcb1-dev libxcb1-dev:arm64 libxcb1-dev:armhf
+          rustup target add aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf
 
       - name: Get npm cache directory
         shell: bash

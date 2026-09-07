@@ -101,6 +101,7 @@ const modules = {
     vst3_status: 'winMain_vst3_status',
     vst3_close: 'winMain_vst3_close',
     vst3_reset: 'winMain_vst3_reset',
+    audio_source_sample_rate: 'winMain_audio_source_sample_rate',
     mpv_loadUrl: 'winMain_mpv_loadUrl',
     mpv_play: 'winMain_mpv_play',
     mpv_pause: 'winMain_mpv_pause',

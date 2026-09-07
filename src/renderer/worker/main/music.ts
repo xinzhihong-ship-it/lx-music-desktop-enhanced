@@ -60,7 +60,7 @@ export const parseLyric = (lrc: string): LX.Music.LyricInfo => {
     const lyricInfo: Partial<LX.Music.LyricInfo> = {}
     const lrcs = content.trim().split(',')
     for (const lrc of lrcs) {
-      const result = lrcRxp.exec(lrc.trim())
+      const result = lrc.trim().match(lrcRxp)
       if (!result) continue
       const target = lrcTags[result[1].toLowerCase() as 'tlrc' | 'rlrc' | 'lrc' | 'awlrc']
       if (!target) continue

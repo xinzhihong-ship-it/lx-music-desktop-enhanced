@@ -7,6 +7,19 @@ dd
       base-checkbox(id="setting_vst3_enable" :disabled="appSetting['player.playEngine'] !== 'electron'" :model-value="appSetting['player.vst3.enabled']" :label="$t('setting__vst3_enable')" @update:model-value="updateSetting({ 'player.vst3.enabled': $event })")
     .gap-top
       span(:class="$style.latencyText") {{ $t('setting__vst3_latency') }}: {{ runtime.latencyMs.toFixed(1) }} ms / {{ $t('setting__vst3_bridge') }}: {{ runtime.bridgeMs.toFixed(1) }} ms
+    .gap-top
+      label(for="vst3-buffer") VST3 桥接缓冲（帧）：
+      select#vst3-buffer(:value="appSetting['player.vst3.bufferFrames']" @change="updateSetting({ 'player.vst3.bufferFrames': Number($event.target.value) })")
+        option(v-for="frames in [1024, 2048, 4096, 8192, 16384]" :key="frames" :value="frames") {{ frames }}{{ frames === 4096 ? '（推荐）' : '' }}
+    .gap-top
+      label(for="audio-sample-rate") 音频处理采样率：
+      select#audio-sample-rate(:value="appSetting['player.audioSampleRate']" @change="updateSetting({ 'player.audioSampleRate': Number($event.target.value) })")
+        option(:value="0") 系统默认（非跟随歌曲）
+        option(v-for="rate in [44100, 48000, 88200, 96000, 176400, 192000]" :key="rate" :value="rate") {{ rate / 1000 }} kHz
+    p(:class="$style.formDesc") 修改后即时应用，无需重启。切换时可能短暂静音；失败保留旧采样率并显示错误。缓冲越大，延迟和调度余量越大；高采样率更耗资源，不会提升音源原始质量。仅作用于内置引擎音效链，系统最终输出仍可能重采样。
+    p(:class="$style.formDesc") 当前歌曲源采样率：{{ runtime.readingSourceRate ? '读取中…' : runtime.sourceSampleRate ? (runtime.sourceSampleRate / 1000) + ' kHz' : '未知 / 未播放' }}
+    p(v-if="runtime.switchingRate" :class="$style.formDesc" role="status") 正在切换采样率…
+    p(v-else-if="runtime.sampleRate" :class="$style.formDesc") 当前音频链：{{ runtime.sampleRate / 1000 }} kHz
     p(v-if="runtime.notice" :class="$style.formDesc") {{ $t('player__vst3_bypass_notice') }}
     p(v-if="runtime.error" role="alert" :class="$style.errorText") {{ runtime.error }}
     p(v-if="error" role="alert" :class="$style.errorText") {{ error }}

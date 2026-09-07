@@ -14,17 +14,16 @@ const normalizeText = (text: string) => text
 const titleParts = (title: string) => {
   const suffixes: string[] = []
   let baseTitle = title
-  let match: RegExpExecArray | null
-  while ((match = TRAILING_PAREN_RXP.exec(baseTitle))) {
+  let match = baseTitle.match(TRAILING_PAREN_RXP)
+  while (match) {
     suffixes.unshift(match[1])
     baseTitle = baseTitle.slice(0, match.index)
+    match = baseTitle.match(TRAILING_PAREN_RXP)
   }
 
   const versions = new Set<string>()
   for (const suffix of suffixes) {
-    VERSION_MARKER_RXP.lastIndex = 0
-    let versionMatch: RegExpExecArray | null
-    while ((versionMatch = VERSION_MARKER_RXP.exec(suffix))) {
+    for (const versionMatch of suffix.matchAll(VERSION_MARKER_RXP)) {
       const marker = versionMatch[0].toLowerCase()
       if (marker === 'live' || marker === '现场') versions.add('live')
       else if (marker === 'remix' || marker === '混音') versions.add('remix')

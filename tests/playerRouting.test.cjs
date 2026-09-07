@@ -25,7 +25,7 @@ function loadPlayer() {
   for (const frequency of [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]) {
     appSetting[`player.soundEffect.biquadFilter.hz${frequency}`] = 0
   }
-  const state = { failSink: false, failMediaPlayOnce: false, watches: [], audio: [] }
+  const state = { failSink: false, failMediaPlayOnce: false, watches: [], audio: [], contexts: [], metadataRequests: [] }
   const parameter = () => ({ value: 0 })
   const audioNode = () => ({ connect() {}, disconnect() {} })
 
@@ -58,7 +58,9 @@ function loadPlayer() {
       if (this.listeners.get(event) === listener) this.listeners.delete(event)
     }
 
-    load() {}
+    load() { if (this.src) queueMicrotask(() => this.listeners.get('loadedmetadata')?.()) }
+
+    getAttribute(attribute) { return attribute === 'src' ? this.src : null }
 
     removeAttribute(attribute) {
       if (attribute === 'src') this.src = ''
@@ -86,7 +88,9 @@ function loadPlayer() {
   }
 
   class FakeAudioContext {
-    constructor() {
+    constructor(options) {
+      this.sampleRate = options?.sampleRate ?? 48000
+      state.contexts.push(this)
       this.state = 'running'
       this.destination = { channelCount: 2, maxChannelCount: 8, channelCountMode: 'explicit' }
       this.audioWorklet = { addModule: async() => {} }
@@ -101,6 +105,7 @@ function loadPlayer() {
     createMediaElementSource() { return audioNode() }
     createMediaStreamDestination() { return Object.assign(audioNode(), { stream: {} }) }
     resume() { return Promise.resolve() }
+    close() { this.state = 'closed'; return Promise.resolve() }
   }
 
   const appEvent = { on() {}, off() {}, pause() {}, stop() {}, playerDeviceChanged() {} }
@@ -109,6 +114,7 @@ function loadPlayer() {
     Promise,
     URL,
     Float32Array,
+    AbortController,
     setTimeout,
     clearTimeout,
     setInterval,
@@ -116,7 +122,7 @@ function loadPlayer() {
     window: { Audio: FakeAudio, AudioContext: FakeAudioContext, app_event: appEvent, lx: { isPlayedStop: false } },
     document: { addEventListener() {}, removeEventListener() {} },
   }
-  const noopPlayer = new Proxy({}, { get: () => () => {} })
+  const noopPlayer = new Proxy({}, { get: (_, name) => name === 'isEmpty' ? () => true : async() => {} })
   const modules = {
     '@renderer/store/setting': { appSetting },
     './mpv': noopPlayer,
@@ -127,12 +133,16 @@ function loadPlayer() {
       watch: (source, callback) => state.watches.push({ source, callback }),
       onBeforeUnmount() {},
     },
+    './sourceSampleRate': {
+      readSourceSampleRate: (src, signal) => new Promise(resolve => state.metadataRequests.push({ src, signal, resolve })),
+    },
     './vst3': {
       createVst3Node: async() => null,
       configureVst3Audio: async() => {},
       closeVst3Audio: async() => {},
       prepareVst3Audio: async() => true,
       resetVst3Audio: () => {},
+      restoreVst3Node: () => {},
       vst3Runtime: { error: null },
       cleanVst3Error: error => error,
     },
@@ -153,8 +163,81 @@ function loadPlayer() {
     exports: module.exports,
     require: name => modules[name],
   })
-  return { player: module.exports, appSetting, state }
+  return { player: module.exports, appSetting, state, runtime: modules['./vst3'].vst3Runtime }
 }
+
+test('a VST routing failure does not poison subsequent resource loading', async() => {
+  const { player, appSetting, state } = loadPlayer()
+  player.createAudio()
+  appSetting['player.audioVisualization'] = true
+  state.failSink = true
+  state.watches[0].callback()
+  await player.setResource('track://after-routing-failure')
+  assert.equal(state.audio[0].src, 'track://after-routing-failure')
+  state.failSink = false
+  await player.setMediaDeviceId('device-a')
+  player.setPlay()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(state.audio.some(item => item.src === 'track://after-routing-failure' && !item.paused))
+  state.metadataRequests[0].resolve(null)
+  await new Promise(resolve => setImmediate(resolve))
+})
+
+test('source sample rate ignores stale song probes and clears on stop', async() => {
+  const { player, state, runtime } = loadPlayer()
+  player.createAudio()
+  await player.setResource('https://example.com/first.flac')
+  await player.setResource('https://example.com/second.flac')
+  assert.equal(state.metadataRequests[0].signal.aborted, true)
+  state.metadataRequests[1].resolve(96000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(runtime.sourceSampleRate, 96000)
+  state.metadataRequests[0].resolve(44100)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(runtime.sourceSampleRate, 96000)
+  assert.equal(runtime.readingSourceRate, false)
+  await player.setStop()
+  assert.equal(runtime.sourceSampleRate, 0)
+})
+
+test('live sample rate change keeps position and closes the old context', async() => {
+  const { player, appSetting, state } = loadPlayer()
+  player.createAudio()
+  appSetting['player.audioVisualization'] = true
+  await player.applyAudioRoutingNow()
+  const oldContext = player.getAudioContext()
+  const oldAudio = state.audio.find(item => !item.srcObject && item !== state.audio[0])
+  oldAudio.src = 'track://current'
+  oldAudio.currentTime = 42
+  await oldAudio.play()
+  appSetting['player.audioSampleRate'] = 96000
+  await state.watches.find(watch => watch.source() === 96000).callback()
+  assert.equal(player.getAudioContext().sampleRate, 96000)
+  assert.equal(player.getCurrentTime(), 42)
+  assert.equal(oldContext.state, 'closed')
+  assert.equal(oldAudio.src, '')
+  assert.ok(state.audio.some(item => item.src === 'track://current' && !item.paused))
+})
+
+test('failed live sample rate change restores old context and playback', async() => {
+  const { player, appSetting, state } = loadPlayer()
+  player.createAudio()
+  appSetting['player.audioVisualization'] = true
+  await player.applyAudioRoutingNow()
+  const oldContext = player.getAudioContext()
+  const oldAudio = state.audio.find(item => !item.srcObject && item !== state.audio[0])
+  oldAudio.src = 'track://current'
+  oldAudio.currentTime = 17
+  await oldAudio.play()
+  state.failSink = true
+  appSetting['player.audioSampleRate'] = 44100
+  await state.watches.find(watch => watch.source() === 44100).callback()
+  assert.equal(player.getAudioContext(), oldContext)
+  assert.equal(oldContext.state, 'running')
+  assert.equal(state.contexts.at(-1).state, 'closed')
+  assert.equal(oldAudio.paused, false)
+  assert.equal(player.getCurrentTime(), 17)
+})
 
 test('a rejected sink keeps the old audio source and playback state', async() => {
   const { player, appSetting, state } = loadPlayer()

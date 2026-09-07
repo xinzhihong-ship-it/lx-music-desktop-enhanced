@@ -10,6 +10,14 @@ const rendererConfig = './renderer/webpack.config.prod'
 const rendererLyricConfig = './renderer-lyric/webpack.config.prod'
 const rendererScriptConfig = './renderer-scripts/webpack.config.prod'
 
+// Keep worker configuration loading restricted to the build configurations above.
+const configLoaders = {
+  [mainConfig]: () => require('./main/webpack.config.prod'),
+  [rendererConfig]: () => require('./renderer/webpack.config.prod'),
+  [rendererLyricConfig]: () => require('./renderer-lyric/webpack.config.prod'),
+  [rendererScriptConfig]: () => require('./renderer-scripts/webpack.config.prod'),
+}
+
 const errorLog = chalk.bgRed.white(' ERROR ') + ' '
 const okayLog = chalk.bgGreen.white(' OKAY ') + ' '
 
@@ -97,7 +105,12 @@ function pack(config) {
 
 function runPack(config) {
   return new Promise((resolve, reject) => {
-    config = require(config)
+    const loadConfig = configLoaders[config]
+    if (!loadConfig) {
+      reject(new Error(`Unknown webpack configuration: ${config}`))
+      return
+    }
+    config = loadConfig()
     config.mode = 'production'
     webpack(config, (err, stats) => {
       if (err) reject(err.stack || err)

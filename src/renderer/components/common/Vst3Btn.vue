@@ -32,6 +32,10 @@
                 <button type="button" @click="showPicker = true">{{ $t('player__vst3_picker_title') }}</button>
                 <span v-if="runtime.active" :class="$style.latency">{{ $t('setting__vst3_latency') }} {{ runtime.latencyMs.toFixed(1) }} ms · {{ $t('setting__vst3_bridge') }} {{ runtime.bridgeMs.toFixed(1) }} ms</span>
               </div>
+              <p :class="$style.tip">
+                歌曲源：{{ runtime.readingSourceRate ? '读取中…' : runtime.sourceSampleRate ? (runtime.sourceSampleRate / 1000) + ' kHz' : '未知 / 未播放' }}
+                <span v-if="runtime.active && runtime.sampleRate"> · 处理：{{ runtime.sampleRate / 1000 }} kHz</span>
+              </p>
               <div :class="['scroll', $style.content]">
                 <div v-if="!chain.length" :class="$style.empty">{{ $t('player__vst3_empty') }}</div>
                 <ul v-if="chain.length" :class="$style.list">

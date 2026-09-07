@@ -30,6 +30,8 @@ const defaultSetting: LX.AppSetting = {
   'player.playEngine': 'electron',
   'player.vst3.directories': [],
   'player.vst3.enabled': false,
+  'player.vst3.bufferFrames': 4096,
+  'player.audioSampleRate': 0,
   'player.vst3.chain': [],
   'player.mpv.path': '',
   'player.mpv.extraArgs': [],

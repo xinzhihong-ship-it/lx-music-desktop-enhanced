@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import dns from 'dns'
 import { decodeName } from '@renderer/utils'
 
+// Legacy provider signing and IDs use MD5; this is not password hashing.
 export const toMD5 = str => crypto.createHash('md5').update(str).digest('hex')
 
 

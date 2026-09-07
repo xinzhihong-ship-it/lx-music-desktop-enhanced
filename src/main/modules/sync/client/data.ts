@@ -1,27 +1,29 @@
 import fs from 'node:fs'
-import path from 'node:path'
 import { File } from '../../../../common/constants_sync'
+import { resolvePathWithin } from '@common/utils/nodejs'
 import { exists } from '../utils'
 
 
 let syncAuthKeys: Record<string, LX.Sync.ClientKeyInfo>
 
 
+const syncClientDataPath = () => resolvePathWithin(global.lxDataPath, File.clientDataPath)
+const syncAuthKeysPath = () => resolvePathWithin(syncClientDataPath(), File.syncAuthKeysJSON)
+
 const saveSyncAuthKeys = async() => {
-  const syncAuthKeysFilePath = path.join(global.lxDataPath, File.clientDataPath, File.syncAuthKeysJSON)
-  return fs.promises.writeFile(syncAuthKeysFilePath, JSON.stringify(syncAuthKeys), 'utf8')
+  return fs.promises.writeFile(syncAuthKeysPath(), JSON.stringify(syncAuthKeys), 'utf8')
 }
 
 export const initClientInfo = async() => {
   if (syncAuthKeys != null) return
-  const syncAuthKeysFilePath = path.join(global.lxDataPath, File.clientDataPath, File.syncAuthKeysJSON)
+  const syncAuthKeysFilePath = syncAuthKeysPath()
   if (await fs.promises.stat(syncAuthKeysFilePath).then(() => true).catch(() => false)) {
     // eslint-disable-next-line require-atomic-updates
     syncAuthKeys = JSON.parse((await fs.promises.readFile(syncAuthKeysFilePath)).toString())
   } else {
     // eslint-disable-next-line require-atomic-updates
     syncAuthKeys = {}
-    const syncDataPath = path.join(global.lxDataPath, File.clientDataPath)
+    const syncDataPath = syncClientDataPath()
     if (!await exists(syncDataPath)) {
       await fs.promises.mkdir(syncDataPath, { recursive: true })
     }
