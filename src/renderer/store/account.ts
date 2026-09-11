@@ -51,15 +51,24 @@ export const getEditablePlatformPlaylists = async(source: LX.Source): Promise<Pl
   return results.flatMap(result => result.status == 'fulfilled' ? result.value : [])
 }
 
-const toPlaylistMutationTrack = (musicInfo: LX.Music.MusicInfoOnline): LX.Account.PlaylistMutationTrack => {
+/**
+ * 把在线歌曲转换成歌单操作载荷。
+ * 导出以便单元测试直接校验字段映射（QQ 音乐必须带 songMid 而非数字 songId）。
+ */
+export const toPlaylistMutationTrack = (musicInfo: LX.Music.MusicInfoOnline): LX.Account.PlaylistMutationTrack => {
   if (!isAccountSource(musicInfo.source)) throw new Error('不支持将该来源歌曲添加到平台歌单')
   // B 站收藏夹操作使用视频 aid（存于 platformData）
   const biliAid = musicInfo.source == 'bili'
     ? String(musicInfo.meta.platformData?.aid ?? musicInfo.meta.songId)
     : null
+  // QQ 音乐的加歌接口要求 mid（字符串），与数字 songId 是两个不同的标识符。
+  const txSongMid = musicInfo.source == 'tx'
+    ? (musicInfo.meta.songmid ?? musicInfo.meta.strMediaMid ?? undefined)
+    : undefined
   return {
     source: musicInfo.source,
     songId: biliAid ?? String(musicInfo.meta.songId),
+    songMid: txSongMid == null ? undefined : String(txSongMid),
     platformId: musicInfo.source == 'tx'
       ? musicInfo.meta.id == null ? undefined : String(musicInfo.meta.id)
       : musicInfo.meta.accountTrackId,

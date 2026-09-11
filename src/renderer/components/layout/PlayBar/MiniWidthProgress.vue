@@ -10,6 +10,7 @@
           {{ title }}
         </div>
         <play-quality-tag />
+        <song-key-tag />
       </div>
       <div :class="$style.status">{{ statusText }}</div>
     </div>
@@ -56,6 +57,7 @@ import { clipboardWriteText } from '@common/utils/electron'
 import ControlBtns from './ControlBtns.vue'
 import PlayProgress from './PlayProgress.vue'
 import PlayQualityTag from './PlayQualityTag.vue'
+import SongKeyTag from './SongKeyTag.vue'
 import StopBtn from './StopBtn.vue'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 // import { lyric } from '@renderer/core/share/lyric'
@@ -82,6 +84,7 @@ export default {
     ControlBtns,
     PlayProgress,
     PlayQualityTag,
+    SongKeyTag,
     StopBtn,
   },
   setup() {

@@ -17,6 +17,7 @@ transition(enter-active-class="animated slideInRight" leave-active-class="animat
             p(v-if="musicInfo.album") {{ $t('player__music_album') }}{{ musicInfo.album }}
             p(:class="$style.quality")
               play-quality-tag
+              song-key-tag
             div(v-if="canSwitchBiliMode" :class="$style.biliControls")
               button(type="button" :class="[$style.modeButton, { [$style.active]: biliPlaybackMode === 'audio' }]" @click.stop="switchBiliMode('audio')") 音频
               button(type="button" :class="[$style.modeButton, { [$style.active]: biliPlaybackMode === 'video' }]" @click.stop="switchBiliMode('video')") 视频
@@ -58,6 +59,7 @@ import { registerAutoHideMounse, unregisterAutoHideMounse } from './autoHideMoun
 import { appSetting } from '@renderer/store/setting'
 import { closeWindow, maxWindow, minWindow, setFullScreen } from '@renderer/utils/ipc'
 import PlayQualityTag from '../PlayBar/PlayQualityTag.vue'
+import SongKeyTag from '../PlayBar/SongKeyTag.vue'
 import VideoStage from './VideoStage.vue'
 import { setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setStop } from '@renderer/plugins/player'
@@ -72,6 +74,7 @@ export default {
     PlayBar,
     MusicComment,
     PlayQualityTag,
+    SongKeyTag,
     VideoStage,
   },
   setup() {

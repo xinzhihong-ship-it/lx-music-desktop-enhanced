@@ -46,6 +46,9 @@ typings/
 # Optional eslint cache
 .eslintcache
 
+.mimosa/
+.zcode/
+
 # Optional REPL history
 .node_repl_history
 

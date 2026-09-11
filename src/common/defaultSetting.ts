@@ -78,6 +78,8 @@ const defaultSetting: LX.AppSetting = {
   'player.soundEffect.panner.soundR': 5,
   'player.soundEffect.panner.speed': 25,
   'player.soundEffect.pitchShifter.playbackRate': 1,
+  'player.songKey.syncPlugin': false,
+  'player.songKey.retuneSpeed': 20,
 
   'playDetail.isZoomActiveLrc': false,
   'playDetail.isShowLyricProgressSetting': false,

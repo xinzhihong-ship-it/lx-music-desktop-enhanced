@@ -58,19 +58,33 @@ material-modal(:show="modelValue" bg-close :hide-header="true" teleport="#view" 
 
         div(:class="$style.formBody")
           div(v-if="form.method === 'qrcode'" :class="$style.qrcodeSection")
-            div(v-if="qrState.qrUrl" :class="$style.qrcodeCard")
-              img(:src="qrState.qrUrl" :class="$style.qrcodeImg" @error="handleQrImageError")
-              div(v-if="qrState.status === 'confirmed'" :class="$style.qrcodeMask")
-                svg-icon(:class="$style.qrcodeSuccessIcon" name="check")
-                span {{ $t('account__qrcode_confirmed') }}
-            div(v-else :class="$style.qrcodeCard")
-              div(:class="$style.qrcodePlaceholder")
-                svg-icon(:class="$style.qrcodeLoadingIcon" name="loading")
-            div(:class="$style.qrcodeDetails")
-              p(:class="$style.qrcodeEyebrow") 扫码登录
-              h4(:class="$style.qrcodeStatus") {{ qrStatusText }}
-              p(:class="$style.qrcodeHint") 扫码成功后会自动完成登录
-              base-btn(v-if="qrState.status !== 'confirmed'" :class="$style.refreshBtn" outline @click="startQrLogin") {{ $t('account__qrcode_refresh') }}
+            div(:class="$style.qrcodeMain")
+              div(v-if="qrState.qrUrl" :class="$style.qrcodeCard")
+                img(:src="qrState.qrUrl" :class="$style.qrcodeImg" @error="handleQrImageError")
+                div(v-if="qrState.status === 'confirmed'" :class="$style.qrcodeMask")
+                  svg-icon(:class="$style.qrcodeSuccessIcon" name="check")
+                  span {{ $t('account__qrcode_confirmed') }}
+              div(v-else :class="$style.qrcodeCard")
+                div(:class="$style.qrcodePlaceholder")
+                  svg-icon(:class="$style.qrcodeLoadingIcon" name="loading")
+              div(:class="$style.qrcodeDetails")
+                p(:class="$style.qrcodeEyebrow") 扫码登录
+                h4(:class="$style.qrcodeStatus") {{ qrStatusText }}
+                p(:class="$style.qrcodeHint") 扫码成功后会自动完成登录
+                base-btn(v-if="qrState.status !== 'confirmed'" :class="$style.refreshBtn" outline @click="startQrLogin") {{ $t('account__qrcode_refresh') }}
+            //- QQ 音乐支持两种扫码（与 y.qq.com 登录弹窗一致）：手机 QQ 扫码走
+            //- QQ 互联下发 p_skey，微信扫码走微信通道，两者都能管理歌单。
+            div(v-if="showTxScanMode" :class="$style.scanModeRow")
+              span(:class="$style.scanModeLabel") 扫码方式
+              div(:class="$style.scanModeTabs")
+                button(
+                  v-for="mode in txScanModes"
+                  :key="mode.id"
+                  type="button"
+                  :class="[$style.scanModeTab, { [$style.scanModeTabActive]: form.txScanMode === mode.id }]"
+                  :aria-pressed="form.txScanMode === mode.id"
+                  @click="handleTxScanModeChange(mode.id)"
+                ) {{ mode.name }}
 
           div(v-else-if="form.method === 'cookie'" :class="$style.formSection")
             label(:class="$style.fieldLabel")
@@ -109,9 +123,21 @@ export default {
       source: 'wy',
       method: 'qrcode',
       cookie: '',
+      /** QQ 音乐的扫码通道：qq = 手机 QQ 扫码，wechat = 微信扫码 */
+      txScanMode: 'qq',
     })
     const error = ref('')
     const isLoading = ref(false)
+    const showTxScanMode = computed(() => form.source === 'tx' && form.method === 'qrcode')
+    const txScanModes = computed(() => [
+      { id: 'qq', name: 'QQ音乐扫码' },
+      { id: 'wechat', name: '微信扫码' },
+    ])
+    const handleTxScanModeChange = (mode) => {
+      if (form.txScanMode === mode) return
+      form.txScanMode = mode
+      void startQrLogin()
+    }
     const sourceList = computed(() => [
       { id: 'wy', name: '网易云音乐' },
       { id: 'tx', name: 'QQ音乐' },
@@ -131,8 +157,14 @@ export default {
       status: 'waiting',
       message: '',
     })
+    const qrHintText = computed(() => '扫码成功后会自动完成登录')
     const qrStatusText = computed(() => {
-      if (qrState.status === 'waiting' && form.source === 'tx') return window.i18n.t('account__qrcode_waiting_tx')
+      if (qrState.status === 'waiting' && form.source === 'tx') {
+        // 按当前选择的扫码通道给出对应提示
+        return form.txScanMode === 'wechat'
+          ? window.i18n.t('account__qrcode_waiting_tx_wechat')
+          : window.i18n.t('account__qrcode_waiting_tx')
+      }
       const key = QR_STATUS_TEXT_MAP[qrState.status]
       return key ? window.i18n.t(key) + (qrState.message ? ` (${qrState.message})` : '') : qrState.message || ''
     })
@@ -193,7 +225,7 @@ export default {
       resetQrState()
       const source = form.source
       try {
-        const state = await createAccountQrCode(source)
+        const state = await createAccountQrCode(source, source === 'tx' ? form.txScanMode : undefined)
         if (source !== form.source) return
         qrState.key = state.key
         qrState.qrUrl = state.qrUrl
@@ -279,7 +311,11 @@ export default {
       methodList,
       qrState,
       qrStatusText,
+      qrHintText,
       sourceName,
+      showTxScanMode,
+      txScanModes,
+      handleTxScanModeChange,
       startQrLogin,
       handleLogin,
       handleRemove,
@@ -666,11 +702,72 @@ export default {
   height: 100%;
   box-sizing: border-box;
   padding: 16px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+/** 二维码 + 文案的两列区域（原本是 .qrcodeSection 的布局，抽出来避免被扫码方式行挤乱） */
+.qrcodeMain {
   display: grid;
   grid-template-columns: 174px minmax(0, 1fr);
   align-items: center;
   justify-content: center;
   gap: 26px;
+  width: 100%;
+}
+
+/** 扫码方式：与上方二维码区域同宽，居中排列 */
+.scanModeRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.scanModeLabel {
+  color: var(--color-font-label);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.scanModeTabs {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--color-primary-light-900-alpha-200);
+  gap: 2px;
+}
+
+.scanModeTab {
+  min-width: 84px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-font-label);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    color: var(--color-font);
+  }
+}
+
+.scanModeTabActive {
+  background: var(--color-primary);
+  color: #fff;
+
+  &:hover {
+    color: #fff;
+  }
 }
 
 .qrcodeCard {
@@ -703,6 +800,12 @@ export default {
   justify-content: center;
   border-radius: 9px;
   background: var(--color-primary-background-hover);
+}
+
+.qrcodeWindowIcon {
+  width: 42px;
+  height: 42px;
+  color: var(--color-primary);
 }
 
 .qrcodeLoadingIcon {

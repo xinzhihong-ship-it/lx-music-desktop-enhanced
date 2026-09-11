@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "3.2.1-beta.2",
+  "version": "3.2.1-beta.3",
   "description": "LX Music 桌面版增强版本，支持多平台音乐、哔哩哔哩地址播放、听歌识曲与高音质稳定播放",
   "main": "./dist/main.js",
   "scripts": {
@@ -72,8 +72,11 @@
     "test:issue6": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue6.test.mjs",
     "test:issue16": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue16.test.mjs",
     "test:issue19": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue19.test.mjs",
+    "test:issue21": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue21.test.mjs",
     "test:webdav": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/webdavSync.test.mjs",
     "test:audio-conversion": "node --test tests/audioConversion.test.mjs",
+    "test:song-key": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/songKey.test.mjs tests/songKeyAnalysis.test.mjs tests/songKeyStore.test.mjs",
+    "test:song-key-ipc": "electron tests/songKeyIpc.test.cjs",
     "postinstall": "electron-builder install-app-deps",
     "dp": "cross-env ELECTRON_GET_USE_PROXY=true GLOBAL_AGENT_HTTPS_PROXY=http://127.0.0.1:2081 npm run pack",
     "up": "cross-env ELECTRON_GET_USE_PROXY=true GLOBAL_AGENT_HTTPS_PROXY=http://127.0.0.1:2081 npm i"

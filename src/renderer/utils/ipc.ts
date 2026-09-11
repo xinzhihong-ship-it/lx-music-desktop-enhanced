@@ -328,6 +328,65 @@ export const getViewPrevState = async() => {
   return (await rendererInvoke<string, typeof DEFAULT_SETTING['viewPrevState']>(WIN_MAIN_RENDERER_EVENT_NAME.get_data, DATA_KEYS.viewPrevState)) ?? { ...DEFAULT_SETTING.viewPrevState }
 }
 
+export const saveUserSongKeys = (keys: LX.SongKey.UserSongKeys) => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.save_data, {
+    path: DATA_KEYS.songKeys,
+    data: keys,
+  })
+}
+
+export const getUserSongKeys = async() => {
+  return (await rendererInvoke<string, LX.SongKey.UserSongKeys | null>(WIN_MAIN_RENDERER_EVENT_NAME.get_data, DATA_KEYS.songKeys)) ?? {}
+}
+
+export const fetchSongKeyAudio = async(source: string, maxBytes: number) => {
+  return await rendererInvoke<{ source: string, maxBytes: number }, LX.SongKey.AudioChunk | null>(
+    WIN_MAIN_RENDERER_EVENT_NAME.song_key_fetch_audio,
+    { source, maxBytes },
+  ).catch(() => null)
+}
+
+export const openNativeSongKeyWindow = () => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.open_song_key_window)
+}
+
+export const closeNativeSongKeyWindow = () => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.close_song_key_window)
+}
+
+export const syncNativeSongKeyData = async(payload: any) => {
+  return await rendererInvoke<any, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.sync_song_key_data, payload).catch(() => false)
+}
+
+export const onSongKeyWindowSaveAction = (callback: (data: any) => void) => {
+  rendererOn<any>(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_save_action, ({ params }) => {
+    callback(params)
+  })
+}
+
+export const onSongKeyWindowResetAction = (callback: (data: any) => void) => {
+  rendererOn<any>(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_reset_action, ({ params }) => {
+    callback(params)
+  })
+}
+
+export const onSongKeyWindowReanalyzeAction = (callback: (data: any) => void) => {
+  rendererOn<any>(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_reanalyze_action, ({ params }) => {
+    callback(params)
+  })
+}
+
+export const onSongKeyWindowTogglePluginSync = (callback: (enabled: boolean) => void) => {
+  rendererOn<boolean>(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_toggle_plugin_sync, ({ params }) => {
+    callback(params)
+  })
+}
+
+export const onSongKeyWindowSetRetuneSpeed = (callback: (speed: number) => void) => {
+  rendererOn<number>(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_set_retune_speed, ({ params }) => {
+    callback(params)
+  })
+}
 
 export const getSystemFonts = async() => {
   return rendererInvoke<string[]>(CMMON_EVENT_NAME.get_system_fonts).catch(() => {
@@ -397,8 +456,11 @@ export const loginAccount = async(params: LX.Account.LoginRequest) => {
   return rendererInvoke<LX.Account.LoginRequest, LX.Account.PlatformAccount>(WIN_MAIN_RENDERER_EVENT_NAME.account_login, params)
 }
 
-export const createAccountQrCode = async(source: LX.Account.Source) => {
-  return rendererInvoke<LX.Account.Source, LX.Account.QrCodeLoginState>(WIN_MAIN_RENDERER_EVENT_NAME.account_qr_create, source)
+export const createAccountQrCode = async(source: LX.Account.Source, mode?: 'qq' | 'wechat') => {
+  return rendererInvoke<{ source: LX.Account.Source, mode?: 'qq' | 'wechat' }, LX.Account.QrCodeLoginState>(
+    WIN_MAIN_RENDERER_EVENT_NAME.account_qr_create,
+    { source, mode },
+  )
 }
 
 export const checkAccountQrCode = async(source: LX.Account.Source, requestId: string) => {

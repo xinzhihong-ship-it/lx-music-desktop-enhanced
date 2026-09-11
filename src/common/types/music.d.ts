@@ -67,7 +67,12 @@ declare namespace LX {
 
     interface MusicInfoMeta_tx extends MusicInfoMeta_online {
       strMediaMid: string // 歌曲strMediaMid
-      id?: number // 歌曲songId
+      id?: number // 歌曲songId（数字 ID）
+      /**
+       * 歌曲 mid（字符串标识，如 0039MnYb0qxYhV）。
+       * QQ 音乐的加歌接口 fcg_music_add2songdir 的 midlist 要求传 mid 而非数字 ID。
+       */
+      songmid?: string
       albumMid?: string // 歌曲albumMid
     }
     interface MusicInfo_tx extends MusicInfoBase<'tx'> {

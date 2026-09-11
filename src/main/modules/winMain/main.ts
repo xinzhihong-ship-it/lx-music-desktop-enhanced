@@ -111,6 +111,7 @@ export const createWindow = () => {
       webgl: false,
       spellcheck: false, // 禁用拼写检查器
       autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: false, // 禁用后台节流，保证最小化或切到宿主机架后台时毫秒级实时跟播与调性同步
     },
   }
   if (global.envParams.cmdParams.dt) options.backgroundColor = theme.colors['--color-primary-light-1000']

@@ -65,10 +65,15 @@ export default () => {
     },
   )
 
-  mainHandle<LX.Account.Source, LX.Account.QrCodeLoginState>(
+  mainHandle<LX.Account.Source | { source: LX.Account.Source, mode?: 'qq' | 'wechat' }, LX.Account.QrCodeLoginState>(
     WIN_MAIN_RENDERER_EVENT_NAME.account_qr_create,
-    async({ params: source }) => {
-      return providers[source].createQrCode()
+    async({ params }) => {
+      const source = typeof params === 'string' ? params : params.source
+      const mode = typeof params === 'string' ? undefined : params.mode
+      const provider = providers[source] as {
+        createQrCode: (mode?: 'qq' | 'wechat') => Promise<LX.Account.QrCodeLoginState>
+      }
+      return provider.createQrCode(mode)
     },
   )
 

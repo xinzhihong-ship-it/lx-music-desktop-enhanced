@@ -10,11 +10,18 @@ const endpoint = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const tmeAppID = 'qqmusic'
 const waitForScan = process.argv.includes('--wait')
 
+// QQ 网页版扫码（QQ 互联 OAuth）才是能拿到写权限的登录方式：
+// 手机 QQ 音乐 App 扫码只下发 TME 媒体令牌，没有 p_skey，管理歌单会被服务端拒绝。
 const assertProviderProtocol = () => {
   const provider = fs.readFileSync(path.join(__dirname, '../src/main/modules/account/providers/tx.ts'), 'utf8')
-  const required = ['music.login.LoginServer', 'CreateQRCode', 'management.qrcode_login/']
-  if (required.some(value => !provider.includes(value)) || provider.includes('ssl.ptlogin2.qq.com')) {
-    throw new Error('QQ provider is not using the QQ Music App QR protocol')
+  const required = [
+    'xui.ptlogin2.qq.com/ssl/ptqrshow',
+    'xui.ptlogin2.qq.com/ssl/ptqrlogin',
+    'QQConnectLogin.LoginServer',
+  ]
+  const missing = required.filter(value => !provider.includes(value))
+  if (missing.length) {
+    throw new Error(`QQ provider is not using the QQ Connect web QR protocol (missing: ${missing.join(', ')})`)
   }
 }
 

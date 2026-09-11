@@ -156,6 +156,11 @@ declare namespace LX {
     interface PlaylistMutationTrack {
       source: Source
       songId: string
+      /**
+       * 字符串型歌曲标识。QQ 音乐的加歌接口（fcg_music_add2songdir）要求传
+       * song mid（如 "0039MnYb0qxYhV"），而不是数字 songId，故单独存放。
+       */
+      songMid?: string
       platformId?: string
       name: string
       hash?: string

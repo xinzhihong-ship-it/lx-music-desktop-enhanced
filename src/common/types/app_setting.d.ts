@@ -308,6 +308,16 @@ declare global {
       'player.soundEffect.pitchShifter.playbackRate': number
 
       /**
+       * 是否全局实时同步基调到宿主机架电音插件 (Antares Auto-Key 协议)
+       */
+      'player.songKey.syncPlugin': boolean
+
+      /**
+       * 电音深度 / 速度 (Retune Speed, 0~100)
+       */
+      'player.songKey.retuneSpeed': number
+
+      /**
        * 是否启用音频加载失败时自动切歌
        */
       'player.autoSkipOnError': boolean

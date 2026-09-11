@@ -178,6 +178,35 @@ const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
   setTimeout(() => listRef.value?.scrollToTop())
 }
 
+/**
+ * 限并发地映射一批数据。
+ *
+ * QQ 音乐的歌曲详情接口是「一次一首」，而歌单可能有几百首。若直接用
+ * Promise.all 同时发起，会瞬间建立上百条 TLS 连接，连接会被网络栈/代理挤断，
+ * 报出 "Client network socket disconnected before secure TLS connection was established"。
+ * 这里把并发压到一个小窗口，既快又不会打爆连接。
+ */
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  const run = async() => {
+    while (cursor < items.length) {
+      const index = cursor++
+      results[index] = await worker(items[index], index)
+    }
+  }
+  const runners = Array.from({ length: Math.min(limit, items.length) }, run)
+  await Promise.all(runners)
+  return results
+}
+
+/** QQ 音乐详情接口的并发上限：太高会被网络层掐断，太低会明显变慢。 */
+const TX_DETAIL_CONCURRENCY = 6
+
 const loadDailyDetails = async(source: LX.Account.Source, ids: string[]) => {
   switch (source) {
     case 'wy': {
@@ -185,8 +214,24 @@ const loadDailyDetails = async(source: LX.Account.Source, ids: string[]) => {
       for (let index = 0; index < ids.length; index += 500) chunks.push(ids.slice(index, index + 500))
       return (await Promise.all(chunks.map(async chunk => (await wyMusicDetail.getList(chunk)).list))).flat()
     }
-    case 'tx':
-      return (await Promise.all(ids.map(txMusicInfo))).filter(Boolean)
+    case 'tx': {
+      // 逐首取详情，但严格限制同时进行的请求数（见 mapWithConcurrency 的说明）。
+      // 单曲失败（下架/无版权/偶发网络抖动）不应让整个歌单加载失败，
+      // 但若全军覆没就必须把错误抛出去，否则界面会只剩一个空列表、看不出原因。
+      let firstError: unknown = null
+      let failed = 0
+      const list = await mapWithConcurrency(ids, TX_DETAIL_CONCURRENCY, async(id) => {
+        try {
+          return await txMusicInfo(id)
+        } catch (err) {
+          failed++
+          firstError ??= err
+          return null
+        }
+      })
+      if (ids.length && failed === ids.length) throw firstError
+      return list.filter(Boolean)
+    }
     case 'kg':
       return getKgMusicInfos(ids.map(hash => ({ hash })))
     case 'bili':
