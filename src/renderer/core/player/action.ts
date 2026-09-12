@@ -207,13 +207,13 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       setPlayQuality(getMusicQualityLabel(musicInfo, quality))
     }
     if (isVideo) {
-      await setResource(url, undefined, undefined, audioUrl)
+      await setResource(url, musicInfo as LX.Music.MusicInfo, undefined, audioUrl)
       return
     }
     if (appSetting['player.playEngine'] === 'audirvana') {
       const audirvanaFilePath = buildAudirvanaFilePath(musicInfo)
       try {
-        await setResource(url, audirvanaFilePath ? (musicInfo as LX.Music.MusicInfo) : undefined, audirvanaFilePath ?? undefined)
+        await setResource(url, musicInfo as LX.Music.MusicInfo, audirvanaFilePath ?? undefined)
         return
       } catch (err: any) {
         console.error('setResource failed', err)
@@ -227,7 +227,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
           const refreshed = await getMusicPlayUrl(musicInfo, true)
           if (refreshed && refreshed.url !== url) {
             try {
-              await setResource(refreshed.url, audirvanaFilePath ? (musicInfo as LX.Music.MusicInfo) : undefined, audirvanaFilePath ?? undefined)
+              await setResource(refreshed.url, musicInfo as LX.Music.MusicInfo, audirvanaFilePath ?? undefined)
               return
             } catch (err2: any) {
               console.error('[Audirvana] setResource retry failed', err2)
@@ -238,7 +238,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
         throw err
       }
     }
-    await setResource(url)
+    await setResource(url, musicInfo as LX.Music.MusicInfo)
   }).catch((err: any) => {
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     console.log(err)

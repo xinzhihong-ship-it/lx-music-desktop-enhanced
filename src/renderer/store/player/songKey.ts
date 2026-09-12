@@ -1,7 +1,7 @@
 import { ref, computed, watch } from '@common/utils/vueTools'
 import { musicInfo } from './state'
 import { appSetting, updateSetting } from '@renderer/store/setting'
-import { getResourceSrc, getCurrentTime, onTimeupdate } from '@renderer/plugins/player'
+import { getResourceSrc, getResourceVersion, getResourceSongId, getCurrentTime, onTimeupdate } from '@renderer/plugins/player'
 import {
   openNativeSongKeyWindow,
   closeNativeSongKeyWindow,
@@ -35,6 +35,14 @@ import {
 export const songKeyTiming = {
   /** 歌曲稳定播放多久后才开始分析，1.2秒即可过滤掉极快速的连续切歌，同时保证体感极速出值 */
   analysisDelayMs: 1200,
+  /** 等待当前歌曲音源就绪的上限：自定义音源解析真实链接可能需要数秒 */
+  resourceWaitTimeoutMs: 15000,
+  /** 音源就绪的轮询间隔 */
+  resourceWaitIntervalMs: 300,
+  /** 分析失败后的最大重试次数（含首次），应对 CDN 抖动/超时 */
+  resourceRetries: 3,
+  /** 每次重试之间的间隔 */
+  retryDelayMs: 3000,
 }
 
 const wait = async(ms: number): Promise<void> => {
@@ -159,6 +167,23 @@ watch(effectiveSongKey, (current) => {
 
 let currentRequestId = 0
 
+/**
+ * 等待属于当前歌曲的音源地址就绪。
+ * 播放器在 setResource 时会记录该音源属于哪首歌（歌曲 id），
+ * 只有"音源的歌曲 id 与当前歌曲一致"才算就绪——避免误用上一首歌的链接。
+ * 超时返回空串，由调用方决定放弃。
+ */
+const waitOwnedResource = async(requestId: number): Promise<string> => {
+  const deadline = Date.now() + songKeyTiming.resourceWaitTimeoutMs
+  while (Date.now() < deadline) {
+    if (requestId !== currentRequestId) return ''
+    const src = getResourceSrc()
+    if (src && getResourceSongId() === musicInfo.id) return src
+    await wait(songKeyTiming.resourceWaitIntervalMs)
+  }
+  return ''
+}
+
 export const updateCurrentSongKey = async(forceReanalyze = false) => {
   const name = musicInfo.name
   const singer = musicInfo.singer
@@ -217,29 +242,36 @@ export const updateCurrentSongKey = async(forceReanalyze = false) => {
       if (requestId !== currentRequestId) return
     }
 
-    // 等待音源地址就绪（网络较慢时可能需要 2~4 秒获取真实播放链接，重试等待避免因网络抖动导致"偶尔不显示"）
-    let source = getResourceSrc()
-    let waitSourceMs = 0
-    while (!source && waitSourceMs < 6000) {
-      await wait(500)
-      if (requestId !== currentRequestId) return
-      waitSourceMs += 500
-      source = getResourceSrc()
-    }
-
-    if (!source) {
-      songKeyInfo.value = null
-      return
-    }
-
-    // 采用渐进式双阶分析：首块解码完毕后 0.5s~1s 内立即把初始调性推到界面，
-    // 全曲时间轴在后台继续精细构建并静默接入，绝不让用户在无反馈中等待！
-    const analyzed = await analyzeSongAudio(source, (early) => {
-      if (requestId === currentRequestId && !songKeyInfo.value) {
-        songKeyInfo.value = early
+    // 等待属于这首歌自己的音源。切歌时真实播放链接要经音源接口异步解析（自定义源可达数秒），
+    // 在此之前 getResourceSrc() 指向的还是上一首歌；直接拿它分析会用错音频，
+    // 或命中已过期的旧链接而静默失败（表现为播放条上基调标签一直不出现）。
+    // 播放器在 setResource 时记录了音源所属的歌曲 id，只有 id 与当前歌曲一致才算就绪。
+    let analyzed: LX.SongKey.KeyInfo | null = null
+    for (let attempt = 0; attempt < songKeyTiming.resourceRetries && !analyzed; attempt++) {
+      if (attempt > 0) {
+        // 上一次分析失败：短暂等待后重试（CDN 抖动/超时多为瞬时故障），期间若换源则用新链接
+        await wait(songKeyTiming.retryDelayMs)
+        if (requestId !== currentRequestId) return
       }
-    })
-    if (requestId !== currentRequestId) return
+      const source = await waitOwnedResource(requestId)
+      if (requestId !== currentRequestId) return
+      if (!source) break
+
+      // 采用渐进式双阶分析：首块解码完毕后 0.5s~1s 内立即把初始调性推到界面，
+      // 全曲时间轴在后台继续精细构建并静默接入，绝不让用户在无反馈中等待！
+      const result = await analyzeSongAudio(source, (early) => {
+        if (requestId === currentRequestId && !songKeyInfo.value) {
+          songKeyInfo.value = early
+        }
+      })
+      if (requestId !== currentRequestId) return
+
+      if (result) {
+        analyzed = result
+        break
+      }
+      // 分析失败：若期间音源被替换（如播放失败自动换源）立即用新链接重试，否则按重试间隔再来
+    }
 
     if (!analyzed) {
       // 分析不出来就不显示，宁可空着也不编一个
@@ -406,4 +438,18 @@ const PROGRESS_POLL_MS = 500
 const progressTimer: unknown = setInterval(updatePlaybackSeconds, PROGRESS_POLL_MS)
 if (progressTimer && typeof progressTimer === 'object' && 'unref' in progressTimer) {
   (progressTimer as { unref: () => void }).unref()
+}
+
+// 自愈兜底：音源在歌曲信息不变的情况下被重新设置（播放失败自动换源、同曲重播）时，
+// 当前歌曲若还没有基调就补跑一次分析。正常切歌路径由上方 watch 负责，这里只处理漏网场景。
+let lastSeenResourceVersion = getResourceVersion()
+const resourceHealTimer: unknown = setInterval(() => {
+  const version = getResourceVersion()
+  if (version === lastSeenResourceVersion) return
+  lastSeenResourceVersion = version
+  if (!musicInfo.name || isKeyAnalyzing.value || songKeyInfo.value) return
+  void updateCurrentSongKey()
+}, PROGRESS_POLL_MS)
+if (resourceHealTimer && typeof resourceHealTimer === 'object' && 'unref' in resourceHealTimer) {
+  (resourceHealTimer as { unref: () => void }).unref()
 }

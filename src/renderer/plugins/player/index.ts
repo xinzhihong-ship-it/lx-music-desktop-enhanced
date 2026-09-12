@@ -12,8 +12,12 @@ let vst3Node: AudioWorkletNode | null = null
 let vst3Change = Promise.resolve()
 let playbackRevision = 0
 let seekResume = false
-// 记录最近一次加载的音源地址，供基调分析取样使用（只读，不参与播放逻辑）
+// 记录最近一次加载的音源地址，供基调分析取样使用（只读，不参与播放逻辑）。
+// resourceVersion 随每次 setResource 递增；lastResourceSongId 记录该音源属于哪首歌，
+// 基调分析靠它判断拿到的 src 是否属于当前正在播放的歌曲。
 let lastResourceSrc = ''
+let lastResourceSongId: string | null = null
+let resourceVersion = 0
 const syncVst3 = async() => {
   vst3Change = vst3Change.catch(() => {}).then(async() => {
     await applyAudioRouting()
@@ -616,6 +620,8 @@ const updateSourceSampleRate = (src: string) => {
 
 export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, filePath?: string, videoAudioUrl?: string): Promise<void> => {
   lastResourceSrc = src
+  lastResourceSongId = musicInfo?.id ?? null
+  resourceVersion++
   const revision = ++playbackRevision
   updateSourceSampleRate(videoAudioUrl ?? src)
   seekResume = false
@@ -751,6 +757,10 @@ export const setStop = async(): Promise<void> => {
 }
 
 export const getResourceSrc = (): string => lastResourceSrc
+
+export const getResourceVersion = (): number => resourceVersion
+
+export const getResourceSongId = (): string | null => lastResourceSongId
 
 export const isEmpty = (): boolean => {
   if (isBiliVideoActive()) return mpvVideoPlayer.isEmpty()

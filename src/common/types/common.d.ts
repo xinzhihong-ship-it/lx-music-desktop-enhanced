@@ -151,14 +151,19 @@ declare namespace LX {
     interface PlaylistTrackInfo {
       id: string
       removeId?: string
+      /**
+       * 平台接口直接返回的歌曲详情。QQ 音乐歌单接口已经带有完整歌曲字段，
+       * 渲染层可以直接使用，只有缺少详情时才需要再次查询。
+       */
+      detail?: Record<string, unknown>
     }
 
     interface PlaylistMutationTrack {
       source: Source
       songId: string
       /**
-       * 字符串型歌曲标识。QQ 音乐的加歌接口（fcg_music_add2songdir）要求传
-       * song mid（如 "0039MnYb0qxYhV"），而不是数字 songId，故单独存放。
+       * 字符串型歌曲标识。QQ 音乐的兼容 CGI 接口要求传 song mid（如
+       * "0039MnYb0qxYhV"），而现代 musicu 写接口使用数字 songId，故单独存放。
        */
       songMid?: string
       platformId?: string

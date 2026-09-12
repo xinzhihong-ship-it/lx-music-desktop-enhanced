@@ -3,7 +3,7 @@
     <aside :class="$style.lists">
       <div :class="$style.header">
         <h2>{{ $t('account__platform_music') }}</h2>
-        <button :class="$style.refresh" :aria-label="$t('account__playlist_refresh')" @click="loadAllPlaylists">
+        <button :class="$style.refresh" :aria-label="$t('account__playlist_refresh')" :disabled="isRefreshing" @click="refreshPlatformMusic">
           <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24">
             <use xlink:href="#icon-refresh" />
           </svg>
@@ -53,6 +53,7 @@
         <div :class="$style.headerInfo">
           <h3>{{ selectedTitle || $t('account__platform_music_select') }}</h3>
           <p v-if="selectedSource">{{ sourceName(selectedSource) }}</p>
+          <p v-if="error" :class="$style.loadError">{{ error }}</p>
         </div>
         <input ref="filterInput" v-model="filterText" :class="$style.filterInput" type="search" :placeholder="$t('list__search')">
         <base-btn v-if="songs.length" outline @click="playSongs(0)">{{ $t('list__play') }}</base-btn>
@@ -76,13 +77,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRawList, nextTick, onBeforeUnmount, onMounted, ref } from '@common/utils/vueTools'
+import { computed, markRawList, nextTick, onBeforeUnmount, onMounted, ref, watch } from '@common/utils/vueTools'
 import { LIST_IDS } from '@common/constants'
 import { playList } from '@renderer/core/player'
 import { setTempList } from '@renderer/store/list/action'
 import {
   accounts,
   loadAccounts,
+  platformPlaylistRevision,
   removeFromPlatformPlaylist,
   type PlatformPlaylistDestination,
 } from '@renderer/store/account'
@@ -110,17 +112,23 @@ const selectedTitle = ref('')
 const selectedSource = ref<LX.Account.Source | ''>('')
 const selectedDestination = ref<PlatformPlaylistDestination | null>(null)
 const isLoading = ref(false)
+const isRefreshing = ref(false)
 const error = ref('')
 const listRef = ref<any>(null)
 const filterInput = ref<HTMLInputElement | null>(null)
 const filterText = ref('')
 const isShowLocator = ref(false)
+let playlistLoadSequence = 0
+let selectionLoadSequence = 0
+let isMounted = true
+let stopPlaylistRevisionWatch: (() => void) | null = null
 const filteredRows = computed(() => filterMusicRows(songs.value, filterText.value))
 const filteredSongs = computed(() => filteredRows.value.map(({ item }) => item))
 
 const statusText = computed(() => {
-  if (isLoading.value) return window.i18n.t('account__playlist_loading')
-  if (error.value) return error.value
+  // 刷新时保留旧歌曲；只有没有可展示内容时才用加载/错误占位替换列表。
+  if (!songs.value.length && isLoading.value) return window.i18n.t('account__playlist_loading')
+  if (!songs.value.length && error.value) return error.value
   if (songs.value.length && !filteredSongs.value.length) return window.i18n.t('no_item')
   if (songs.value.length) return ''
   if (selectedKey.value.endsWith(':daily')) return window.i18n.t('account__playlist_no_daily')
@@ -154,25 +162,77 @@ const handleAccountChange = (accountId: string | number) => {
 }
 
 const loadAllPlaylists = async() => {
-  await loadAccounts()
-  groups.value = await Promise.all(accounts.value.map(async account => {
-    try {
-      return { account, playlists: await getAccountPlaylists(account.id), error: '' }
-    } catch (err: any) {
-      return { account, playlists: [], error: err?.message ?? window.i18n.t('list__load_failed') }
+  const sequence = ++playlistLoadSequence
+  try {
+    await loadAccounts()
+  } catch (err: any) {
+    if (isMounted && sequence === playlistLoadSequence) {
+      const message = err?.message ?? window.i18n.t('list__load_failed')
+      if (groups.value.length) {
+        groups.value = groups.value.map(group => ({ ...group, error: message }))
+      } else {
+        error.value = message
+      }
     }
+    return
+  }
+  if (!isMounted || sequence !== playlistLoadSequence) return
+
+  const accountList = [...accounts.value]
+  const previousGroups = new Map(groups.value.map(group => [group.account.id, group]))
+  // 刷新目录时先保留旧歌单；每个账号的请求完成后再替换自己的结果，
+  // 这样慢账号不会清空已经显示的内容，失败时也能在旧列表旁显示原因。
+  groups.value = accountList.map(account => ({
+    account,
+    playlists: previousGroups.get(account.id)?.playlists ?? [],
+    error: '',
   }))
   if (!groups.value.some(({ account }) => account.id === selectedAccountId.value)) {
-    handleAccountChange(groups.value[0]?.account.id ?? '')
+    const nextAccountId = groups.value[0]?.account.id ?? ''
+    if (nextAccountId) handleAccountChange(nextAccountId)
+    else {
+      selectedAccountId.value = ''
+      clearSelectedPlaylist()
+    }
   }
+  if (!selectedKey.value) error.value = ''
+
+  // 每个账号独立提交结果，慢账号不会阻塞其它账号的目录显示。
+  await Promise.all(accountList.map(async(account, index) => {
+    try {
+      const playlists = await getAccountPlaylists(account.id)
+      if (!isMounted || sequence !== playlistLoadSequence) return
+      groups.value[index] = { account, playlists, error: '' }
+    } catch (err: any) {
+      if (!isMounted || sequence !== playlistLoadSequence) return
+      groups.value[index] = {
+        account,
+        playlists: previousGroups.get(account.id)?.playlists ?? [],
+        error: err?.message ?? window.i18n.t('list__load_failed'),
+      }
+    }
+  }))
 }
 
 const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
-  const trackMap = new Map(tracks?.map(track => [track.id, track.removeId]))
-  songs.value = markRawList(list.map(item => {
+  const trackMap = new Map<string, string | undefined>()
+  for (const track of tracks ?? []) {
+    for (const id of [
+      track.id,
+      track.removeId,
+      track.detail?.songmid,
+      track.detail?.songId,
+    ]) {
+      if (id != null && String(id)) trackMap.set(String(id), track.removeId)
+    }
+  }
+  songs.value = markRawList(list.filter(Boolean).map(item => {
     const musicInfo = toNewMusicInfo(item) as LX.Music.MusicInfoOnline
-    const trackId = musicInfo.source == 'kg' ? musicInfo.meta.hash : String(musicInfo.meta.songId)
-    musicInfo.meta.accountTrackId = trackMap.get(trackId)
+    const meta = musicInfo.meta as any
+    const trackId = musicInfo.source == 'kg'
+      ? String(meta.hash)
+      : String(meta.songId ?? meta.strMediaMid ?? '')
+    meta.accountTrackId = trackMap.get(trackId)
     return musicInfo
   }))
   setTimeout(() => listRef.value?.scrollToTop())
@@ -230,7 +290,7 @@ const loadDailyDetails = async(source: LX.Account.Source, ids: string[]) => {
         }
       })
       if (ids.length && failed === ids.length) throw firstError
-      return list.filter(Boolean)
+      return list
     }
     case 'kg':
       return getKgMusicInfos(ids.map(hash => ({ hash })))
@@ -239,42 +299,100 @@ const loadDailyDetails = async(source: LX.Account.Source, ids: string[]) => {
   }
 }
 
+const loadPlaylistDetails = async(
+  source: LX.Account.Source,
+  tracks: LX.Account.PlaylistTrackInfo[],
+) => {
+  const details = new Array<any>(tracks.length)
+  const missing: Array<{ index: number, id: string }> = []
+  tracks.forEach((track, index) => {
+    if (track.detail) details[index] = track.detail
+    else missing.push({ index, id: track.id })
+  })
+
+  if (missing.length) {
+    const loaded = await loadDailyDetails(source, missing.map(item => item.id))
+    // 详情接口可能过滤下架歌曲，不能按数组下标回填，否则一首缺失会让后续歌曲错位。
+    const loadedById = new Map<string, any>()
+    for (const detail of loaded) {
+      const id = detail?.songmid
+      if (id != null && String(id)) loadedById.set(String(id), detail)
+    }
+    missing.forEach(item => { details[item.index] = loadedById.get(item.id) })
+  }
+  return details
+}
+
 const selectDaily = async(account: LX.Account.PlatformAccount) => {
-  selectedKey.value = `${account.id}:daily`
+  const requestSequence = ++selectionLoadSequence
+  const key = `${account.id}:daily`
+  const preserveSongs = selectedKey.value === key
+  selectedKey.value = key
   selectedTitle.value = window.i18n.t('account__playlist_tab_daily')
   selectedSource.value = account.source
   selectedDestination.value = null
-  songs.value = []
+  if (!preserveSongs) songs.value = []
   error.value = ''
   isLoading.value = true
   try {
     const ids = await getAccountDailyTrackIds(account.id)
-    if (selectedKey.value !== `${account.id}:daily`) return
+    if (!isMounted || requestSequence !== selectionLoadSequence || selectedKey.value !== key) return
     setSongs(await loadDailyDetails(account.source, ids))
   } catch (err: any) {
-    error.value = err?.message ?? window.i18n.t('list__load_failed')
+    if (isMounted && requestSequence === selectionLoadSequence && selectedKey.value === key) {
+      error.value = err?.message ?? window.i18n.t('list__load_failed')
+    }
   } finally {
-    isLoading.value = false
+    if (requestSequence === selectionLoadSequence) isLoading.value = false
   }
 }
 
 const selectPlaylist = async(account: LX.Account.PlatformAccount, playlist: LX.Account.PlaylistInfo) => {
   const key = `${account.id}:${playlist.id}`
+  const preserveSongs = selectedKey.value === key
+  const requestSequence = ++selectionLoadSequence
   selectedKey.value = key
   selectedTitle.value = playlist.name
   selectedSource.value = account.source
   selectedDestination.value = { account, playlist }
-  songs.value = []
+  if (!preserveSongs) songs.value = []
   error.value = ''
   isLoading.value = true
   try {
     const tracks = await getAccountPlaylistTrackIds(account.id, playlist.id, playlist.dirId)
-    if (selectedKey.value !== key) return
-    setSongs(await loadDailyDetails(account.source, tracks.map(track => track.id)), tracks)
+    if (!isMounted || requestSequence !== selectionLoadSequence || selectedKey.value !== key) return
+    setSongs(await loadPlaylistDetails(account.source, tracks), tracks)
   } catch (err: any) {
-    error.value = err?.message ?? window.i18n.t('list__load_failed')
+    if (isMounted && requestSequence === selectionLoadSequence && selectedKey.value === key) {
+      error.value = err?.message ?? window.i18n.t('list__load_failed')
+    }
   } finally {
-    isLoading.value = false
+    if (requestSequence === selectionLoadSequence) isLoading.value = false
+  }
+}
+
+const refreshSelectedPlaylist = async() => {
+  const account = accounts.value.find(item => item.id === selectedAccountId.value)
+  const playlist = selectedDestination.value?.playlist
+  if (!account || !playlist || !selectedKey.value.startsWith(`${account.id}:`)) return
+  await selectPlaylist(account, playlist)
+}
+
+const refreshPlatformMusic = async() => {
+  if (isRefreshing.value) return
+  isRefreshing.value = true
+  const account = accounts.value.find(item => item.id === selectedAccountId.value)
+  const selectedPlaylist = selectedDestination.value?.playlist
+  const selectedKeyValue = selectedKey.value
+  const currentLoad = account && selectedKeyValue
+    ? selectedKeyValue.endsWith(':daily')
+      ? selectDaily(account)
+      : selectedPlaylist ? selectPlaylist(account, selectedPlaylist) : Promise.resolve()
+    : Promise.resolve()
+  try {
+    await Promise.allSettled([loadAllPlaylists(), currentLoad])
+  } finally {
+    isRefreshing.value = false
   }
 }
 
@@ -289,7 +407,6 @@ const handleRemoveFromPlatform = async(musicList: LX.Music.MusicInfoOnline[]) =>
   if (!confirmed || selectedDestination.value !== destination) return
   try {
     await removeFromPlatformPlaylist(destination, musicList)
-    await selectPlaylist(destination.account, destination.playlist)
   } catch (err: any) {
     await dialog({ message: window.i18n.t('account__playlist_remove_failed', { message: err?.message ?? String(err) }) })
   }
@@ -315,10 +432,19 @@ const handleLocatorAction = ({ action, data }: { action: string, data?: { index:
 }
 
 onMounted(() => {
+  isMounted = true
   window.key_event.on('key_mod+f_down', handleShowLocator)
-  loadAllPlaylists().catch(console.error)
+  stopPlaylistRevisionWatch = watch(platformPlaylistRevision, () => {
+    void Promise.allSettled([refreshSelectedPlaylist(), loadAllPlaylists()])
+  })
+  void loadAllPlaylists().catch(console.error)
 })
 onBeforeUnmount(() => {
+  isMounted = false
+  playlistLoadSequence++
+  selectionLoadSequence++
+  stopPlaylistRevisionWatch?.()
+  stopPlaylistRevisionWatch = null
   window.key_event.off('key_mod+f_down', handleShowLocator)
 })
 </script>
@@ -462,6 +588,7 @@ onBeforeUnmount(() => {
 
   h3 { color: var(--color-font); font-size: 14px; .mixin-ellipsis-1(); }
   p { margin-top: 3px; color: var(--color-font-label); font-size: 11px; }
+  .loadError { color: var(--color-danger); .mixin-ellipsis-1(); }
 }
 
 .songList {

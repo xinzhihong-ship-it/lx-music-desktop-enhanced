@@ -1,11 +1,20 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { connect, type MqttClient } from 'mqtt'
 import { httpFetch } from '@main/utils/request'
 
 const LOGIN_ENDPOINT = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
+/**
+ * The QR login page sends LoginServer/Login through the signed H5 gateway.
+ * The older musicu endpoint still accepts the request at HTTP level, but its
+ * business response is rejected (the UI then misleadingly reports HTTP 200).
+ */
+const LOGIN_MUSICS_ENDPOINT = 'https://u6.y.qq.com/cgi-bin/musics.fcg'
 const LOGIN_TME_APP_ID = 'qqmusic'
-const LOGIN_CLIENT_TYPE = 19
-const LOGIN_CLIENT_VERSION = 11060000
+// Values used by the current mobile QR page (ct=11, cv=20030508). The old
+// desktop pair could still create an image, but the MQTT ticket it produced
+// was rejected by LoginServer/Login with business code 1000.
+const LOGIN_CLIENT_TYPE = 11
+const LOGIN_CLIENT_VERSION = 20030508
 const LOGIN_MQTT_ENDPOINT = 'wss://mu.y.qq.com'
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 const WEB_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -56,12 +65,65 @@ const hash33 = (value: string, seed = 0) => {
   return hash & 0x7fffffff
 }
 
+// Same request signature used by y.qq.com's music-react uajax client. Keep it
+// local to the QR exchange so ordinary musicu requests retain their existing
+// request format.
+const zzcSign = (payload: string) => {
+  const hash = createHash('sha1').update(payload).digest('hex').toUpperCase()
+  const p1Indexes = [23, 14, 6, 36, 16, 40, 7, 19]
+  const p2Indexes = [16, 1, 32, 12, 19, 27, 8, 5]
+  const scramble = [89, 39, 179, 150, 218, 82, 58, 252, 177, 52, 186, 123, 120, 64, 242, 133, 143, 161, 121, 179]
+  const p1 = p1Indexes.filter(index => index < hash.length).map(index => hash[index]).join('')
+  const p2 = p2Indexes.filter(index => index < hash.length).map(index => hash[index]).join('')
+  const mixed = Buffer.alloc(scramble.length)
+  for (let index = 0; index < scramble.length; index++) {
+    mixed[index] = scramble[index] ^ Number.parseInt(hash.slice(index * 2, index * 2 + 2), 16)
+  }
+  const encoded = mixed.toString('base64').replaceAll('/', '').replaceAll('+', '').replaceAll('=', '')
+  return `zzc${p1}${encoded}${p2}`.toLowerCase()
+}
+
+const requestSignedLogin = async(method: string, param: Record<string, unknown>, commOverrides: Record<string, unknown> = {}) => {
+  const requestBody = {
+    comm: {
+      g_tk: 0,
+      uin: 0,
+      format: 'json',
+      inCharset: 'utf-8',
+      outCharset: 'utf-8',
+      notice: 0,
+      platform: 'h5',
+      needNewCode: 1,
+      ct: 11,
+      cv: 20030508,
+      ...commOverrides,
+    },
+    req_0: { module: 'music.login.LoginServer', method, param },
+  }
+  const serializedBody = JSON.stringify(requestBody)
+  const url = `${LOGIN_MUSICS_ENDPOINT}?_webcgikey=${encodeURIComponent(method)}&sign=${zzcSign(serializedBody)}&_=${Date.now()}`
+  return httpFetch<any>(url, {
+    method: 'POST',
+    text: serializedBody,
+    headers: {
+      'User-Agent': USER_AGENT,
+      Origin: 'https://y.qq.com',
+      Referer: 'https://y.qq.com/m/client/qr_code_login/index.html',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  })
+}
+
 const getUin = (cookies: Record<string, string>) => String(
   cookies.qqmusic_uin ?? cookies.musicid ?? cookies.uin ?? cookies.p_uin ?? cookies.pt2gguin ?? '',
 ).replace(/^o/, '').replace(/\D/g, '')
 
 const getMusicKey = (cookies: Record<string, string>) => cookies.qqmusic_key ?? cookies.qm_keyst ?? cookies.musickey ??
   cookies.psrf_musickey ?? cookies.p_skey ?? cookies.skey ?? ''
+
+const getLoginType = (cookies: Record<string, string>, musicKey: string) => String(
+  cookies.tmeLoginType ?? cookies.login_type ?? (musicKey.startsWith('W_X') ? '1' : '2'),
+)
 
 const buildLoginResult = (uin: string, musicKey: string, cookies: Record<string, string>, nickname?: string) => ({
   account: {
@@ -74,7 +136,7 @@ const buildLoginResult = (uin: string, musicKey: string, cookies: Record<string,
   session: {
     source: 'tx' as const,
     cookies,
-    tokens: { uin, musicKey },
+    tokens: { uin, musicKey, loginType: getLoginType(cookies, musicKey) },
   },
 })
 
@@ -104,7 +166,7 @@ const requestMusicU = async(session: LX.Account.LoginSession, module: string, me
         qq: uin,
         authst: musicKey,
         tmeAppID: 'qqmusic',
-        tmeLoginType: musicKey.startsWith('W_X') ? 1 : 2,
+        tmeLoginType: Number(session.tokens.loginType ?? (musicKey.startsWith('W_X') ? 1 : 2)),
         format: 'json',
         inCharset: 'utf-8',
         outCharset: 'utf-8',
@@ -114,8 +176,11 @@ const requestMusicU = async(session: LX.Account.LoginSession, module: string, me
     headers: { ...commonHeaders(session), Origin: 'https://y.qq.com', 'Content-Type': 'application/json' },
   })
   const result = response.body?.req_0
-  if (response.statusCode !== 200 || response.body?.code !== 0 || result?.code !== 0) {
-    throw new Error(result?.message || result?.data?.msg || `QQ 音乐请求失败（${method}，HTTP ${response.statusCode ?? 0}，code ${response.body?.code ?? 'unknown'}，reqCode ${result?.code ?? 'unknown'}）`)
+  const outerCode = Number(response.body?.code)
+  const subCode = Number(result?.code)
+  if (response.statusCode !== 200 || outerCode !== 0 || subCode !== 0) {
+    const detail = result?.message || result?.data?.msg || `QQ 音乐请求失败（${method}）`
+    throw new Error(`${detail}（${method}，HTTP ${response.statusCode ?? 0}，code ${response.body?.code ?? 'unknown'}，reqCode ${result?.code ?? 'unknown'}）`)
   }
   return result.data ?? {}
 }
@@ -160,56 +225,48 @@ const parseMqttCookies = (value: unknown) => {
 }
 
 const exchangeMqttLogin = async(uin: string, qrcodeId: string, token: string): Promise<Record<string, string>> => {
-  try {
-    const response = await httpFetch<any>(LOGIN_ENDPOINT, {
-      method: 'POST',
-      json: {
-        comm: { ct: 11, cv: 20030508 },
-        req_0: {
-          module: 'music.login.LoginServer',
-          method: 'Login',
-          param: {
-            loginType: 6,
-            needCookie: 1,
-            tmeAppID: LOGIN_TME_APP_ID,
-            str_musicid: uin,
-            qrCodeID: qrcodeId,
-            token,
-          },
-        },
-      },
-      headers: {
-        'User-Agent': USER_AGENT,
-        Origin: 'https://y.qq.com',
-        Referer: 'https://y.qq.com/m/client/qr_code_login/index.html',
-      },
-    })
-    const data = response.body?.req_0?.data
-    if (response.body?.req_0?.code === 0 && data) {
-      const musickey = String(data.musickey || token)
-      const musicid = String(data.musicid || uin)
-      const encryptUin = String(data.encryptUin || '')
-      const refreshKey = String(data.refresh_key || '')
-      return {
-        login_type: '2',
-        tmeLoginMethod: '3',
-        uin: musicid,
-        qqmusic_uin: musicid,
-        euin: encryptUin,
-        tmeLoginType: String(data.loginType ?? '1'),
-        qm_keyst: musickey,
-        p_lskey: musickey,
-        qqmusic_key: musickey,
-        refresh_key: refreshKey,
-      }
-    }
-  } catch {}
+  // This is the same request shape as the current y.qq.com QR page:
+  // musics.fcg requires the compact body to be signed before accepting Login.
+  const response = await requestSignedLogin('Login', {
+    loginType: 6,
+    needCookie: 1,
+    tmeAppID: LOGIN_TME_APP_ID,
+    str_musicid: uin,
+    qrCodeID: qrcodeId,
+    token,
+  })
+  const result = response.body?.req_0
+  const data = result?.data
+  const outerCode = Number(response.body?.code)
+  const resultCode = Number(result?.code)
+  if (response.statusCode !== 200 || outerCode !== 0 || resultCode !== 0 || !data) {
+    const detail = [data?.errMsg, data?.errtip, data?.errTip2, data?.tip3, result?.message, response.body?.message]
+      .map(value => String(value ?? '').trim())
+      .find(Boolean)
+    const code = Number.isFinite(resultCode) && resultCode !== 0
+      ? `业务码 ${resultCode}`
+      : Number.isFinite(outerCode) && outerCode !== 0
+        ? `外层业务码 ${outerCode}`
+        : `HTTP ${response.statusCode ?? 0}`
+    throw new Error(`QQ 音乐登录票据交换失败：${detail ? `${detail}（${code}）` : code}`)
+  }
+
+  const musickey = String(data.musickey || '')
+  const musicid = String(data.musicid || uin)
+  if (!musickey || !musicid) throw new Error('QQ 音乐登录票据交换未返回完整凭证')
+  const encryptUin = String(data.encryptUin || '')
+  const refreshKey = String(data.refresh_key || '')
   return {
-    uin,
-    qqmusic_uin: uin,
-    qqmusic_key: token,
-    qm_keyst: token,
-    p_lskey: token,
+    login_type: '2',
+    tmeLoginMethod: '3',
+    uin: musicid,
+    qqmusic_uin: musicid,
+    euin: encryptUin,
+    tmeLoginType: String(data.tmeLoginType ?? data.loginType ?? '2'),
+    qm_keyst: musickey,
+    p_lskey: musickey,
+    qqmusic_key: musickey,
+    refresh_key: refreshKey,
   }
 }
 
@@ -238,9 +295,10 @@ const bindQrMqttEvents = (client: MqttClient, pending: PendingQrLogin) => {
         void exchangeMqttLogin(mqUin, mqQid, mqKey).then((finalCookies) => {
           pending.cookies = finalCookies
           pending.status = 'confirmed'
-        }).catch(() => {
-          pending.cookies = mqttCookies
-          pending.status = 'confirmed'
+        }).catch((err: unknown) => {
+          pending.status = 'failed'
+          const detail = err instanceof Error ? err.message : String(err)
+          pending.message = detail.includes('票据交换失败') ? detail : `QQ 音乐登录票据交换失败：${detail}`
         }).finally(() => {
           client.end(true)
         })
@@ -332,14 +390,7 @@ const connectQrMqtt = async(qrcodeID: string, pending: PendingQrLogin, serverRef
 }
 
 const requestLogin = async(method: string, param: Record<string, unknown>) => {
-  const response = await httpFetch<any>(LOGIN_ENDPOINT, {
-    method: 'POST',
-    json: {
-      comm: {},
-      req_0: { module: 'music.login.LoginServer', method, param },
-    },
-    headers: { Origin: 'https://y.qq.com', Referer: 'https://y.qq.com/', 'User-Agent': USER_AGENT },
-  })
+  const response = await requestSignedLogin(method, param)
   const result = response.body?.req_0
   if (response.statusCode !== 200 || response.body?.code !== 0 || result?.code !== 0) {
     throw new Error(result?.data?.errMsg || result?.message || `QQ 音乐登录请求失败（${method}）`)
@@ -513,27 +564,26 @@ const completeWechatLogin = async(pending: PendingQrLogin, wxCode: string) => {
   const cookies: Record<string, string> = {}
 
   // 微信登录成功后，y.qq.com 的这个页面负责把 code 换成音乐凭证
-  const response = await httpFetch<any>(LOGIN_ENDPOINT, {
-    method: 'POST',
-    json: {
-      comm: { tmeAppID: 'qqmusic', tmeLoginType: '1' },
-      req_0: {
-        module: 'music.login.LoginServer',
-        method: 'Login',
-        param: { strAppid: WECHAT_APPID, code: wxCode },
-      },
-    },
-    headers: {
-      'User-Agent': WEB_USER_AGENT,
-      Origin: 'https://y.qq.com',
-      Referer: 'https://y.qq.com/portal/wx_redirect.html',
-    },
+  const response = await requestSignedLogin('Login', { strAppid: WECHAT_APPID, code: wxCode }, {
+    tmeAppID: 'qqmusic',
+    tmeLoginType: '1',
   })
 
   const result = response.body?.req_0
-  if (response.statusCode !== 200 || response.body?.code !== 0 || result?.code !== 0) {
+  const outerCode = Number(response.body?.code)
+  const resultCode = Number(result?.code)
+  if (response.statusCode !== 200 || outerCode !== 0 || resultCode !== 0) {
+    const data = result?.data
+    const detail = [data?.errMsg, data?.errtip, data?.errTip2, data?.tip3, result?.message, response.body?.message]
+      .map(value => String(value ?? '').trim())
+      .find(Boolean)
+    const code = Number.isFinite(resultCode) && resultCode !== 0
+      ? `业务码 ${resultCode}`
+      : Number.isFinite(outerCode) && outerCode !== 0
+        ? `外层业务码 ${outerCode}`
+        : `HTTP ${response.statusCode ?? 0}`
     pending.status = 'failed'
-    pending.message = result?.data?.errMsg || result?.message || '微信登录票据交换失败'
+    pending.message = `微信登录票据交换失败：${detail ? `${detail}（${code}）` : code}`
     return
   }
 
@@ -551,6 +601,7 @@ const completeWechatLogin = async(pending: PendingQrLogin, wxCode: string) => {
   cookies.qqmusic_uin = uin
   cookies.uin = uin
   cookies.login_type = '2'
+  cookies.tmeLoginType = String(data.tmeLoginType ?? data.loginType ?? '2')
   if (data.refresh_token) cookies.qqmusic_key_refresh = String(data.refresh_token)
   if (data.encryptUin) cookies.euin = String(data.encryptUin)
   if (data.keyExpiresIn) cookies.qqmusic_key_expiresIn = String(data.keyExpiresIn)
@@ -606,6 +657,33 @@ export const getUserPlaylists = async(sessionValue: LX.Account.LoginSession | nu
   })).filter((item: LX.Account.PlaylistInfo) => item.id)
 }
 
+/**
+ * 将 CgiGetDiss 返回的歌曲转换成 toNewMusicInfo 可以直接消费的旧歌曲结构。
+ * 歌单详情接口已经返回了播放所需的大部分字段，保留这些字段可以避免渲染层
+ * 再对每首歌发起一次详情请求。
+ */
+const txPlaylistSongToDetail = (song: any): Record<string, unknown> | undefined => {
+  const info = radarTrackToMusicInfo(song)
+  if (!info) return undefined
+  const meta = info.meta as any
+  return {
+    name: info.name,
+    singer: info.singer,
+    source: 'tx',
+    songmid: meta.songId,
+    songId: meta.id,
+    strMediaMid: meta.strMediaMid,
+    albumMid: meta.albumMid,
+    albumId: meta.albumId,
+    albumName: meta.albumName,
+    interval: info.interval,
+    img: meta.picUrl ?? '',
+    types: meta.qualitys,
+    _types: meta._qualitys,
+    typeUrl: {},
+  }
+}
+
 export const getPlaylistTrackIds = async(
   sessionValue: LX.Account.LoginSession | null,
   playlistId: string,
@@ -616,6 +694,7 @@ export const getPlaylistTrackIds = async(
   const pageSize = 500
   const tracks: LX.Account.PlaylistTrackInfo[] = []
   let songBegin = 0
+  let pageCount = 0
 
   while (true) {
     const data = await requestMusicU(session, 'music.srfDissInfo.DissInfo', 'CgiGetDiss', {
@@ -628,36 +707,150 @@ export const getPlaylistTrackIds = async(
       orderlist: true,
       onlysonglist: false,
     })
-    const songs = data.songlist ?? []
-    tracks.push(...songs.map((song: any) => ({
-      id: String(song.mid ?? song.songmid ?? ''),
-      removeId: String(song.id ?? song.songid ?? ''),
-    })).filter((track: LX.Account.PlaylistTrackInfo) => track.id))
-    if (!songs.length || songs.length < pageSize || data.hasmore === 0 || tracks.length >= Number(data.total_song_num || 0)) break
-    songBegin += songs.length
+    const songs = Array.isArray(data.songlist) ? data.songlist : []
+    const pageTracks = songs.map((song: any) => {
+      const rawSong = song?.Track ?? song?.track ?? song
+      const id = String(rawSong?.mid ?? rawSong?.songmid ?? rawSong?.song_mid ?? '')
+      const removeId = String(rawSong?.id ?? rawSong?.songid ?? rawSong?.songId ?? rawSong?.song_id ?? '')
+      return {
+        id,
+        removeId: removeId || undefined,
+        detail: txPlaylistSongToDetail(rawSong),
+      }
+    }).filter((track: LX.Account.PlaylistTrackInfo) => track.id)
+    tracks.push(...pageTracks)
+    pageCount++
+
+    // 服务端偶尔不返回 total_song_num/hasmore。只有明确为 0，或已经拿到短页时
+    // 才停止；满页且没有标记时继续请求下一页，并用页数上限及重复页保护循环。
+    const total = Number(data.total_song_num)
+    const hasMoreFlag = data.hasmore == null ? null : Number(data.hasmore)
+    const hasExplicitNoMore = hasMoreFlag === 0
+    const hasMore = !hasExplicitNoMore && (
+      hasMoreFlag === 1 ||
+      (hasMoreFlag == null && Number.isFinite(total) && total > 0 && tracks.length < total) ||
+      (hasMoreFlag == null && (!Number.isFinite(total) || total <= 0) && songs.length === pageSize)
+    )
+    const nextBegin = songBegin + songs.length
+    const noProgress = !songs.length || nextBegin <= songBegin || pageCount >= 200
+    const reachedTotal = Number.isFinite(total) && total > 0 && tracks.length >= total
+    if (noProgress || songs.length < pageSize || reachedTotal || !hasMore) break
+    if (pageTracks.length) {
+      const previousIds = new Set(tracks.slice(0, -pageTracks.length).map(track => track.id))
+      if (pageTracks.every((track: LX.Account.PlaylistTrackInfo) => previousIds.has(track.id))) break
+    }
+    songBegin = nextBegin
   }
 
   return [...new Map(tracks.map(track => [track.id, track])).values()]
 }
 
-/**
- * 排查写入类接口的授权问题时使用：只输出 cookie 的【键名】与 g_tk 来源，
- * 绝不输出任何 cookie 的值。QQ 的写接口（加歌）比读接口对凭证要求更严，
- * 出现 "no permit" 时首先要确认 p_skey / skey 是否真的存在。
- */
-const describeSessionAuth = (session: LX.Account.LoginSession) => {
-  const cookieKeys = Object.keys(session.cookies ?? {})
-  const gtkSource = session.cookies?.p_skey
-    ? 'p_skey'
-    : session.cookies?.skey ? 'skey' : 'musicKey(回退)'
-  return {
-    cookieKeys,
-    gtkSource,
-    uin: session.tokens?.uin ?? '',
-    hasPskey: Boolean(session.cookies?.p_skey),
-    hasSkey: Boolean(session.cookies?.skey),
-    musicKeyLen: String(session.tokens?.musicKey ?? '').length,
+const hasWebCredential = (session: LX.Account.LoginSession) => Boolean(
+  session.cookies?.p_skey || session.cookies?.skey,
+)
+
+const isUncertainMutationError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return /超时|timeout|timed out|socket|连接|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|fetch failed|aborted|HTTP 5\d\d|network|网络/i.test(message)
+}
+
+const isUnknownMutationResultError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return /code unknown|reqCode unknown|缺少 retCode|无效 retCode|结果待确认/i.test(message)
+}
+
+const describeMutationError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  if (isUncertainMutationError(error)) return `网络错误：${message}`
+  if (isUnknownMutationResultError(error)) return `结果待确认：${message}`
+  if (/歌单(?:目录)? ID 无效|缺少歌曲|缺少目录|缺少歌曲 MID|参数错误|参数缺失/i.test(message)) {
+    return `参数错误：${message}`
   }
+  if (/no permit|无权限|未授权|鉴权|登录状态|HTTP (?:401|403)|(?:code|reqCode|retCode)\s*(?:401|403|1000)\b/i.test(message)) {
+    return `鉴权失败：${message}`
+  }
+  return message
+}
+
+const requestPlaylistMutation = async(
+  session: LX.Account.LoginSession,
+  method: 'AddSonglist' | 'DelSonglist',
+  playlistId: string,
+  dirId: string,
+  tracks: LX.Account.PlaylistMutationTrack[],
+) => {
+  const numericDirId = Number(dirId)
+  const numericPlaylistId = Number(playlistId)
+  if (!Number.isSafeInteger(numericDirId) || numericDirId < 0) throw new Error('QQ 音乐歌单目录 ID 无效')
+  if (!Number.isSafeInteger(numericPlaylistId) || numericPlaylistId <= 0) throw new Error('QQ 音乐歌单 ID 无效')
+  const data = await requestMusicU(session, 'music.musicasset.PlaylistDetailWrite', method, {
+    dirId: numericDirId,
+    tid: numericPlaylistId,
+    bFmtUtf8: true,
+    v_songInfo: tracks.map(track => ({
+      songId: getPlaylistNumericSongId(track),
+      songType: 0,
+    })),
+  })
+  const rawRetCode = data.retCode ?? data.ret_code ?? data.result?.retCode ?? data.result?.ret_code
+  if (rawRetCode == null) throw new Error(`QQ 音乐 ${method} 响应缺少 retCode`)
+  const retCode = Number(rawRetCode)
+  if (!Number.isFinite(retCode)) {
+    throw new Error(`QQ 音乐 ${method} 响应包含无效 retCode`)
+  }
+  if (retCode !== 0) {
+    throw new Error(`QQ 音乐 ${method} 失败（retCode ${String(rawRetCode)}）`)
+  }
+}
+
+const getPlaylistNumericSongId = (track: LX.Account.PlaylistMutationTrack) => {
+  for (const candidate of [track.platformId, track.songId]) {
+    const value = Number(candidate)
+    if (Number.isSafeInteger(value) && value > 0) return value
+  }
+  return Number.NaN
+}
+
+const readPlaylistTrackIds = async(
+  session: LX.Account.LoginSession,
+  playlistId: string,
+  dirId: string,
+) => {
+  const tracks = await getPlaylistTrackIds(session, playlistId, dirId)
+  return new Set(tracks.flatMap(track => [track.id, track.removeId].filter(Boolean) as string[]))
+}
+
+const confirmPlaylistMutation = async(
+  session: LX.Account.LoginSession,
+  playlistId: string,
+  dirId: string,
+  tracks: LX.Account.PlaylistMutationTrack[],
+  action: 'add' | 'remove',
+  uncertain = false,
+) => {
+  let currentIds: Set<string>
+  try {
+    currentIds = await readPlaylistTrackIds(session, playlistId, dirId)
+  } catch (error) {
+    throw new Error(
+      `QQ 音乐${action === 'add' ? '添加' : '删除'}结果待确认：无法重新读取歌单（${error instanceof Error ? error.message : String(error)}）`,
+    )
+  }
+
+  const expected = tracks.map(track => [
+    track.platformId,
+    track.songId,
+    track.songMid,
+  ].filter(Boolean).map(String))
+  const applied = expected.every(ids => action === 'add'
+    ? ids.some(id => currentIds.has(id))
+    : ids.every(id => !currentIds.has(id)))
+  if (applied) return
+
+  if (uncertain) {
+    throw new Error(`QQ 音乐${action === 'add' ? '添加' : '删除'}结果待确认，请刷新歌单后核对云端状态`)
+  }
+  throw new Error(`QQ 音乐${action === 'add' ? '添加' : '删除'}结果待确认：接口返回成功，但刷新歌单后未${action === 'add' ? '找到歌曲' : '移除歌曲'}`)
 }
 
 const requestLegacyPlaylist = async(
@@ -700,27 +893,20 @@ const requestLegacyPlaylist = async(
 
 export const addPlaylistTracks = async(
   sessionValue: LX.Account.LoginSession | null,
-  _playlistId: string,
+  playlistId: string,
   dirId: string | undefined,
   tracks: LX.Account.PlaylistMutationTrack[],
 ) => {
   const session = requireSession(sessionValue)
   if (!dirId) throw new Error('QQ 音乐歌单缺少目录 ID')
   if (!tracks.length) return
-
-  // 加歌是写操作，QQ 对凭证的要求比读歌单严格得多。失败时把授权诊断打进主进程日志，
-  // 便于定位是 p_skey/skey 缺失导致的 g_tk 无效，还是接口本身的权限问题。
-  // eslint-disable-next-line no-console
-  console.log('[tx-add] 授权诊断', JSON.stringify({
-    dirId,
-    trackCount: tracks.length,
-    ...describeSessionAuth(session),
-  }))
+  const numericDirId = Number(dirId)
+  const numericPlaylistId = Number(playlistId)
+  if (!Number.isSafeInteger(numericDirId) || numericDirId < 0) throw new Error('参数错误：QQ 音乐歌单目录 ID 无效')
+  if (!Number.isSafeInteger(numericPlaylistId) || numericPlaylistId <= 0) throw new Error('参数错误：QQ 音乐歌单 ID 无效')
 
   // 现代接口要求数字 songId；老接口要求字符串 mid。两者都备齐，缺哪条就少一条退路。
-  const songIds = tracks
-    .map(track => Number(track.platformId ?? track.songId))
-    .filter(songId => Number.isFinite(songId) && songId > 0)
+  const songIds = tracks.map(getPlaylistNumericSongId).filter(songId => Number.isSafeInteger(songId) && songId > 0)
   const mids = tracks.map(track => track.songMid).filter((mid): mid is string => Boolean(mid))
 
   const failures: string[] = []
@@ -728,13 +914,15 @@ export const addPlaylistTracks = async(
   // 路径一：现代 musicu 接口。与读取歌单走同一套鉴权通道（requestMusicU），最可靠。
   if (songIds.length === tracks.length) {
     try {
-      await requestMusicU(session, 'music.musicasset.PlaylistDetailWrite', 'AddSonglist', {
-        dirId: Number(dirId),
-        v_songInfo: songIds.map(songId => ({ songId, songType: 0 })),
-      })
+      await requestPlaylistMutation(session, 'AddSonglist', playlistId, dirId, tracks)
+      await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'add')
       return
     } catch (err: any) {
-      failures.push(`现代接口：${err?.message ?? err}`)
+      if (isUncertainMutationError(err) || isUnknownMutationResultError(err)) {
+        await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'add', true)
+        return
+      }
+      failures.push(`现代接口：${describeMutationError(err)}`)
     }
   } else {
     failures.push('现代接口：部分歌曲缺少数字 songId')
@@ -743,7 +931,7 @@ export const addPlaylistTracks = async(
   // 路径二：老版 CGI 接口。midlist 要的是歌曲 mid（字符串，如 0039MnYb0qxYhV），
   // 不是数字 songId —— 历史上这里误传过 songId。该接口还需要完整的上下文参数
   // （loginUin/uin/platform/format 等），否则服务端会直接返回 "invalid request"。
-  if (mids.length === tracks.length && mids.length) {
+  if (hasWebCredential(session) && mids.length === tracks.length && mids.length) {
     try {
       await requestLegacyPlaylist(session, 'https://c.y.qq.com/splcloud/fcgi-bin/fcg_music_add2songdir.fcg', {
         loginUin: session.tokens.uin,
@@ -766,26 +954,27 @@ export const addPlaylistTracks = async(
         r3: '1',
         utf8: '1',
       }, 'POST')
+      await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'add')
       return
     } catch (err: any) {
-      failures.push(`兼容接口：${err?.message ?? err}`)
+      if (isUncertainMutationError(err) || isUnknownMutationResultError(err)) {
+        await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'add', true)
+        return
+      }
+      failures.push(`兼容接口：${describeMutationError(err)}`)
     }
+  } else if (!hasWebCredential(session)) {
+    failures.push('兼容接口：缺少网页版 skey/p_skey，已跳过旧接口')
   } else {
     failures.push('兼容接口：部分歌曲缺少歌曲 MID')
   }
 
-  // QQ 的写接口要求网页版会话凭证（p_skey/skey，用于计算 g_tk）。
-  // 扫码登录走的是 TME 令牌流程，只拿到 qqmusic_key，读接口可用、写接口一律被拒。
-  //
-  // 已实测确认这不是参数问题：把 AddSonglist 的参数清空，服务端返回的仍是 1000，
-  // 而同一模块家族在参数错误时返回 10004（用 CgiGetDiss 空参数验证过）。
-  // 也就是说写操作在「参数校验之前」就被鉴权层拦掉了，调参数没有任何意义。
-  const { hasPskey, hasSkey } = describeSessionAuth(session)
-  const hint = (!hasPskey && !hasSkey)
-    ? '。原因：扫码登录只得到 TME 令牌（qqmusic_key），没有网页版 skey/p_skey，' +
-      'QQ 会在参数校验前直接拒绝这类凭证的写操作。' +
-      '解决：在浏览器登录 y.qq.com 后复制该站点的 Cookie，' +
-      '到「设置 → 平台账号管理 → 添加账号」，平台选 QQ音乐，粘贴 Cookie 登录'
+  // 没有网页版凭证时不能安全回退到旧 CGI 接口；保留现代接口返回的原始原因，
+  // 并提示用户补充 Cookie。QQ 服务端的鉴权错误有时发生在参数校验前，不能只显示
+  // 一个模糊的 "invalid request"。
+  const hint = !hasWebCredential(session)
+    ? '。当前登录态没有网页版 skey/p_skey，QQ 可能在参数校验前被鉴权拦截；如果仍拒绝写入，请在浏览器登录 y.qq.com 后复制 Cookie，' +
+      '到「设置 → 平台账号管理 → 添加账号」粘贴 Cookie 登录'
     : ''
 
   throw new Error(`QQ 音乐添加歌曲到歌单失败 —— ${failures.join('；')}${hint}`)
@@ -793,33 +982,67 @@ export const addPlaylistTracks = async(
 
 export const removePlaylistTracks = async(
   sessionValue: LX.Account.LoginSession | null,
-  _playlistId: string,
+  playlistId: string,
   dirId: string | undefined,
   tracks: LX.Account.PlaylistMutationTrack[],
 ) => {
   const session = requireSession(sessionValue)
-  const ids = tracks.map(track => track.platformId).filter((id): id is string => Boolean(id))
   if (!dirId) throw new Error('QQ 音乐歌单缺少目录 ID')
-  if (ids.length !== tracks.length) throw new Error('部分歌曲缺少 QQ 音乐歌曲 ID')
-  await requestLegacyPlaylist(session, 'https://c.y.qq.com/qzone/fcg-bin/fcg_music_delbatchsong.fcg', {
-    loginUin: session.tokens.uin,
-    hostUin: '0',
-    format: 'json',
-    inCharset: 'utf8',
-    outCharset: 'utf-8',
-    notice: '0',
-    platform: 'yqq.post',
-    needNewCode: '0',
-    uin: session.tokens.uin,
-    dirid: dirId,
-    ids: ids.join(','),
-    source: '103',
-    types: ids.map(() => '3').join(','),
-    formsender: '4',
-    flag: '2',
-    utf8: '1',
-    from: '3',
-  }, 'POST')
+  if (!tracks.length) return
+  const numericDirId = Number(dirId)
+  const numericPlaylistId = Number(playlistId)
+  if (!Number.isSafeInteger(numericDirId) || numericDirId < 0) throw new Error('参数错误：QQ 音乐歌单目录 ID 无效')
+  if (!Number.isSafeInteger(numericPlaylistId) || numericPlaylistId <= 0) throw new Error('参数错误：QQ 音乐歌单 ID 无效')
+  const songIds = tracks.map(getPlaylistNumericSongId).filter(songId => Number.isSafeInteger(songId) && songId > 0)
+  if (songIds.length !== tracks.length) throw new Error('部分歌曲缺少 QQ 音乐数字歌曲 ID')
+  const failures: string[] = []
+  try {
+    await requestPlaylistMutation(session, 'DelSonglist', playlistId, dirId, tracks)
+    await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'remove')
+    return
+  } catch (err: any) {
+    if (isUncertainMutationError(err) || isUnknownMutationResultError(err)) {
+      await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'remove', true)
+      return
+    }
+    failures.push(`现代接口：${describeMutationError(err)}`)
+  }
+
+  if (!hasWebCredential(session)) {
+    throw new Error(`QQ 音乐从歌单删除歌曲失败 —— ${failures.join('；')}；兼容接口：缺少网页版 skey/p_skey，已跳过旧接口`)
+  }
+
+  const ids = tracks.map(track => String(getPlaylistNumericSongId(track)))
+  try {
+    await requestLegacyPlaylist(session, 'https://c.y.qq.com/qzone/fcgi-bin/fcg_music_delbatchsong.fcg', {
+      loginUin: session.tokens.uin,
+      hostUin: '0',
+      format: 'json',
+      inCharset: 'utf8',
+      outCharset: 'utf-8',
+      notice: '0',
+      platform: 'yqq.post',
+      needNewCode: '0',
+      uin: session.tokens.uin,
+      dirid: dirId,
+      ids: ids.join(','),
+      source: '103',
+      types: ids.map(() => '3').join(','),
+      formsender: '4',
+      flag: '2',
+      utf8: '1',
+      from: '3',
+    }, 'POST')
+    await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'remove')
+    return
+  } catch (err: any) {
+    if (isUncertainMutationError(err) || isUnknownMutationResultError(err)) {
+      await confirmPlaylistMutation(session, playlistId, dirId, tracks, 'remove', true)
+      return
+    }
+    failures.push(`兼容接口：${describeMutationError(err)}`)
+  }
+  throw new Error(`QQ 音乐从歌单删除歌曲失败 —— ${failures.join('；')}`)
 }
 
 export const getDailyTrackIds = async(sessionValue: LX.Account.LoginSession | null): Promise<string[]> => {
@@ -845,10 +1068,17 @@ const formatSize = (size: number) => size > 0 ? `${Math.round(size / 1024 / 1024
 
 const radarTrackToMusicInfo = (item: any): LX.Music.MusicInfoOnline | null => {
   const track = item.Track ?? item.track ?? item
-  const mid = String(track.mid ?? '')
-  const name = String(track.title ?? track.name ?? '')
+  const mid = String(track.mid ?? track.songmid ?? track.song_mid ?? '')
+  const name = String(track.title ?? track.name ?? track.songname ?? track.songName ?? '')
   if (!mid || !name) return null
   const file = track.file ?? {}
+  const singers = Array.isArray(track.singer)
+    ? track.singer.map((singer: any) => singer.name ?? singer).filter(Boolean).join('、')
+    : String(track.singer ?? track.singer_name ?? '')
+  const rawInterval = track.interval ?? track.duration ?? 0
+  const interval = typeof rawInterval === 'string' && rawInterval.includes(':')
+    ? rawInterval
+    : formatInterval(Number(rawInterval) || 0)
   const qualitys: LX.Music.MusicQualityType[] = []
   const _qualitys: LX.Music._MusicQualityType = {}
   const addQuality = (type: LX.Quality, size: number) => {
@@ -861,21 +1091,28 @@ const radarTrackToMusicInfo = (item: any): LX.Music.MusicInfoOnline | null => {
   addQuality('320k', Number(file.size_320mp3 ?? 0))
   addQuality('flac', Number(file.size_flac ?? 0))
   addQuality('flac24bit', Number(file.size_hires ?? 0))
+  const modernSizes = Array.isArray(file.size_new) ? file.size_new : []
+  addQuality('master', Number(modernSizes[0] ?? 0))
+  addQuality('atmos', Number(modernSizes[1] ?? 0))
+  addQuality('atmos_plus', Number(modernSizes[2] ?? 0))
   const albumMid = String(track.album?.mid ?? '')
+  const singerMid = Array.isArray(track.singer) ? String(track.singer[0]?.mid ?? '') : ''
   return {
     id: `tx_${mid}`,
     name,
-    singer: (track.singer ?? []).map((singer: any) => singer.name).filter(Boolean).join('、'),
+    singer: singers,
     source: 'tx',
-    interval: formatInterval(Number(track.interval ?? 0)),
+    interval,
     meta: {
       songId: mid,
       id: Number(track.id) || undefined,
-      strMediaMid: String(file.media_mid ?? mid),
+      strMediaMid: String(file.media_mid ?? track.media_mid ?? mid),
       albumId: albumMid,
       albumMid,
       albumName: String(track.album?.name ?? ''),
-      picUrl: albumMid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg` : null,
+      picUrl: albumMid
+        ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg`
+        : singerMid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${singerMid}.jpg` : null,
       qualitys,
       _qualitys,
     },

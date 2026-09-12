@@ -15,6 +15,8 @@ export interface PlatformPlaylistDestination {
 
 export const accounts = ref<LX.Account.PlatformAccount[]>([])
 export const currentAccountId = ref<string | null>(null)
+/** 任何平台歌单写操作成功后递增，供平台音乐页面刷新当前歌单。 */
+export const platformPlaylistRevision = ref(0)
 
 export const currentAccount = computed(() =>
   accounts.value.find(a => a.id === currentAccountId.value) ?? null,
@@ -61,13 +63,17 @@ export const toPlaylistMutationTrack = (musicInfo: LX.Music.MusicInfoOnline): LX
   const biliAid = musicInfo.source == 'bili'
     ? String(musicInfo.meta.platformData?.aid ?? musicInfo.meta.songId)
     : null
-  // QQ 音乐的加歌接口要求 mid（字符串），与数字 songId 是两个不同的标识符。
+  // QQ 音乐的新歌曲结构把 MID 放在 meta.songId、数字 ID 放在 meta.id；
+  // 两个标识符必须分别传给现代写接口和兼容 CGI 接口。
+  const txSongId = musicInfo.source == 'tx'
+    ? (musicInfo.meta.id ?? musicInfo.meta.songId)
+    : null
   const txSongMid = musicInfo.source == 'tx'
-    ? (musicInfo.meta.songmid ?? musicInfo.meta.strMediaMid ?? undefined)
+    ? (musicInfo.meta.songmid ?? musicInfo.meta.songId ?? musicInfo.meta.strMediaMid ?? undefined)
     : undefined
   return {
     source: musicInfo.source,
-    songId: biliAid ?? String(musicInfo.meta.songId),
+    songId: biliAid ?? String(txSongId ?? musicInfo.meta.songId),
     songMid: txSongMid == null ? undefined : String(txSongMid),
     platformId: musicInfo.source == 'tx'
       ? musicInfo.meta.id == null ? undefined : String(musicInfo.meta.id)
@@ -93,6 +99,7 @@ export const addToPlatformPlaylist = async(
   musicList: LX.Music.MusicInfoOnline[],
 ) => {
   await addAccountPlaylistTracks(toMutationRequest(destination, musicList))
+  platformPlaylistRevision.value++
 }
 
 export const removeFromPlatformPlaylist = async(
@@ -100,4 +107,5 @@ export const removeFromPlatformPlaylist = async(
   musicList: LX.Music.MusicInfoOnline[],
 ) => {
   await removeAccountPlaylistTracks(toMutationRequest(destination, musicList))
+  platformPlaylistRevision.value++
 }

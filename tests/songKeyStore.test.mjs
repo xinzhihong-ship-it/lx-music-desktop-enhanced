@@ -9,8 +9,11 @@ import { registerHooks } from 'node:module'
  * 如果在等待期间继续挂着旧值，就会把上一首的调显示在新歌上。
  */
 
-globalThis.__skState = { name: '', singer: '' }
+globalThis.__skState = { id: null, name: '', singer: '' }
 globalThis.__skSrc = 'http://example.com/a.mp3'
+globalThis.__skSrcSongId = null
+globalThis.__skVersion = 0
+globalThis.__skSongSeq = 0
 globalThis.__skResolve = async() => null
 globalThis.__skAnalyze = async() => null
 globalThis.__skSaved = []
@@ -28,6 +31,8 @@ const virtualModules = new Map([
   `],
   ['@renderer/plugins/player', `
     export const getResourceSrc = () => globalThis.__skSrc
+    export const getResourceSongId = () => globalThis.__skSrcSongId ?? null
+    export const getResourceVersion = () => globalThis.__skVersion
     export const getCurrentTime = () => globalThis.__skTime ?? 0
     export const onTimeupdate = () => () => {}
   `],
@@ -101,22 +106,47 @@ const {
 
 // 测试里不需要等真实的 4 秒稳定期
 songKeyTiming.analysisDelayMs = 0
+// 音源就绪等待同样压缩到毫秒级
+songKeyTiming.resourceWaitTimeoutMs = 100
+songKeyTiming.resourceWaitIntervalMs = 2
+songKeyTiming.retryDelayMs = 1
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
 /** 让 updateCurrentSongKey 跨过 resolveSongKey 与 delay 两个 await 点 */
 const settle = async() => {
   await flush()
-  await new Promise((resolve) => setTimeout(resolve, 5))
+  await new Promise((resolve) => setTimeout(resolve, 20))
   await flush()
+}
+
+const setSong = (name, singer) => {
+  globalThis.__skState.id = 'song-' + (++globalThis.__skSongSeq)
+  globalThis.__skState.name = name
+  globalThis.__skState.singer = singer
+}
+
+/**
+ * 模拟播放器 setResource：为"当前这首歌"设置音源（记录歌曲归属，版本号前进）。
+ */
+const setResource = (src) => {
+  globalThis.__skSrc = src
+  globalThis.__skSrcSongId = globalThis.__skState.id
+  globalThis.__skVersion++
+}
+
+/**
+ * 模拟"切歌 → 音源接口解析完成 → setResource 带来新链接"的完整时序：
+ * 先触发分析（此刻 lastResourceSrc 还挂着上一首歌的旧链接），随后音源就绪并归属当前歌曲。
+ */
+const startSongWithResource = (name, singer, src = 'http://example.com/a.mp3') => {
+  setSong(name, singer)
+  const pending = updateCurrentSongKey()
+  setResource(src)
+  return pending
 }
 
 const gMajor = { key: 'G', scale: 'major', label: '1=G 大调', camelot: '9B', source: 'analysis', confidence: 0.8 }
 const eMajor = { key: 'E', scale: 'major', label: '1=E 大调', camelot: '12B', source: 'database', confidence: 0.98 }
-
-const setSong = (name, singer) => {
-  globalThis.__skState.name = name
-  globalThis.__skState.singer = singer
-}
 
 test('切歌后立即清空上一首的基调，不会把旧值挂到新歌上', async() => {
   globalThis.__skResolve = async() => eMajor
@@ -135,6 +165,8 @@ test('切歌后立即清空上一首的基调，不会把旧值挂到新歌上',
   assert.equal(songKeyInfo.value, null, '切歌瞬间必须清空旧基调')
   assert.equal(isKeyAnalyzing.value, true, '应当处于分析中状态')
 
+  // 新歌的音源就绪（setResource 到位且归属当前歌曲），分析才会开始
+  setResource('http://example.com/a.mp3')
   await settle()
   assert.equal(typeof releaseAnalysis, 'function', '应当已经进入音频分析阶段')
   releaseAnalysis(gMajor)
@@ -156,11 +188,44 @@ test('命中曲库/缓存时立刻回填，不需要分析', async() => {
   globalThis.__skResolveSync = null
 })
 
+test('切歌后不会拿上一首歌的旧链接分析，等新音源就绪才开始', async() => {
+  globalThis.__skResolve = async() => null
+  const analyzedSrcs = []
+  globalThis.__skAnalyze = async(src) => { analyzedSrcs.push(src); return gMajor }
+
+  // 上一首歌的音源还挂在播放器上（归属 song-1）
+  setSong('上一首', '歌手')
+  setResource('http://example.com/a.mp3')
+  // 切到新歌：此刻 __skSrc 仍是上一首歌的 a.mp3，且归属不属于当前歌曲
+  setSong('新歌', '歌手')
+  const pending = updateCurrentSongKey()
+  await settle()
+  assert.equal(analyzedSrcs.length, 0, '上一首歌的旧链接不能被拿去分析')
+
+  // 新歌自己的音源就绪（归属当前歌曲）
+  setResource('http://example.com/b.mp3')
+  await settle()
+  await pending
+  assert.deepEqual(analyzedSrcs, ['http://example.com/b.mp3'], '分析必须用当前歌曲自己的音源')
+  assert.equal(songKeyInfo.value.label, '1=G 大调')
+})
+
+test('强制重析（双击标签）直接分析当前播放中的音源', async() => {
+  globalThis.__skResolve = async() => null
+  const analyzedSrcs = []
+  globalThis.__skAnalyze = async(src) => { analyzedSrcs.push(src); return gMajor }
+  // 当前歌曲已在播放，音源归属当前歌曲
+  setSong('当前播放的歌', '歌手')
+  setResource('http://example.com/a.mp3')
+  await updateCurrentSongKey(true)
+  assert.deepEqual(analyzedSrcs, ['http://example.com/a.mp3'])
+  assert.equal(songKeyInfo.value.label, '1=G 大调')
+})
+
 test('分析失败时不显示任何基调（而不是编一个）', async() => {
   globalThis.__skResolve = async() => null
   globalThis.__skAnalyze = async() => null
-  setSong('分析不出来的歌', '某歌手')
-  await updateCurrentSongKey()
+  await startSongWithResource('分析不出来的歌', '某歌手')
   assert.equal(songKeyInfo.value, null)
   assert.equal(isKeyAnalyzing.value, false)
 })
@@ -168,6 +233,7 @@ test('分析失败时不显示任何基调（而不是编一个）', async() => 
 test('取不到音源时也不显示基调', async() => {
   globalThis.__skResolve = async() => null
   globalThis.__skSrc = ''
+  globalThis.__skSrcSongId = null
   setSong('没有音源的歌', '某歌手')
   await updateCurrentSongKey()
   assert.equal(songKeyInfo.value, null)
@@ -181,11 +247,13 @@ test('快速连续切歌：先发起的那次分析不会覆盖后发起的结�
 
   setSong('歌A', '歌手')
   const first = updateCurrentSongKey()
+  setResource('http://example.com/a.mp3')
   await settle()
   assert.equal(resolvers.length, 1, '歌A 应已进入分析')
 
   setSong('歌B', '歌手')
   const second = updateCurrentSongKey()
+  setResource('http://example.com/b.mp3')
   await settle()
   assert.equal(resolvers.length, 2, '歌B 也应进入分析')
 
@@ -205,14 +273,12 @@ test('置信度达标才写缓存', async() => {
   globalThis.__skSaved = []
   globalThis.__skResolve = async() => null
   globalThis.__skAnalyze = async() => ({ ...gMajor, confidence: 0.9 })
-  setSong('高置信度', '歌手')
-  await updateCurrentSongKey()
+  await startSongWithResource('高置信度', '歌手')
   assert.equal(globalThis.__skSaved.length, 1)
 
   globalThis.__skSaved = []
   globalThis.__skAnalyze = async() => ({ ...gMajor, confidence: 0.2 })
-  setSong('低置信度', '歌手')
-  await updateCurrentSongKey()
+  await startSongWithResource('低置信度', '歌手')
   assert.equal(globalThis.__skSaved.length, 0, '低置信度不应写入缓存')
   // 但结果仍然展示，只是不固化
   assert.equal(songKeyInfo.value.label, '1=G 大调')
@@ -236,8 +302,7 @@ test('有时间轴时，显示的调随播放位置切换', async() => {
     confidence: 0.8,
     timeline: modulatingTimeline,
   })
-  setSong('转调的歌', '某歌手')
-  await updateCurrentSongKey()
+  await startSongWithResource('转调的歌', '某歌手')
 
   playbackSeconds.value = 0
   assert.equal(effectiveSongKey.value.label, '1=G 大调')
@@ -273,8 +338,7 @@ test('切歌时播放位置归零，不会沿用上一首的进度', async() => 
     confidence: 0.8,
     timeline: modulatingTimeline,
   })
-  setSong('第一首转调歌', '某歌手')
-  await updateCurrentSongKey()
+  await startSongWithResource('第一首转调歌', '某歌手')
   playbackSeconds.value = 120
   assert.equal(effectiveSongKey.value.label, '1=A 大调')
 
