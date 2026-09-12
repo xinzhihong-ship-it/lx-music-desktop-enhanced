@@ -31,6 +31,7 @@ import { isPlayErrorHandlingEnabled } from './errorStrategy'
 import { getVideoUrl } from '@renderer/utils/musicSdk/bili/api'
 import { biliPlaybackMode, biliVideoQuality, isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { toOldMusicInfo } from '@renderer/utils'
+import { setPlaybackIntent } from './playbackIntent'
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
 let gettingUrlId = ''
@@ -260,6 +261,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
   if (!musicInfo) return
 
   const autoPlay = appSetting['player.startupAutoPlay']
+  setPlaybackIntent(autoPlay)
 
   // MPV / Audirvana 引擎在启动时不会保留播放状态，需要重新加载 URL；
   // 内置引擎则保持原有行为，由用户手动触发或 startupAutoPlay 控制。
@@ -303,6 +305,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
 
 // 处理音乐播放
 const handlePlay = () => {
+  clearShouldPlayAfterSeek()
   window.lx.isPlayedStop &&= false
   rendererPausedAt = 0
 
@@ -324,6 +327,7 @@ const handlePlay = () => {
 
   if (appSetting['player.togglePlayMethod'] == 'random' && !playMusicInfo.isTempPlay) addPlayedList({ ...(playMusicInfo as LX.Player.PlayMusicInfo) })
 
+  setPlaybackIntent(true)
   shouldPlayAfterLoad = true
   setMusicUrl(musicInfo)
 
@@ -492,7 +496,8 @@ const handlePlayNext = (playMusicInfo: LX.Player.PlayMusicInfo) => {
  * @param isAutoToggle 是否自动切换
  * @returns
  */
-export const playNext = async(isAutoToggle = false): Promise<void> => {
+export const playNext = async(isAutoToggle = false, canContinue: () => boolean = () => true): Promise<void> => {
+  if (!canContinue()) return
   console.log('skip next', isAutoToggle)
   if (tempPlayList.length) { // 如果稍后播放列表存在歌曲则直接播放改列表的歌曲
     const playMusicInfo = tempPlayList[0]
@@ -556,6 +561,7 @@ export const playNext = async(isAutoToggle = false): Promise<void> => {
     isNext: true,
   })
 
+  if (!canContinue()) return
   if (!filteredList.length) {
     handleToggleStop()
     console.log('filtered list empty')
@@ -701,9 +707,10 @@ export const playPrev = async(isAutoToggle = false): Promise<void> => {
 export const play = () => {
   window.lx.isPlayedStop &&= false
   if (playMusicInfo.musicInfo == null) return
+  setPlaybackIntent(true)
   if (isEmpty()) {
+    shouldPlayAfterLoad = true
     if (createGettingUrlId(playMusicInfo.musicInfo) != gettingUrlId) {
-      shouldPlayAfterLoad = true
       setMusicUrl(playMusicInfo.musicInfo)
     }
     return
@@ -719,11 +726,20 @@ export const play = () => {
   setPlay()
 }
 
-/**
- * 暂停播放
- */
-export const pause = () => {
+const cancelPendingPlayback = () => {
+  setPlaybackIntent(false)
   clearShouldPlayAfterLoad()
+  clearShouldPlayAfterSeek()
+  clearLoadTimeout()
+  cancelDelayRetry?.()
+  activeUrlRequest++
+  gettingUrlId = ''
+  setAllStatus('')
+}
+
+/** 暂停播放，并使所有尚未完成的自动恢复失效。 */
+export const pause = () => {
+  cancelPendingPlayback()
   rendererPausedAt = getCurrentTime()
   if (isBiliVideoActive()) setPlayerPlaying(false)
   setPause()
@@ -733,7 +749,7 @@ export const pause = () => {
  * 停止播放
  */
 export const stop = () => {
-  clearShouldPlayAfterLoad()
+  cancelPendingPlayback()
   setPlayQuality('')
   setStop()
   setTimeout(() => {

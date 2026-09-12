@@ -1,8 +1,8 @@
 import { onBeforeUnmount } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
-import { musicInfo, playMusicInfo, isPlay, playQuality } from '@renderer/store/player/state'
+import { musicInfo, playMusicInfo, playQuality } from '@renderer/store/player/state'
 import { setStop } from '@renderer/plugins/player'
-import { getShouldPlayAfterLoad, playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
+import { playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { getPlayErrorActions, getPlayErrorApiSourceCount, getPlayErrorRetryCount, isPlayErrorHandlingEnabled } from '@renderer/core/player/errorStrategy'
@@ -11,6 +11,7 @@ import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { getNextApiSourceId } from '@common/utils/playErrorStrategy'
 import { userApi } from '@renderer/store'
 import { setUserApi } from '@renderer/core/apiSource'
+import { getPlaybackIntent, getPlaybackIntentRevision, onPlaybackIntentChange } from '@renderer/core/player/playbackIntent'
 
 export default () => {
   const t = useI18n()
@@ -20,6 +21,7 @@ export default () => {
   let triedApiSourceIds = new Set<string>()
   let recoverPromise: Promise<void> | null = null
   let recoveryGeneration = 0
+  let recoveryIntentRevision = 0
 
   let loadingTimeout: NodeJS.Timeout | null = null
   let delayNextTimeout: NodeJS.Timeout | null = null
@@ -27,7 +29,8 @@ export default () => {
     // console.log('start load timeout')
     clearLoadingTimeout()
     loadingTimeout = setTimeout(() => {
-      if (window.lx.isPlayedStop) {
+      loadingTimeout = null
+      if (window.lx.isPlayedStop || !getPlaybackIntent()) {
         setAllStatus('')
         return
       }
@@ -47,7 +50,8 @@ export default () => {
     clearTimeout(delayNextTimeout)
     delayNextTimeout = null
   }
-  const isRecoveryCurrent = (generation: number) => generation == recoveryGeneration && !window.lx.isPlayedStop
+  const isRecoveryCurrent = (generation: number) => generation == recoveryGeneration &&
+    recoveryIntentRevision == getPlaybackIntentRevision() && getPlaybackIntent() && !window.lx.isPlayedStop
   const addDelayNextTimeout = (generation: number) => {
     if (!isRecoveryCurrent(generation)) return
     clearDelayNextTimeout()
@@ -58,18 +62,19 @@ export default () => {
         setAllStatus('')
         return
       }
-      void playNext(true)
+      void playNext(true, () => isRecoveryCurrent(generation))
     }, 5000)
   }
 
   const handleLoadstart = () => {
     if (window.lx.isPlayedStop) return
     if (appSetting['player.playEngine'] === 'audirvana' && !isBiliVideoActive()) return
-    if (isPlayErrorHandlingEnabled()) startLoadingTimeout()
+    if (getPlaybackIntent() && isPlayErrorHandlingEnabled()) startLoadingTimeout()
     setAllStatus(t('player__loading'))
   }
 
   const handleLoadeddata = () => {
+    clearLoadingTimeout()
     if (appSetting['player.playEngine'] === 'audirvana' && !isBiliVideoActive()) return
     // 文件已加载完成，清除“加载中”状态；
     // 若随后进入播放，handlePlaying 会再次清空；若保持暂停，也不应继续显示加载中。
@@ -94,7 +99,7 @@ export default () => {
     if (!isRecoveryCurrent(generation)) return
     if (document.hidden) {
       console.warn('error skip to next')
-      void playNext(true)
+      void playNext(true, () => isRecoveryCurrent(generation))
     } else {
       setAllStatus(t('player__error'))
       setTimeout(() => { addDelayNextTimeout(generation) })
@@ -198,10 +203,11 @@ export default () => {
   const handleError = (errCode?: number) => {
     if (!musicInfo.id) return
     clearLoadingTimeout()
-    if (window.lx.isPlayedStop || recoverPromise) return
+    if (window.lx.isPlayedStop || !getPlaybackIntent() || recoverPromise) return
     // 首次点击播放时，MPV 可能还没发出 playing；此时仍要保留用户的播放意图，
     // 否则首个 CDN 失败后切换备用地址会停在暂停状态，必须再次点击播放。
-    const shouldResume = isPlay.value || getShouldPlayAfterLoad()
+    const shouldResume = getPlaybackIntent()
+    recoveryIntentRevision = getPlaybackIntentRevision()
     const currentMusicId = musicInfo.id
     const generation = ++recoveryGeneration
     // 即使 renderer 已经把 mpv 标记为空，主进程仍可能正在播放旧 URL；
@@ -227,6 +233,10 @@ export default () => {
     clearLoadingTimeout()
   }
 
+  const removePlaybackIntentListener = onPlaybackIntentChange(playing => {
+    if (!playing) handleSetPlayInfo()
+  })
+
   window.app_event.on('playerLoadstart', handleLoadstart)
   window.app_event.on('playerLoadeddata', handleLoadeddata)
   window.app_event.on('playerPlaying', handlePlaying)
@@ -237,6 +247,7 @@ export default () => {
   window.app_event.on('stop', handleSetPlayInfo)
 
   onBeforeUnmount(() => {
+    removePlaybackIntentListener()
     handleSetPlayInfo()
     window.app_event.off('playerLoadstart', handleLoadstart)
     window.app_event.off('playerLoadeddata', handleLoadeddata)

@@ -54,6 +54,7 @@ import useSoundEffect from './useSoundEffect'
 import useMaxOutputChannelCount from './useMaxOutputChannelCount'
 import { setPowerSaveBlocker } from '@renderer/core/player/utils'
 import usePreloadNextMusic from './usePreloadNextMusic'
+import { getPlaybackIntent, setPlaybackIntent } from '@renderer/core/player/playbackIntent'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 
 export default () => {
@@ -121,13 +122,14 @@ export default () => {
   }
 
   const handleUpdatePlayInfo = () => {
+    clearShouldPlayAfterSeek()
     isSwitchingMusic = true
     switchPauseHandled = false
     setTitle(musicInfo.id ? `${musicInfo.name} - ${musicInfo.singer}` : null)
   }
 
   const handleCanplay = () => {
-    if (window.lx.isPlayedStop) {
+    if (window.lx.isPlayedStop || !getPlaybackIntent()) {
       setPause()
     } else if (getShouldPlayAfterLoad()) {
       // 仅在明确需要加载后播放时才显式调用播放，
@@ -150,8 +152,9 @@ export default () => {
       // 不主动暂停，避免与外部播放器切歌时的播放命令竞争。
       if (!isPlay.value) setPause()
     } else if (!isPlay.value) {
-      // 内置引擎在未播放时（如启动不自动播放）需要暂停。
-      setPause()
+      // 用户已经明确点击播放，但浏览器在 canplay 时还没有先发出 playing；
+      // 这时应继续发出播放命令，不能把“尚未同步到 UI 的播放状态”误判为暂停。
+      playerSetPlay()
     } else {
       // 内置引擎在播放中 seek/缓冲后，如果 audio 被浏览器停在暂停状态，
       // 通过 canplay 主动恢复播放，避免“拖进度条后自动暂停”。
@@ -190,6 +193,9 @@ export default () => {
   }
 
   const setStopStatus = () => {
+    setPlaybackIntent(false)
+    clearShouldPlayAfterLoad()
+    clearShouldPlayAfterSeek()
     isSwitchingMusic = false
     setPlay(false)
     setTitle(null)
