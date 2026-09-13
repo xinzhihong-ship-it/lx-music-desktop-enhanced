@@ -328,71 +328,211 @@ export const getUserPlaylists = async(
     .filter((item: LX.Account.PlaylistInfo) => item.id)
 }
 
+const normalizeKgTrackId = (value: unknown) => String(value ?? '').trim().toLowerCase()
+
+const getKgPlaylistSongs = (body: any): any[] => {
+  const roots = [body?.data, body]
+  for (const root of roots) {
+    if (Array.isArray(root)) return root
+    for (const key of ['songs', 'info', 'list', 'files', 'data']) {
+      if (Array.isArray(root?.[key])) return root[key]
+    }
+  }
+  return []
+}
+
+const getKgPlaylistTotal = (body: any) => {
+  const roots = [body?.data, body]
+  for (const root of roots) {
+    for (const key of ['count', 'total', 'song_count', 'songcount', 'total_count']) {
+      const value = Number(root?.[key])
+      if (Number.isFinite(value) && value >= 0) return value
+    }
+  }
+  return undefined
+}
+
+const getKgTrackHash = (song: any) => String(
+  song?.hash ??
+    song?.Hash ??
+    song?.FileHash ??
+    song?.filehash ??
+    song?.audio_info?.hash ??
+    '',
+).trim()
+
+// The listid endpoint returns the cloud-list rows in storage order.  Its
+// display rank counts down toward zero for the newest row, so use it to
+// match the order shown by the official client when it is available.
+const getKgPlaylistSort = (song: any) => {
+  for (const key of ['sort', 'list_sort', 'listSort']) {
+    const rawValue = song?.[key]
+    if (rawValue == null || rawValue === '') continue
+    const value = Number(rawValue)
+    if (Number.isFinite(value)) return value
+  }
+  return undefined
+}
+
+const getKgFileId = (song: any) => {
+  const value = song?.fileid ?? song?.file_id ?? song?.FileID
+  if (value == null || !/^\d+$/.test(String(value).trim())) return undefined
+  const fileId = Number(value)
+  return Number.isSafeInteger(fileId) && fileId > 0 ? String(fileId) : undefined
+}
+
+const getKgMutationFileIds = (body: any) => {
+  const roots = [body?.data, body]
+  const values: unknown[] = []
+  for (const root of roots) {
+    for (const key of ['del_fileids', 'deleted_fileids', 'fileids', 'file_ids']) {
+      const value = root?.[key]
+      if (Array.isArray(value)) values.push(...value)
+      else if (typeof value === 'string') values.push(...value.split(','))
+      else if (value != null) values.push(value)
+    }
+  }
+  return [...new Set(values.map(value => getKgFileId({ fileid: value })).filter(Boolean))] as string[]
+}
+
 export const getPlaylistTrackIds = async(
   sessionValue: LX.Account.LoginSession | null,
   playlistId: string,
-  _dirId?: string,
+  dirId?: string,
 ): Promise<LX.Account.PlaylistTrackInfo[]> => {
   const session = requireSession(sessionValue)
   const pageSize = 300
-  const tracks: LX.Account.PlaylistTrackInfo[] = []
+  const trackRows: Array<{
+    track: LX.Account.PlaylistTrackInfo
+    sort?: number
+    order: number
+  }> = []
   let beginIndex = 0
+  let page = 1
+  let pageCount = 0
+  let rowOrder = 0
+  const listId = Number(dirId)
+  const useOwnListEndpoint = Boolean(
+    dirId && Number.isSafeInteger(listId) && listId > 0,
+  )
 
   while (true) {
-    const params = {
+    const common = {
       ...commonParams(session),
       token: session.tokens.token,
       userid: session.tokens.userId,
-      area_code: 1,
-      begin_idx: beginIndex,
-      plat: 1,
-      type: 1,
-      mode: 1,
-      personal_switch: 1,
-      extend_fields: 'abtags,hot_cmt,popularization',
-      pagesize: pageSize,
-      global_collection_id: playlistId,
     }
-    const response = await httpFetch<any>(
-      buildUrl(
-        'https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt',
-        params,
-        ANDROID_KEY,
-      ),
-      {
-        method: 'GET',
-        headers: commonHeaders(params),
-      },
-    )
-    if (response.statusCode !== 200 || response.body?.status !== 1) {
-      throw new Error(
-        response.body?.error ||
-          response.body?.errmsg ||
-          response.body?.msg ||
-          '获取酷狗歌单歌曲失败',
+    let response: any
+    if (useOwnListEndpoint) {
+      const params = { ...common, plat: 1 }
+      const body = JSON.stringify({
+        listid: listId,
+        userid: session.tokens.userId,
+        area_code: 1,
+        show_relate_goods: 0,
+        pagesize: pageSize,
+        allplatform: 1,
+        show_cover: 1,
+        type: 0,
+        token: session.tokens.token,
+        page,
+      })
+      response = await httpFetch<any>(
+        buildUrl(
+          'https://gateway.kugou.com/v4/get_list_all_file',
+          params,
+          ANDROID_KEY,
+          body,
+        ),
+        {
+          method: 'POST',
+          headers: {
+            ...commonHeaders(params),
+            'Content-Type': 'application/json',
+            'x-router': 'cloudlist.service.kugou.com',
+          },
+          text: body,
+        },
+      )
+    } else {
+      const params = {
+        ...common,
+        area_code: 1,
+        begin_idx: beginIndex,
+        plat: 1,
+        type: 1,
+        mode: 1,
+        personal_switch: 1,
+        extend_fields: 'abtags,hot_cmt,popularization',
+        pagesize: pageSize,
+        global_collection_id: playlistId,
+        module: 'CloudMusic',
+        need_sort: 1,
+        need_rd: 0,
+      }
+      response = await httpFetch<any>(
+        buildUrl(
+          'https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt',
+          params,
+          ANDROID_KEY,
+        ),
+        {
+          method: 'GET',
+          headers: commonHeaders(params),
+        },
       )
     }
-    const songs = response.body.data?.songs ?? []
-    tracks.push(
-      ...songs
-        .map((song: any) => ({
-          id: String(song.hash ?? song.audio_info?.hash ?? ''),
-          removeId: String(
-            song.fileid ?? song.audio_id ?? song.audio_info?.audio_id ?? '',
-          ),
-        }))
-        .filter((track: LX.Account.PlaylistTrackInfo) => track.id),
-    )
-    const total = Number(response.body.data?.count) || 0
+    if (response.statusCode !== 200 || Number(response.body?.status) !== 1) {
+      const status = response.body?.status == null ? '缺失' : String(response.body.status)
+      const reason = response.body?.error || response.body?.errmsg || response.body?.msg
+      throw new Error(
+        `获取酷狗歌单歌曲失败（HTTP ${response.statusCode ?? 0}，status ${status}${reason ? `：${reason}` : ''}）`,
+      )
+    }
+    const songs = getKgPlaylistSongs(response.body)
+    const pageRows = songs
+      .map((song: any) => {
+        const id = getKgTrackHash(song)
+        if (!id) return null
+        return {
+          track: { id, removeId: getKgFileId(song) },
+          sort: getKgPlaylistSort(song),
+          order: rowOrder++,
+        }
+      })
+      .filter(Boolean) as Array<{
+      track: LX.Account.PlaylistTrackInfo
+      sort?: number
+      order: number
+    }>
+    const previousCount = trackRows.length
+    trackRows.push(...pageRows)
+    pageCount++
+    const total = getKgPlaylistTotal(response.body)
+    const uniqueCount = new Set(trackRows.map(({ track }) => normalizeKgTrackId(track.id))).size
+    const noProgress = !songs.length || pageRows.length === 0 || uniqueCount <= previousCount
+    const reachedTotal = total != null && total > 0 && uniqueCount >= total
     if (
-      !songs.length ||
+      noProgress ||
       songs.length < pageSize ||
-      (total > 0 && tracks.length >= total)
+      reachedTotal ||
+      pageCount >= 200
     ) { break }
-    beginIndex += songs.length
+    if (useOwnListEndpoint) page++
+    else beginIndex += songs.length
   }
 
-  return [...new Map(tracks.map((track) => [track.id, track])).values()]
+  const seen = new Set<string>()
+  const uniqueRows = trackRows.filter(({ track }) => {
+    const key = normalizeKgTrackId(track.id)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  if (useOwnListEndpoint && uniqueRows.length > 1 && uniqueRows.every(({ sort }) => sort != null)) {
+    uniqueRows.sort((a, b) => (a.sort! - b.sort!) || (a.order - b.order))
+  }
+  return uniqueRows.map(({ track }) => track)
 }
 
 const requestPlaylistMutation = async(
@@ -421,18 +561,170 @@ const requestPlaylistMutation = async(
       text: body,
     },
   )
-  if (
-    response.statusCode !== 200 ||
-    response.body?.status === 0 ||
-    Number(response.body?.error_code ?? 0) !== 0
-  ) {
+  if (response.statusCode !== 200) {
+    throw new Error(`酷狗歌单操作 HTTP ${response.statusCode ?? 0}`)
+  }
+  const status = response.body?.status
+  if (status == null) {
+    throw new Error('酷狗歌单操作响应缺少明确成功状态')
+  }
+  if (Number(status) !== 1) {
     throw new Error(
       response.body?.error ||
         response.body?.errmsg ||
         response.body?.msg ||
-        '酷狗歌单操作失败',
+        `酷狗歌单操作失败（status ${String(status)}）`,
     )
   }
+  const nestedStatus = response.body?.data?.status
+  if (nestedStatus != null && Number(nestedStatus) !== 1) {
+    throw new Error(
+      response.body?.data?.error ||
+        response.body?.data?.errmsg ||
+        response.body?.data?.msg ||
+        `酷狗歌单操作失败（data.status ${String(nestedStatus)}）`,
+    )
+  }
+  for (const key of ['retCode', 'ret_code', 'error_code', 'err_code']) {
+    if (response.body?.data?.[key] != null && Number(response.body.data[key]) !== 0) {
+      throw new Error(
+        response.body?.data?.error ||
+          response.body?.data?.errmsg ||
+          response.body?.data?.msg ||
+          `酷狗歌单操作失败（data.${key} ${String(response.body.data[key])}）`,
+      )
+    }
+  }
+  for (const key of ['error_code', 'err_code', 'retCode', 'ret_code']) {
+    if (response.body?.[key] != null && Number(response.body[key]) !== 0) {
+      throw new Error(
+        response.body?.error ||
+          response.body?.errmsg ||
+          response.body?.msg ||
+          `酷狗歌单操作失败（${key} ${String(response.body[key])}）`,
+      )
+    }
+  }
+  return response.body
+}
+
+const isKgUncertainMutationError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return /超时|timeout|timed out|socket|连接|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|fetch failed|aborted|HTTP 5\d\d|网络|缺少明确成功状态/i.test(message)
+}
+
+const describeKgMutationError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  if (isKgUncertainMutationError(error)) return `网络错误或结果待确认：${message}`
+  if (/HTTP 401|HTTP 403|登录状态|token|userid|鉴权|未授权/i.test(message)) return `鉴权失败：${message}`
+  if (/list|歌单|fileid|Hash|hash|参数/i.test(message)) return `参数错误：${message}`
+  return message
+}
+
+const KG_MUTATION_CONFIRM_DELAYS = [0, 350, 900]
+
+const waitForKgMutationConfirm = async(delay: number) => {
+  if (!delay) return Promise.resolve()
+  return new Promise<void>((resolve) => setTimeout(resolve, delay))
+}
+
+/**
+ * The cloud-list mutation endpoints return the committed rows/version even
+ * while get_list_all_file is still serving the previous snapshot. Use that
+ * explicit result as the fast confirmation path; the renderer will re-read
+ * the playlist after the IPC call completes.
+ */
+const isKgMutationResponseConfirmed = (
+  body: any,
+  tracks: LX.Account.PlaylistMutationTrack[],
+  action: 'add' | 'remove',
+  fileIds: string[],
+) => {
+  const data = body?.data
+  if (!data || Number(data.status) !== 1) return false
+  if (action === 'add') {
+    const returnedHashes = new Set(
+      getKgPlaylistSongs(body)
+        .map(song => normalizeKgTrackId(getKgTrackHash(song)))
+        .filter(Boolean),
+    )
+    return returnedHashes.size > 0 && tracks.every(track => {
+      const hash = normalizeKgTrackId(track.hash)
+      return Boolean(hash) && returnedHashes.has(hash)
+    })
+  }
+  const returnedFileIds = getKgMutationFileIds(body)
+  // v4/delete_songs currently reports the new count/list version rather than
+  // echoing del_fileids. A successful data.status with a numeric count is the
+  // server's committed result for the exact fileids sent in this request.
+  return (
+    (returnedFileIds.length > 0 && fileIds.every(fileId => returnedFileIds.includes(fileId))) ||
+    (Number.isSafeInteger(Number(data.count)) && Number(data.count) >= 0)
+  )
+}
+
+const confirmKgPlaylistMutation = async(
+  session: LX.Account.LoginSession,
+  playlistId: string,
+  dirId: string,
+  tracks: LX.Account.PlaylistMutationTrack[],
+  action: 'add' | 'remove',
+  fileIds: string[] = [],
+  mutationBody?: any,
+) => {
+  if (isKgMutationResponseConfirmed(mutationBody, tracks, action, fileIds)) return
+  let lastReadError: unknown
+  for (const delay of KG_MUTATION_CONFIRM_DELAYS) {
+    await waitForKgMutationConfirm(delay)
+    let current: LX.Account.PlaylistTrackInfo[]
+    try {
+      current = await getPlaylistTrackIds(session, playlistId, dirId)
+    } catch (error) {
+      lastReadError = error
+      continue
+    }
+    if (action === 'add') {
+      const currentHashes = new Set(current.map(track => normalizeKgTrackId(track.id)))
+      const applied = tracks.every(track => {
+        const hash = normalizeKgTrackId(track.hash)
+        return Boolean(hash) && currentHashes.has(hash)
+      })
+      if (applied) return
+    } else {
+      const currentFileIds = new Set(current.map(track => track.removeId).filter(Boolean))
+      if (fileIds.length === tracks.length && fileIds.every(fileId => !currentFileIds.has(fileId))) return
+    }
+  }
+  if (lastReadError) {
+    throw new Error(
+      `酷狗音乐${action === 'add' ? '添加' : '删除'}结果待确认：无法重新读取歌单（${lastReadError instanceof Error ? lastReadError.message : String(lastReadError)}）`,
+    )
+  }
+  throw new Error(
+    `酷狗音乐${action === 'add' ? '添加' : '删除'}结果待确认：接口返回成功，但重新读取歌单后未${action === 'add' ? '找到歌曲' : '确认目标条目已删除'}`,
+  )
+}
+
+const resolveKgFileIds = async(
+  session: LX.Account.LoginSession,
+  playlistId: string,
+  dirId: string,
+  tracks: LX.Account.PlaylistMutationTrack[],
+) => {
+  const knownFileIds = tracks.map(track => getKgFileId({ fileid: track.platformId }))
+  if (knownFileIds.every(Boolean)) return knownFileIds as string[]
+  const current = await getPlaylistTrackIds(session, playlistId, dirId)
+  const filesByHash = new Map<string, string>()
+  for (const track of current) {
+    if (track.removeId) filesByHash.set(normalizeKgTrackId(track.id), track.removeId)
+  }
+  return tracks.map((track, index) => {
+    if (knownFileIds[index]) return knownFileIds[index]
+    const hash = normalizeKgTrackId(track.hash)
+    const fileId = filesByHash.get(hash)
+    if (!hash || !fileId) throw new Error(`歌曲「${track.name}」缺少已确认的酷狗歌单 fileid`)
+    return fileId
+  })
 }
 
 export const addPlaylistTracks = async(
@@ -443,6 +735,7 @@ export const addPlaylistTracks = async(
 ) => {
   const session = requireSession(sessionValue)
   if (!dirId) throw new Error('酷狗歌单缺少列表 ID')
+  if (!tracks.length) return
   const data = tracks.map((track) => ({
     number: 1,
     name: track.name,
@@ -456,21 +749,31 @@ export const addPlaylistTracks = async(
   }))
   if (data.some((track) => !track.hash)) { throw new Error('部分歌曲缺少酷狗歌曲 Hash') }
   const now = Math.floor(Date.now() / 1000)
-  await requestPlaylistMutation(
-    session,
-    'https://gateway.kugou.com/cloudlist.service/v6/add_song',
-    {
-      userid: session.tokens.userId,
-      token: session.tokens.token,
-      listid: dirId,
-      list_ver: 0,
-      type: 0,
-      slow_upload: 1,
-      scene: 'false;null',
-      data,
-    },
-    { last_time: now, last_area: 'gztx' },
-  )
+  let mutationBody: any
+  try {
+    mutationBody = await requestPlaylistMutation(
+      session,
+      'https://gateway.kugou.com/cloudlist.service/v6/add_song',
+      {
+        userid: session.tokens.userId,
+        token: session.tokens.token,
+        listid: dirId,
+        list_ver: 0,
+        type: 0,
+        slow_upload: 1,
+        scene: 'false;null',
+        data,
+      },
+      { last_time: now, last_area: 'gztx' },
+    )
+  } catch (error) {
+    if (isKgUncertainMutationError(error)) {
+      await confirmKgPlaylistMutation(session, _playlistId, dirId, tracks, 'add')
+      return
+    }
+    throw new Error(`酷狗音乐添加歌曲失败：${describeKgMutationError(error)}`)
+  }
+  await confirmKgPlaylistMutation(session, _playlistId, dirId, tracks, 'add', [], mutationBody)
 }
 
 export const removePlaylistTracks = async(
@@ -481,24 +784,37 @@ export const removePlaylistTracks = async(
 ) => {
   const session = requireSession(sessionValue)
   if (!dirId) throw new Error('酷狗歌单缺少列表 ID')
-  const ids = tracks
-    .map((track) => track.platformId)
-    .filter((id): id is string => Boolean(id))
-  if (ids.length !== tracks.length) { throw new Error('部分歌曲缺少酷狗歌单条目 ID') }
-  await requestPlaylistMutation(
-    session,
-    'https://gateway.kugou.com/v4/delete_songs',
-    {
-      listid: dirId,
-      userid: session.tokens.userId,
-      data: ids.map((fileid) => ({ fileid: Number(fileid) })),
-      type: 0,
-      token: session.tokens.token,
-      list_ver: 0,
-    },
-    {},
-    { 'x-router': 'cloudlist.service.kugou.com' },
-  )
+  if (!tracks.length) return
+  let ids: string[]
+  try {
+    ids = await resolveKgFileIds(session, _playlistId, dirId, tracks)
+  } catch (error) {
+    throw new Error(`酷狗音乐删除歌曲失败：${describeKgMutationError(error)}`)
+  }
+  let mutationBody: any
+  try {
+    mutationBody = await requestPlaylistMutation(
+      session,
+      'https://gateway.kugou.com/v4/delete_songs',
+      {
+        listid: dirId,
+        userid: session.tokens.userId,
+        data: ids.map((fileid) => ({ fileid: Number(fileid) })),
+        type: 0,
+        token: session.tokens.token,
+        list_ver: 0,
+      },
+      {},
+      { 'x-router': 'cloudlist.service.kugou.com' },
+    )
+  } catch (error) {
+    if (isKgUncertainMutationError(error)) {
+      await confirmKgPlaylistMutation(session, _playlistId, dirId, tracks, 'remove', ids)
+      return
+    }
+    throw new Error(`酷狗音乐删除歌曲失败：${describeKgMutationError(error)}`)
+  }
+  await confirmKgPlaylistMutation(session, _playlistId, dirId, tracks, 'remove', ids, mutationBody)
 }
 
 export const getDailyTrackIds = async(

@@ -104,6 +104,46 @@ interface AccountGroup {
   error: string
 }
 
+const PLATFORM_MUSIC_SELECTION_KEY = 'platform_music_selection_v1'
+const PLATFORM_SOURCE_ORDER: Partial<Record<LX.Account.Source, number>> = {
+  tx: 0,
+  wy: 1,
+  kg: 2,
+  bili: 3,
+}
+
+interface PlatformMusicSelectionState {
+  accountId: string
+  selections: Record<string, string>
+}
+
+const readPlatformMusicSelection = (): PlatformMusicSelectionState => {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(PLATFORM_MUSIC_SELECTION_KEY) ?? '')
+    if (!value || typeof value !== 'object') throw new Error('invalid state')
+    const selections = value.selections && typeof value.selections === 'object'
+      ? Object.fromEntries(
+        Object.entries(value.selections).filter(([, key]) => typeof key === 'string'),
+      ) as Record<string, string>
+      : {}
+    return {
+      accountId: typeof value.accountId === 'string' ? value.accountId : '',
+      selections,
+    }
+  } catch {
+    return { accountId: '', selections: {} }
+  }
+}
+
+const sortPlatformAccounts = (list: LX.Account.PlatformAccount[]) => list
+  .map((account, index) => ({ account, index }))
+  .sort((a, b) => (
+    (PLATFORM_SOURCE_ORDER[a.account.source] ?? 99) -
+    (PLATFORM_SOURCE_ORDER[b.account.source] ?? 99) ||
+    a.index - b.index
+  ))
+  .map(({ account }) => account)
+
 const groups = ref<AccountGroup[]>([])
 const selectedAccountId = ref('')
 const songs = ref<LX.Music.MusicInfoOnline[]>([])
@@ -122,6 +162,8 @@ let playlistLoadSequence = 0
 let selectionLoadSequence = 0
 let isMounted = true
 let stopPlaylistRevisionWatch: (() => void) | null = null
+let delayedPlaylistRefreshTimer: ReturnType<typeof setTimeout> | null = null
+const platformMusicSelection = readPlatformMusicSelection()
 const filteredRows = computed(() => filterMusicRows(songs.value, filterText.value))
 const filteredSongs = computed(() => filteredRows.value.map(({ item }) => item))
 
@@ -143,6 +185,33 @@ const accountOptions = computed(() => groups.value.map(({ account }) => ({
 })))
 const visibleGroups = computed(() => groups.value.filter(({ account }) => account.id === selectedAccountId.value))
 
+const persistPlatformMusicSelection = () => {
+  try {
+    window.localStorage.setItem(
+      PLATFORM_MUSIC_SELECTION_KEY,
+      JSON.stringify(platformMusicSelection),
+    )
+  } catch {
+    // A storage failure must not prevent changing the visible playlist.
+  }
+}
+
+const rememberPlatformAccount = (accountId: string) => {
+  platformMusicSelection.accountId = accountId
+  persistPlatformMusicSelection()
+}
+
+const rememberPlatformSelection = (accountId: string, key: string) => {
+  platformMusicSelection.accountId = accountId
+  platformMusicSelection.selections[accountId] = key
+  persistPlatformMusicSelection()
+}
+
+const getRememberedSelection = (accountId: string) => {
+  const key = platformMusicSelection.selections[accountId]
+  return key?.startsWith(`${accountId}:`) ? key : ''
+}
+
 const clearSelectedPlaylist = () => {
   selectedKey.value = ''
   selectedTitle.value = ''
@@ -158,7 +227,9 @@ const handleAccountChange = (accountId: string | number) => {
   const nextId = String(accountId)
   if (nextId === selectedAccountId.value) return
   selectedAccountId.value = nextId
+  rememberPlatformAccount(nextId)
   if (!selectedKey.value.startsWith(`${nextId}:`)) clearSelectedPlaylist()
+  void restoreRememberedSelection(nextId)
 }
 
 const loadAllPlaylists = async() => {
@@ -178,7 +249,7 @@ const loadAllPlaylists = async() => {
   }
   if (!isMounted || sequence !== playlistLoadSequence) return
 
-  const accountList = [...accounts.value]
+  const accountList = sortPlatformAccounts(accounts.value)
   const previousGroups = new Map(groups.value.map(group => [group.account.id, group]))
   // 刷新目录时先保留旧歌单；每个账号的请求完成后再替换自己的结果，
   // 这样慢账号不会清空已经显示的内容，失败时也能在旧列表旁显示原因。
@@ -188,7 +259,10 @@ const loadAllPlaylists = async() => {
     error: '',
   }))
   if (!groups.value.some(({ account }) => account.id === selectedAccountId.value)) {
-    const nextAccountId = groups.value[0]?.account.id ?? ''
+    const savedAccountId = platformMusicSelection.accountId
+    const nextAccountId = accountList.some(account => account.id === savedAccountId)
+      ? savedAccountId
+      : groups.value[0]?.account.id ?? ''
     if (nextAccountId) handleAccountChange(nextAccountId)
     else {
       selectedAccountId.value = ''
@@ -212,9 +286,11 @@ const loadAllPlaylists = async() => {
       }
     }
   }))
+  if (!selectedKey.value) void restoreRememberedSelection(selectedAccountId.value, sequence)
 }
 
 const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
+  const normalizeTrackId = (value: unknown) => String(value ?? '').trim().toLowerCase()
   const trackMap = new Map<string, string | undefined>()
   for (const track of tracks ?? []) {
     for (const id of [
@@ -222,15 +298,17 @@ const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
       track.removeId,
       track.detail?.songmid,
       track.detail?.songId,
+      track.detail?.hash,
     ]) {
-      if (id != null && String(id)) trackMap.set(String(id), track.removeId)
+      const key = normalizeTrackId(id)
+      if (key) trackMap.set(key, track.removeId)
     }
   }
   songs.value = markRawList(list.filter(Boolean).map(item => {
     const musicInfo = toNewMusicInfo(item) as LX.Music.MusicInfoOnline
     const meta = musicInfo.meta as any
     const trackId = musicInfo.source == 'kg'
-      ? String(meta.hash)
+      ? normalizeTrackId(meta.hash)
       : String(meta.songId ?? meta.strMediaMid ?? '')
     meta.accountTrackId = trackMap.get(trackId)
     return musicInfo
@@ -315,10 +393,14 @@ const loadPlaylistDetails = async(
     // 详情接口可能过滤下架歌曲，不能按数组下标回填，否则一首缺失会让后续歌曲错位。
     const loadedById = new Map<string, any>()
     for (const detail of loaded) {
-      const id = detail?.songmid
-      if (id != null && String(id)) loadedById.set(String(id), detail)
+      const id = source === 'kg' ? detail?.hash : detail?.songmid
+      const key = String(id ?? '').trim().toLowerCase()
+      if (key) loadedById.set(key, detail)
     }
-    missing.forEach(item => { details[item.index] = loadedById.get(item.id) })
+    missing.forEach(item => {
+      const key = item.id.trim().toLowerCase()
+      details[item.index] = loadedById.get(key)
+    })
   }
   return details
 }
@@ -326,6 +408,7 @@ const loadPlaylistDetails = async(
 const selectDaily = async(account: LX.Account.PlatformAccount) => {
   const requestSequence = ++selectionLoadSequence
   const key = `${account.id}:daily`
+  rememberPlatformSelection(account.id, key)
   const preserveSongs = selectedKey.value === key
   selectedKey.value = key
   selectedTitle.value = window.i18n.t('account__playlist_tab_daily')
@@ -349,6 +432,7 @@ const selectDaily = async(account: LX.Account.PlatformAccount) => {
 
 const selectPlaylist = async(account: LX.Account.PlatformAccount, playlist: LX.Account.PlaylistInfo) => {
   const key = `${account.id}:${playlist.id}`
+  rememberPlatformSelection(account.id, key)
   const preserveSongs = selectedKey.value === key
   const requestSequence = ++selectionLoadSequence
   selectedKey.value = key
@@ -369,6 +453,21 @@ const selectPlaylist = async(account: LX.Account.PlatformAccount, playlist: LX.A
   } finally {
     if (requestSequence === selectionLoadSequence) isLoading.value = false
   }
+}
+
+const restoreRememberedSelection = async(accountId: string, loadSequence?: number) => {
+  if (!isMounted || (loadSequence != null && loadSequence !== playlistLoadSequence)) return
+  const group = groups.value.find(item => item.account.id === accountId)
+  if (!group || selectedKey.value) return
+  const key = getRememberedSelection(accountId)
+  if (!key) return
+  if (key === `${accountId}:daily`) {
+    if (group.account.source !== 'bili') void selectDaily(group.account)
+    return
+  }
+  const playlistId = key.slice(accountId.length + 1)
+  const playlist = group.playlists.find(item => item.id === playlistId)
+  if (playlist) void selectPlaylist(group.account, playlist)
 }
 
 const refreshSelectedPlaylist = async() => {
@@ -436,6 +535,13 @@ onMounted(() => {
   window.key_event.on('key_mod+f_down', handleShowLocator)
   stopPlaylistRevisionWatch = watch(platformPlaylistRevision, () => {
     void Promise.allSettled([refreshSelectedPlaylist(), loadAllPlaylists()])
+    // 酷狗写入接口会先提交变更，歌单读取接口可能在短时间内继续返回旧缓存。
+    // 写入调用本身立即结束，稍后补读一次让列表最终收敛到云端结果。
+    if (delayedPlaylistRefreshTimer) clearTimeout(delayedPlaylistRefreshTimer)
+    delayedPlaylistRefreshTimer = setTimeout(() => {
+      delayedPlaylistRefreshTimer = null
+      if (isMounted) void refreshSelectedPlaylist()
+    }, 1200)
   })
   void loadAllPlaylists().catch(console.error)
 })
@@ -445,6 +551,8 @@ onBeforeUnmount(() => {
   selectionLoadSequence++
   stopPlaylistRevisionWatch?.()
   stopPlaylistRevisionWatch = null
+  if (delayedPlaylistRefreshTimer) clearTimeout(delayedPlaylistRefreshTimer)
+  delayedPlaylistRefreshTimer = null
   window.key_event.off('key_mod+f_down', handleShowLocator)
 })
 </script>
