@@ -29,8 +29,8 @@ export const filterMusicInfoItem = item => {
   }
   if (item.file.size_hires !== 0) {
     let size = sizeFormate(item.file.size_hires)
-    types.push({ type: 'flac24bit', size })
-    _types.flac24bit = {
+    types.push({ type: 'hires', size })
+    _types.hires = {
       size,
     }
   }

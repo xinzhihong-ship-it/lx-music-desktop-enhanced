@@ -1090,7 +1090,7 @@ const radarTrackToMusicInfo = (item: any): LX.Music.MusicInfoOnline | null => {
   addQuality('128k', Number(file.size_128mp3 ?? 0))
   addQuality('320k', Number(file.size_320mp3 ?? 0))
   addQuality('flac', Number(file.size_flac ?? 0))
-  addQuality('flac24bit', Number(file.size_hires ?? 0))
+  addQuality('hires', Number(file.size_hires ?? 0))
   const modernSizes = Array.isArray(file.size_new) ? file.size_new : []
   addQuality('master', Number(modernSizes[0] ?? 0))
   addQuality('atmos', Number(modernSizes[1] ?? 0))

@@ -106,15 +106,15 @@ const platforms = [
 ]
 
 const qualityNames = {
-  master: '母带',
-  atmos_plus: 'ATMOS+',
-  atmos: 'ATMOS',
-  hires: 'Hi-Res',
-  flac24bit: 'FLAC 24bit',
-  flac: 'FLAC',
-  '320k': '320K',
-  '192k': '192K',
-  '128k': '128K',
+  master: '臻品母带',
+  atmos_plus: '臻品音质2.0',
+  atmos: '臻品音质',
+  hires: 'Hires 无损24-Bit',
+  flac24bit: 'Hires 无损24-Bit',
+  flac: 'FLAC 无损',
+  '320k': '320K 高音',
+  '192k': '优质 192K',
+  '128k': '128K 普音',
   ape: 'APE',
   wav: 'WAV',
 }
@@ -496,10 +496,10 @@ export default {
               const detailParts = [detail]
               if (isSpecialRequest) detailParts.push('专有档位无法仅凭文件确认')
               else if (uncertainContainer) detailParts.push(`${String(probe.format).toUpperCase()} 容器无法仅凭采样率确认编码`)
-              detailParts.push(verdict.detected == null || isSpecialRequest
-                ? '实测档位：无法确认'
-                : verdict.downgraded
-                  ? `实测档位：${this.qualityLabel(verdict.quality)}`
+              detailParts.push(verdict.downgraded
+                ? `实测档位：${this.qualityLabel(verdict.quality)}`
+                : verdict.detected == null || isSpecialRequest
+                  ? '实测档位：无法确认'
                   : `规格符合：${this.qualityLabel(verdict.quality)}`)
               this.addResult({ ...this.resultBase(api, platform, quality, song), actualFormat: probe.format, actualSampleRate: probe.sampleRate, actualContentLength: probe.contentLength, status, statusLabel, detail: detailParts.join(' · ') })
             }

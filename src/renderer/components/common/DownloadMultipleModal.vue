@@ -2,14 +2,13 @@
   <material-modal :show="show" :bg-close="bgClose" :teleport="teleport" @close="handleClose">
     <main :class="$style.main">
       <h2>{{ $t('download__multiple_tip', { len: list.length }) }}<br>{{ $t('download__multiple_tip2') }}</h2>
-      <base-btn :class="$style.btn" @click="handleClick('128k')">{{ $t('download__normal') }} - 128K · {{ getDownloadFormat('128k') }}</base-btn>
-      <base-btn :class="$style.btn" @click="handleClick('320k')">{{ $t('download__high_quality') }} - 320K · {{ getDownloadFormat('320k') }}</base-btn>
-      <base-btn :class="$style.btn" @click="handleClick('flac')">{{ $t('download__lossless') }} - FLAC · {{ getDownloadFormat('flac') }}</base-btn>
-      <base-btn :class="$style.btn" @click="handleClick('flac24bit')">{{ $t('download__lossless') }} - FLAC Hires · {{ getDownloadFormat('flac24bit') }}</base-btn>
-      <base-btn :class="$style.btn" @click="handleClick('hires')">{{ $t('download__lossless') }} - Hires · {{ getDownloadFormat('hires') }}</base-btn>
-      <base-btn :class="$style.btn" @click="handleClick('atmos')">{{ $t('download__lossless') }} - Atmos · {{ getDownloadFormat('atmos') }}</base-btn>
-      <base-btn :class="$style.btn" @click="handleClick('atmos_plus')">{{ $t('download__lossless') }} - Atmos Plus · {{ getDownloadFormat('atmos_plus') }}</base-btn>
-      <base-btn :class="$style.btn" @click="handleClick('master')">{{ $t('download__lossless') }} - Master · {{ getDownloadFormat('master') }}</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('128k')">{{ $t('setting__play_quality_128k') }} · {{ getDownloadFormat('128k') }}</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('320k')">{{ $t('setting__play_quality_320k') }} · {{ getDownloadFormat('320k') }}</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('flac')">{{ $t('setting__play_quality_flac') }} · {{ getDownloadFormat('flac') }}</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('hires')">{{ $t('setting__play_quality_hires') }} · {{ getDownloadFormat('hires') }}</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('atmos')">{{ $t('setting__play_quality_atmos') }} · {{ getDownloadFormat('atmos') }}</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('atmos_plus')">{{ $t('setting__play_quality_atmos_plus') }} · {{ getDownloadFormat('atmos_plus') }}</base-btn>
+      <base-btn :class="$style.btn" @click="handleClick('master')">{{ $t('setting__play_quality_master') }} · {{ getDownloadFormat('master') }}</base-btn>
     </main>
   </material-modal>
 </template>

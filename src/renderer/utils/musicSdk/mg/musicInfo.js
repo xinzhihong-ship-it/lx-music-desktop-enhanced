@@ -54,8 +54,8 @@ export const filterMusicInfoList = (rawList) => {
           break
         case 'ZQ':
           size = sizeFormate(type.size ?? type.androidSize)
-          types.push({ type: 'flac24bit', size })
-          _types.flac24bit = {
+          types.push({ type: 'hires', size })
+          _types.hires = {
             size,
           }
           break
@@ -122,8 +122,8 @@ export const filterMusicInfoListV5 = (rawList) => {
           break
         case 'ZQ':
           size = sizeFormate(type.size ?? type.androidSize)
-          types.push({ type: 'flac24bit', size })
-          _types.flac24bit = {
+          types.push({ type: 'hires', size })
+          _types.hires = {
             size,
           }
           break

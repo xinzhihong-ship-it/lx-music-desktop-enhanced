@@ -44,8 +44,8 @@ export default {
         }
       }
       if (formats.includes('HIRFLAC')) {
-        types.push({ type: 'flac24bit', size: null })
-        _types.flac24bit = {
+        types.push({ type: 'hires', size: null })
+        _types.hires = {
           size: null,
         }
       }

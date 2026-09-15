@@ -30,25 +30,35 @@ interface AudioEvidence {
 interface TierRequirement {
   lossless: boolean
   minBits?: number
-  minRate?: number
   minBitrate?: number
 }
 
-// 各档位要求的最低规格。母带、全景声这类专有档位无法从容器直接证明，因此
-// 只在探测结果满足规格要求时沿用请求档位名称，避免把真实的高规格文件标低。
+// 有损档位只有「128K 普音」与「320K 高音」两档，中间码率没有对应档位。
+const LOSSY_128K_MAX = 180_000
+const LOSSY_320K_MIN = 280_000
+
+// 与设置中的档位顺序一致，索引越大档位越低。flac24bit / 192k 只作为兼容键保留。
+const QUALITY_RANK = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k']
+
+// 请求档位对证据的最低要求。母带、全景声这类专有档位只要求无损，24bit 档位
+// 要求位深达到 24bit（母带不再额外校验采样率，与 ikun 的口径一致）。
 const tierRequirements: Record<string, TierRequirement> = {
   '128k': { lossless: false, minBitrate: 0 },
-  '192k': { lossless: false, minBitrate: 180_000 },
-  '320k': { lossless: false, minBitrate: 280_000 },
+  '192k': { lossless: false, minBitrate: LOSSY_128K_MAX },
+  '320k': { lossless: false, minBitrate: LOSSY_320K_MIN },
   flac: { lossless: true, minBits: 16 },
   flac24bit: { lossless: true, minBits: 24 },
   hires: { lossless: true, minBits: 24 },
-  // 96kHz 与 192kHz 都会被平台标注为母带，24bit 高采样率即视为满足。
-  master: { lossless: true, minBits: 24, minRate: 88_200 },
+  master: { lossless: true, minBits: 24 },
   atmos: { lossless: true },
   atmos_plus: { lossless: true },
   ape: { lossless: true },
   wav: { lossless: true },
+}
+
+const qualityRank = (tier: string) => {
+  const index = QUALITY_RANK.indexOf(tier)
+  return index < 0 ? QUALITY_RANK.length : index
 }
 
 const parseDuration = (value: unknown): number | null => {
@@ -71,10 +81,10 @@ const estimateBitrate = (probe: ActualAudioProbe, interval: unknown): number | n
 
 const mapLossyBitrate = (bitrate: number | null): string | null => {
   if (!bitrate) return null
-  // 网络文件大小包含标签与编码器填充，边界放宽以免把 128K 误判为 192K。
-  if (bitrate <= 180_000) return '128k'
-  if (bitrate <= 280_000) return '192k'
-  return '320k'
+  if (bitrate <= LOSSY_128K_MAX) return '128k'
+  if (bitrate >= LOSSY_320K_MIN) return '320k'
+  // 180k–280k 属于中间码率，档位表里没有对应项，不猜档位。
+  return null
 }
 
 const readEvidence = (probe: ActualAudioProbe | null | undefined, interval: unknown): AudioEvidence | null => {
@@ -91,33 +101,17 @@ const readEvidence = (probe: ActualAudioProbe | null | undefined, interval: unkn
 const resolveDetectedTier = (evidence: AudioEvidence): string | null => {
   if (!evidence.lossless) return mapLossyBitrate(evidence.bitrate)
   const bits = evidence.bits
-  const rate = evidence.sampleRate ?? 0
-  // 明确是 16bit 时即使采样率很高也只是普通无损，不能算高解析度。
+  // 24bit 无损一律算 hires，不再区分 44.1kHz 与 96kHz。
   if (bits != null && bits < 24) return 'flac'
-  if (bits != null) return rate >= 88_200 ? 'hires' : 'flac24bit'
-  // 位深未知但采样率很高时按高解析度处理，避免把 24bit 文件标成普通无损。
-  if (rate >= 88_200) return 'hires'
-  return 'flac'
-}
-
-const meetsRequirement = (tier: string, evidence: AudioEvidence): boolean => {
-  const requirement = tierRequirements[tier]
-  if (!requirement) return true
-  if (evidence.lossless) {
-    // 无损流一定能满足有损档位请求。
-    if (!requirement.lossless) return true
-    // 位深读不到时不做否定判断，只有明确低于要求才算降质。
-    if (requirement.minBits != null && evidence.bits != null && evidence.bits < requirement.minBits) return false
-    return (evidence.sampleRate ?? 0) >= (requirement.minRate ?? 0)
-  }
-  if (requirement.lossless) return false
-  return (evidence.bitrate ?? 0) >= (requirement.minBitrate ?? 0)
+  if (bits != null) return 'hires'
+  // 位深读不到时按采样率兜底，避免把高解析度文件标成普通无损。
+  return (evidence.sampleRate ?? 0) >= 88_200 ? 'hires' : 'flac'
 }
 
 /**
- * 把探测到的音频规格换算成设置中的档位名称。只有拿到确凿的规格证据时才判定
- * 降质：请求无损却返回有损、请求高码率却返回低码率、请求 24bit 却返回 16bit。
- * 证据不足（例如 M4A 容器里的全景声）时沿用请求档位，不把不确定当成降质。
+ * 把探测到的音频规格换算成设置中的档位名称，口径与 ikun-music-desktop 一致：
+ * 24bit 无损一律算 hires，母带只要「无损且 24bit」即认可，有损只分 128K 普音
+ * 与 320K 高音两档。只有拿到确凿证据才判定降质，证据不足时沿用请求档位。
  */
 export const describeActualQuality = ({ probe, interval, requested }: {
   probe?: ActualAudioProbe | null
@@ -128,8 +122,26 @@ export const describeActualQuality = ({ probe, interval, requested }: {
   const evidence = readEvidence(probe, interval)
   if (!evidence) return { quality: requestedTier, detected: null, downgraded: false }
   const detected = resolveDetectedTier(evidence)
-  if (!requestedTier || meetsRequirement(requestedTier, evidence)) {
-    return { quality: requestedTier, detected, downgraded: false }
+  const requirement = tierRequirements[requestedTier]
+  if (!requestedTier || !requirement) return { quality: requestedTier, detected, downgraded: false }
+
+  if (!evidence.lossless) {
+    if (!requirement.lossless) {
+      // 有损请求：只有实测档位明确低于请求档位时才提示降质，中间码率不判定。
+      if (detected != null && qualityRank(detected) > qualityRank(requestedTier)) {
+        return { quality: detected, detected, downgraded: true }
+      }
+      return { quality: requestedTier, detected, downgraded: false }
+    }
+    // 无损请求拿到有损流：明显的降质，中间码率按最低有损档提示。
+    return { quality: detected ?? '128k', detected, downgraded: true }
   }
-  return { quality: detected ?? requestedTier, detected, downgraded: detected != null }
+
+  // 无损流一定能满足有损档位请求。
+  if (!requirement.lossless) return { quality: requestedTier, detected, downgraded: false }
+  // 位深读不到时不做否定判断，只有明确低于要求才算降质。
+  if (requirement.minBits != null && evidence.bits != null && evidence.bits < requirement.minBits) {
+    return { quality: 'flac', detected, downgraded: true }
+  }
+  return { quality: requestedTier, detected, downgraded: false }
 }

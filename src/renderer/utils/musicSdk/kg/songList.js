@@ -788,8 +788,8 @@ export default {
   //         }
   //       } else if (qualityObj.level === 6) {
   //         let size = sizeFormate(qualityObj.size)
-  //         types.push({ type: 'flac24bit', size, hash: qualityObj.hash })
-  //         _types.flac24bit = {
+  //         types.push({ type: 'hires', size, hash: qualityObj.hash })
+  //         _types.hires = {
   //           size,
   //           hash: qualityObj.hash,
   //         }
@@ -851,8 +851,8 @@ export default {
       }
       if (item.audio_info.filesize_high !== '0') {
         let size = sizeFormate(parseInt(item.audio_info.filesize_high))
-        types.push({ type: 'flac24bit', size, hash: item.audio_info.hash_high })
-        _types.flac24bit = {
+        types.push({ type: 'hires', size, hash: item.audio_info.hash_high })
+        _types.hires = {
           size,
           hash: item.audio_info.hash_high,
         }

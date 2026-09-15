@@ -91,7 +91,9 @@ export const QUALITYS = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 
 //   兜底音质只声明 128k，避免按用户高音质偏好换源时候选被全部过滤导致加载失败（自定义源声明 mg 后会被其覆盖）
 export const ALWAYS_SUPPORTED_SOURCE_QUALITYS: Partial<Record<LX.Source, LX.Quality[]>> = {
   bili: ['128k', '192k', 'atmos', 'hires'],
-  git: ['128k', '192k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
+  // GitCode 索引里可能显式声明母带 / 全景声 / Hi-Res 档位，保留它们；旧口径的
+  // flac24bit、192k 已归一为 hires、320k，不再作为独立档位声明。
+  git: ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master', 'ape', 'wav'],
   mg: ['128k'],
 }
 

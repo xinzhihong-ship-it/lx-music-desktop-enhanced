@@ -313,7 +313,7 @@ const buildQualitys = (item: SimilarSongRaw) => {
   addQuality('128k', (item.lMusic ?? item.mMusic ?? item.bMusic)?.size)
   addQuality('320k', item.hMusic?.size)
   addQuality('flac', item.sqMusic?.size)
-  addQuality('flac24bit', item.hrMusic?.size)
+  addQuality('hires', item.hrMusic?.size)
   return { qualitys, _qualitys }
 }
 

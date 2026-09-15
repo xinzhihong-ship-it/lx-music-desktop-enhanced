@@ -231,7 +231,9 @@ export const getOnlineOtherSourcePicByLocal = async(musicInfo: LX.Music.MusicInf
   })
 }
 
-export const TRY_QUALITYS_LIST = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k'] as const
+// 可选音质与 ikun-music-desktop 的档位口径一致：24bit 无损归入 hires，
+// 192k 不再作为可选档位（老数据与 bili 等平台元数据仍保留该键）。
+export const TRY_QUALITYS_LIST = ['master', 'atmos_plus', 'atmos', 'hires', 'flac', '320k'] as const
 export const QUALITY_RANK: readonly LX.Quality[] = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k']
 
 // Older sources and saved lists call 24-bit FLAC `flac24bit`; newer custom
@@ -247,8 +249,29 @@ const QUALITY_LEVELS: ReadonlyArray<readonly LX.Quality[]> = [
   ['128k'],
 ]
 
-const resolveQuality = (musicInfo: LX.Music.MusicInfoOnline, sourceQualitys: LX.Quality[] | undefined, level: readonly LX.Quality[]) => level
-  .find(quality => musicInfo.meta._qualitys[quality] && sourceQualitys?.includes(quality)) ?? null
+// 新旧口径的档位别名：24bit 无损新口径叫 hires，旧数据与旧音源脚本仍用 flac24bit。
+const QUALITY_ALIASES: Record<string, readonly LX.Quality[]> = {
+  hires: ['flac24bit'],
+  flac24bit: ['hires'],
+}
+
+const getQualityAliases = (quality: LX.Quality) => QUALITY_ALIASES[quality] ?? []
+
+const resolveQuality = (musicInfo: LX.Music.MusicInfoOnline, sourceQualitys: LX.Quality[] | undefined, level: readonly LX.Quality[]) => {
+  if (!sourceQualitys) return null
+  // 优先使用歌曲数据与音源声明一致的档位键。
+  const exact = level.find(quality => musicInfo.meta._qualitys[quality] && sourceQualitys.includes(quality))
+  if (exact) return exact
+  // 再按别名补齐：新音源声明 hires、旧歌曲数据是 flac24bit（或反过来）。
+  for (const quality of level) {
+    for (const alias of getQualityAliases(quality)) {
+      if (!musicInfo.meta._qualitys[alias]) continue
+      if (sourceQualitys.includes(alias)) return alias
+      if (sourceQualitys.includes(quality)) return quality
+    }
+  }
+  return null
+}
 
 const getQualityLevelIndex = (quality: LX.Quality) => QUALITY_LEVELS.findIndex(level => level.includes(quality))
 

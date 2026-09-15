@@ -272,7 +272,21 @@ export default {
       return formatMusicName(appSetting['download.fileName'], downloadInfo.metadata.musicInfo.name, downloadInfo.metadata.musicInfo.singer)
     }
     const getTypeName = (quality) => {
-      return quality == 'flac24bit' ? 'FLAC Hires' : quality?.toUpperCase()
+      switch (quality) {
+        case 'master':
+          return 'Master'
+        case 'atmos_plus':
+          return 'Atmos 2.0'
+        case 'atmos':
+          return 'Atmos'
+        case 'hires':
+        case 'flac24bit':
+          return 'Hires'
+        case 'flac':
+          return 'FLAC'
+        default:
+          return quality?.toUpperCase()
+      }
     }
     return {
       listRef,

@@ -53,20 +53,17 @@ const hash = text => {
 export const getRelativePath = item => item.relative_path || item.path || item.filename || ''
 export const generateSongId = relativePath => `gitcode_${hash(relativePath)}`
 
-const normalizeBitrate = value => {
-  const bitrate = Number(value) || 0
-  return bitrate > 0 && bitrate < 1000 ? bitrate * 1000 : bitrate
-}
-
 export const getItemQuality = item => {
   const quality = String(item.quality || '').toLowerCase()
-  if (['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k'].includes(quality)) return quality
+  // 旧口径归一：24bit 无损统一算 hires，192k 并入 320k。
+  const normalized = quality == 'flac24bit' ? 'hires' : quality == '192k' ? '320k' : quality
+  if (['master', 'atmos_plus', 'atmos', 'hires', 'flac', '320k', '128k', 'ape', 'wav'].includes(normalized)) return normalized
 
+  // 索引没写档位时按容器判断，规则与 ikun-music-desktop 一致：flac 一律算无损，
+  // mp3 算 320K，其余容器（m4a/mp4 等）算 128K。
   const format = String(item.format || item.ext || getRelativePath(item).split('.').pop() || '').toLowerCase()
-  if (format == 'flac') return Number(item.bit_depth) > 16 ? 'flac24bit' : 'flac'
-  const bitrate = normalizeBitrate(item.bitrate)
-  if (bitrate >= 256000) return '320k'
-  if (bitrate >= 160000) return '192k'
+  if (format == 'flac') return 'flac'
+  if (format == 'mp3') return '320k'
   return '128k'
 }
 

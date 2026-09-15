@@ -65,30 +65,34 @@ export default {
     getTypeName(quality) {
       switch (quality) {
         case 'master':
-          return this.$t('download__lossless') + ' Master'
+          return this.$t('setting__play_quality_master')
         case 'atmos_plus':
-          return this.$t('download__lossless') + ' Atmos Plus'
+          return this.$t('setting__play_quality_atmos_plus')
         case 'atmos':
-          return this.$t('download__lossless') + ' Atmos'
+          return this.$t('setting__play_quality_atmos')
         case 'hires':
         case 'flac24bit':
-          return this.$t('download__lossless') + ' FLAC Hires'
+          return this.$t('setting__play_quality_hires')
         case 'flac':
+          return this.$t('setting__play_quality_flac')
         case 'ape':
         case 'wav':
           return this.$t('download__lossless') + ' ' + quality.toUpperCase()
         case '320k':
-          return this.$t('download__high_quality') + ' ' + quality.toUpperCase()
+          return this.$t('setting__play_quality_320k')
         case '192k':
+          return this.$t('setting__play_quality_192k')
         case '128k':
-          return this.$t('download__normal') + ' ' + quality.toUpperCase()
+          return this.$t('setting__play_quality_128k')
       }
     },
     getDownloadFormat(quality) {
       return getExt(quality).toUpperCase()
     },
     checkSource(quality) {
-      return this.sourceQualityList.includes(quality)
+      // 24bit 无损：新口径是 hires，旧歌曲数据与旧音源脚本是 flac24bit。
+      const alias = quality == 'flac24bit' ? 'hires' : quality == 'hires' ? 'flac24bit' : null
+      return this.sourceQualityList.includes(quality) || (alias != null && this.sourceQualityList.includes(alias))
     },
   },
 }

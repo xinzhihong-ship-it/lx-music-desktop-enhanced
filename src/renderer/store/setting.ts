@@ -11,6 +11,7 @@ export const isShowAnimation = computed(() => {
 
 export const initSetting = (newSetting: LX.AppSetting) => {
   mergeSetting(newSetting)
+  migratePlayQuality()
 }
 
 export const mergeSetting = (newSetting: Partial<LX.AppSetting>) => {
@@ -23,6 +24,17 @@ export const mergeSetting = (newSetting: Partial<LX.AppSetting>) => {
 export const updateSetting = window.lxData.updateSetting = (setting: Partial<LX.AppSetting>) => {
   mergeSetting(setting)
   void saveSetting(setting)
+}
+
+// 旧档位键收敛到新的口径：24bit 无损统一叫 hires，192k 并入 320k 档位选择。
+const legacyPlayQualityMap: Record<string, LX.Quality> = {
+  flac24bit: 'hires',
+  '192k': '320k',
+}
+
+const migratePlayQuality = () => {
+  const migrated = legacyPlayQualityMap[appSetting['player.playQuality']]
+  if (migrated) updateSetting({ 'player.playQuality': migrated })
 }
 
 /**

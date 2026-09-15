@@ -47,8 +47,8 @@ export default {
         if (info) {
           switch (info[2]) {
             case '4000':
-              types.push({ type: 'flac24bit', size: info[4] })
-              _types.flac24bit = {
+              types.push({ type: 'hires', size: info[4] })
+              _types.hires = {
                 size: info[4].toLocaleUpperCase(),
               }
               break

@@ -46,11 +46,11 @@
                 <div class="list-item-cell no-select num" style="flex: 0 0 5%;" @click.stop>{{ index + 1 }}</div>
                 <div class="list-item-cell auto name">
                   <button v-if="searchByField" type="button" class="select name hover" :class="$style.fieldLink" :aria-label="item.name" @click.stop="handleFieldSearch(item.name)">{{ item.name }}</button>
-                  <span v-else class="select name" :aria-label="item.name">{{ item.name }}</span>
-                  <span v-if="item.meta._qualitys.master" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_master') }}</span>
-                  <span v-else-if="item.meta._qualitys.atmos_plus" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos_plus') }}</span>
-                  <span v-else-if="item.meta._qualitys.atmos" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos') }}</span>
-                  <span v-else-if="item.meta._qualitys.hires || item.meta._qualitys.flac24bit" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_24bit') }}</span>
+                <span v-else class="select name" :aria-label="item.name">{{ item.name }}</span>
+                <span v-if="item.meta._qualitys.master" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_master') }}</span>
+                <span v-else-if="item.meta._qualitys.atmos_plus" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos_plus') }}</span>
+                <span v-else-if="item.meta._qualitys.atmos" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos') }}</span>
+                <span v-else-if="item.meta._qualitys.hires || item.meta._qualitys.flac24bit" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_hires') }}</span>
                   <span v-else-if="item.meta._qualitys.ape || item.meta._qualitys.flac || item.meta._qualitys.wav" class="no-select badge badge-theme-primary">{{ $t('tag__lossless') }}</span>
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
                   <span v-else-if="item.meta._qualitys['192k']" class="no-select badge badge-theme-secondary">{{ $t('tag__hq_192k') }}</span>
@@ -93,7 +93,7 @@
                   <span v-if="item.meta._qualitys.master" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_master') }}</span>
                   <span v-else-if="item.meta._qualitys.atmos_plus" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos_plus') }}</span>
                   <span v-else-if="item.meta._qualitys.atmos" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_atmos') }}</span>
-                  <span v-else-if="item.meta._qualitys.hires || item.meta._qualitys.flac24bit" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_24bit') }}</span>
+                  <span v-else-if="item.meta._qualitys.hires || item.meta._qualitys.flac24bit" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_hires') }}</span>
                   <span v-else-if="item.meta._qualitys.ape || item.meta._qualitys.flac || item.meta._qualitys.wav" class="no-select badge badge-theme-primary">{{ $t('tag__lossless') }}</span>
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
                   <span v-else-if="item.meta._qualitys['192k']" class="no-select badge badge-theme-secondary">{{ $t('tag__hq_192k') }}</span>

@@ -122,8 +122,8 @@ export default {
             }
           case 1999000:
             size = item.hrMusic ? sizeFormate(item.hrMusic.size) : null
-            types.push({ type: 'flac24bit', size })
-            _types.flac24bit = {
+            types.push({ type: 'hires', size })
+            _types.hires = {
               size,
             }
         }

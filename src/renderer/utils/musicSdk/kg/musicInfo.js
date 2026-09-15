@@ -73,8 +73,8 @@ export const filterMusicInfoList = (rawList) => {
     }
     if (item.audio_info.filesize_high !== '0') {
       let size = sizeFormate(parseInt(item.audio_info.filesize_high))
-      types.push({ type: 'flac24bit', size, hash: item.audio_info.hash_high })
-      _types.flac24bit = {
+      types.push({ type: 'hires', size, hash: item.audio_info.hash_high })
+      _types.hires = {
         size,
         hash: item.audio_info.hash_high,
       }

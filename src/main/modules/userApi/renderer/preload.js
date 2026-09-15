@@ -30,12 +30,12 @@ const events = {
 }
 const allSources = ['kw', 'kg', 'tx', 'wy', 'mg', 'git', 'local']
 const supportQualitys = {
-  kw: ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
-  kg: ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
-  tx: ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
-  wy: ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
-  mg: ['128k', '320k', 'flac', 'flac24bit', 'hires'],
-  git: ['128k', '192k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master', 'ape', 'wav'],
+  kw: ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master'],
+  kg: ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
+  tx: ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master'],
+  wy: ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
+  mg: ['128k', '320k', 'flac', 'hires'],
+  git: ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master', 'ape', 'wav'],
   local: [],
 }
 const supportActions = {
@@ -153,10 +153,15 @@ const handleInit = (context, info) => {
       if (!userSource || userSource.type !== 'music') continue
       const qualitys = supportQualitys[source]
       const actions = supportActions[source]
+      const supportedQualitys = qualitys.filter(q => userSource.qualitys.includes(q))
+      // 24bit 无损的新口径是 hires，旧音源脚本仍声明 flac24bit；两者互为别名，
+      // 保留脚本自己声明的键，避免旧脚本的 24bit 档位直接失效。
+      if (userSource.qualitys.includes('flac24bit') && !supportedQualitys.includes('flac24bit')) supportedQualitys.push('flac24bit')
+      if (userSource.qualitys.includes('hires') && !supportedQualitys.includes('hires')) supportedQualitys.push('hires')
       sourceInfo.sources[source] = {
         type: 'music',
         actions: actions.filter(a => userSource.actions.includes(a)),
-        qualitys: qualitys.filter(q => userSource.qualitys.includes(q)),
+        qualitys: supportedQualitys,
       }
     }
   } catch (error) {

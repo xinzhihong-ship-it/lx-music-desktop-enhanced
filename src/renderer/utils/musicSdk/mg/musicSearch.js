@@ -71,8 +71,8 @@ export default {
   //           break
   //         case 'ZQ':
   //           size = sizeFormate(type.size ?? type.androidSize)
-  //           types.push({ type: 'flac24bit', size })
-  //           _types.flac24bit = {
+  //           types.push({ type: 'hires', size })
+  //           _types.hires = {
   //             size,
   //           }
   //           break
@@ -162,8 +162,8 @@ export default {
               break
             case 'ZQ24':
               size = sizeFormate(type.asize ?? type.isize)
-              types.push({ type: 'flac24bit', size })
-              _types.flac24bit = {
+              types.push({ type: 'hires', size })
+              _types.hires = {
                 size,
               }
               break

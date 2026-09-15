@@ -925,7 +925,7 @@ const fmSongToMusicInfo = (item: any): LX.Music.MusicInfoOnline | null => {
   )
   addQuality('ape', item.hash_ape, item.filesize_ape)
   addQuality(
-    'flac24bit',
+    'hires',
     item.hash_high ?? item.ResFileHash,
     item.filesize_high ?? item.ResFileSize,
   )

@@ -18,7 +18,8 @@ export const sourceVerify = source => {
   if (!sources.includes(source)) throw new Error('Source no match')
 }
 
-export const qualitys = ['128k', '320k', 'flac', 'flac24bit']
+// 导入的分享数据允许保留全部档位；flac24bit 作为旧口径的兼容键一并保留。
+export const qualitys = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k']
 export const qualityFilter = (source, types) => {
   types = types.filter(({ type }) => qualitys.includes(type)).map(({ type, size, hash }) => {
     if (size != null && typeof size != 'string') throw new Error(type + ' size type no match')

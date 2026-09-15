@@ -7,7 +7,7 @@ const boardList = [{ id: 'kw__93', name: '飙升榜', bangid: '93' }, { id: 'kw_
 
 const sortQualityArray = array => {
   const qualityMap = {
-    flac24bit: 4,
+    hires: 4,
     flac: 3,
     '320k': 2,
     '128k': 1,
@@ -122,8 +122,8 @@ export default {
 
         switch (quality) {
           case '4000':
-            types.push({ type: 'flac24bit', size })
-            _types.flac24bit = { size }
+            types.push({ type: 'hires', size })
+            _types.hires = { size }
             break
           case '2000':
             types.push({ type: 'flac', size })
