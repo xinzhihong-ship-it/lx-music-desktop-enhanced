@@ -9,7 +9,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText
 const loadedModule = { exports: {} }
 new Function('module', 'exports', 'require', compiled)(loadedModule, loadedModule.exports, require)
-const { describeActualQuality } = loadedModule.exports
+const { buildTestTierList, canonicalQualityTier, dedupeQualityTiers, describeActualQuality, summarizeTierResults } = loadedModule.exports
 
 const flac = (sampleRate, bitsPerSample) => ({
   format: 'flac',
@@ -108,4 +108,57 @@ test('bitrate falls back to size and duration when the header has none', () => {
   const large = { format: 'mp3', sampleRate: 44100, bitrate: null, contentLength: 10 * 1024 * 1024, bytesRead: 1024, error: null }
   assert.equal(describe(large, '128k').detected, '320k')
   assert.equal(describe(large, '128k').quality, '128k')
+})
+
+test('alias tiers are deduped so a source declaring both keys is tested once', () => {
+  assert.equal(canonicalQualityTier('flac24bit'), 'hires')
+  assert.equal(canonicalQualityTier('hires'), 'hires')
+  assert.equal(canonicalQualityTier('flac'), 'flac')
+  // 排序后 hires 在前，保留它、丢掉旧键。
+  assert.deepEqual(dedupeQualityTiers(['master', 'hires', 'flac24bit', 'flac', '320k']), ['master', 'hires', 'flac', '320k'])
+  assert.deepEqual(dedupeQualityTiers(['flac24bit', 'hires']), ['flac24bit'])
+  assert.deepEqual(dedupeQualityTiers(['128k']), ['128k'])
+})
+
+test('the test tier list sorts and collapses aliases into one row per tier', () => {
+  // 这是截图里那份脚本的真实声明：同时含新旧 24bit 键，之前会跑出两条一样的记录。
+  assert.deepEqual(buildTestTierList(['128k', '320k', 'flac', 'hires', 'flac24bit', 'atmos', 'master']), [
+    'master', 'atmos', 'hires', 'flac', '320k', '128k',
+  ])
+  // 只有旧键时保留旧键，仍只出一行。
+  assert.deepEqual(buildTestTierList(['flac24bit', '320k', '128k']), ['flac24bit', '320k', '128k'])
+  // 顺序按档位高低排，未知键排到最后。
+  assert.deepEqual(buildTestTierList(['128k', 'unknown_tier', 'atmos_plus']), ['atmos_plus', '128k', 'unknown_tier'])
+})
+
+test('tier summary counts verdicts and reports the best verified tier', () => {
+  const rows = [
+    { kind: 'pass', tier: 'master' },
+    { kind: 'pass', tier: 'flac' },
+    { kind: 'downgrade', tier: '320k' },
+    { kind: 'unknown', tier: null },
+    { kind: 'unsupported', tier: null },
+    { kind: 'failed', tier: null },
+  ]
+  assert.deepEqual(summarizeTierResults(rows), {
+    passed: 2,
+    downgraded: 1,
+    unknown: 1,
+    unsupported: 1,
+    failed: 1,
+    bestTier: 'master',
+    bestSuspected: false,
+  })
+})
+
+test('tier summary falls back to the best downgraded tier and marks it suspected', () => {
+  const summary = summarizeTierResults([
+    { kind: 'downgrade', tier: 'flac' },
+    { kind: 'downgrade', tier: '128k' },
+    { kind: 'failed', tier: null },
+  ])
+  assert.equal(summary.bestTier, 'flac')
+  assert.equal(summary.bestSuspected, true)
+  assert.equal(summary.passed, 0)
+  assert.equal(summarizeTierResults([]).bestTier, null)
 })

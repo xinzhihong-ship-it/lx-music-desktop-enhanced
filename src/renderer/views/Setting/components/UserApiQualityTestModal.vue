@@ -31,14 +31,18 @@ material-modal(:show="show" teleport="#view" width="min(900px, calc(100vw - 28px
         div(:class="$style.sectionHead")
           div
             h3 测试平台与关键词
-            p(:class="$style.sectionHint") 每个平台只搜索一次，按音源脚本声明逐档请求；平台原生档位名称可能不同，实际以探测规格为准。
+            p(:class="$style.sectionHint") 每个平台只搜索一次，按音源脚本声明逐档请求；平台原生档位名称可能不同，实际以探测规格为准。关键词可只填歌名，也可写成「歌名 歌手」锁定版本；没填的平台会跳过。
           span(:class="$style.sectionMetaText") {{ selectedPlatforms.length }} 个平台
+        div(:class="$style.bulkRow")
+          base-input(v-model="bulkKeyword" :class="$style.bulkInput" placeholder="统一填写关键词（歌名，或 歌名 歌手）" :trim="false" :disabled="busy" @submit="applyKeywordsToAll")
+          base-btn(:class="$style.bulkBtn" :disabled="busy || !bulkKeyword.trim()" @click="applyKeywordsToAll") 全部应用
+          base-btn(:class="$style.bulkBtn" :disabled="busy" @click="clearKeywords") 清空
         div(:class="$style.platformGrid")
           div(v-for="platform in platforms" :key="platform.id" :class="[$style.platformCard, { [$style.platformSelected]: selectedPlatforms.includes(platform.id) }]")
             div(:class="$style.platformHead")
               base-checkbox(:id="`source_test_platform_${platform.id}`" v-model="selectedPlatforms" :value="platform.id" :label="platform.name" :disabled="busy")
               span(:class="$style.platformState") {{ selectedPlatforms.includes(platform.id) ? '启用' : '跳过' }}
-            base-input(v-model="keywords[platform.id]" :class="$style.keyword" :placeholder="platform.defaultKeyword" :disabled="busy || !selectedPlatforms.includes(platform.id)")
+            base-input(v-model="keywords[platform.id]" :class="$style.keyword" placeholder="歌名，或 歌名 歌手" :trim="false" :disabled="busy || !selectedPlatforms.includes(platform.id)")
         details(:class="$style.advanced")
           summary
             span 高级设置
@@ -58,24 +62,32 @@ material-modal(:show="show" teleport="#view" width="min(900px, calc(100vw - 28px
         div(:class="$style.sectionHead")
           div
             h3 测试结果
-            p(:class="$style.sectionHint") 展开每个音源可查看平台、请求档位和实际探测规格。
+            p(:class="$style.sectionHint") 展开每个音源可查看平台状态、请求档位与实际档位。
           span(v-if="results.length" :class="$style.sectionMetaText") {{ results.length }} 条记录
         div(v-if="results.length" ref="resultList" :class="$style.resultList")
           details(v-for="group in groupedResults" :key="group.apiId" :class="$style.resultGroup" :open="expandedGroups.includes(group.apiId)" @toggle="toggleGroup(group.apiId, $event)")
             summary(:class="$style.resultGroupHead")
-              div
+              div(:class="$style.groupInfo")
                 strong {{ group.apiName }}
-                p(v-if="group.song") {{ group.song }}
-                p(:class="$style.groupSpec") 本次样本最高探测：{{ groupActualSpec(group) }}
+                p(:class="$style.groupSpec") {{ groupSummaryText(group) }}
               div(:class="$style.groupMeta")
-                span(:class="$style.groupSummary") {{ groupSummary(group) }}
-                span(:class="$style.groupCount") {{ group.rows.length }} 项
+                span(:class="$style.groupCount") {{ group.rows.length }} 档
             div(:class="$style.resultRows")
-              div(v-for="(result, index) in group.rows" :key="`${result.platformId}-${result.quality}-${index}`" :class="[$style.resultRow, $style[result.status]]")
-                span(:class="$style.resultPlatform") {{ result.platformName || '初始化' }}
-                span(:class="$style.resultQuality") {{ result.qualityLabel || '—' }}
-                span(:class="$style.resultStatus") {{ result.statusLabel }}
-                span(:class="$style.resultDetail") {{ result.detail }}
+              div(v-for="block in platformBlocks(group)" :key="`${block.platformId}-${block.platformName}`" :class="$style.platformBlock")
+                div(:class="$style.platformHead")
+                  span(:class="$style.platformName") {{ block.platformName || '初始化' }}
+                  span(:class="[$style.platformState, $style[`state_${block.state}`]]") {{ block.stateLabel }}
+                p(v-if="block.keyword || block.song" :class="$style.platformSong") {{ blockKeywordText(block) }}
+                div(:class="$style.platformMeta")
+                  span(:class="$style.bestQualityLabel") 实际最高音质
+                  span(:class="[$style.tierChip, $style.tierChipLarge]" :style="tierChipStyle(block.bestTier)" :data-suspected="block.bestSuspected ? '1' : null") {{ block.bestText }}
+                  span(:class="$style.platformSummary") {{ block.summaryText }}
+                div(:class="$style.tierRows")
+                  div(v-for="(result, index) in block.rows" :key="`${result.quality}-${index}`" :class="$style.tierRow")
+                    span(:class="[$style.tierChip, $style.tierChipRequest]" :style="tierChipStyle(result.quality)") {{ tierLabel(result.quality) }}
+                    span(:class="$style.tierArrow") →
+                    span(:class="[$style.tierChip, $style[`kind_${result.kind}`]]" :style="result.tier && result.kind !== 'unknown' ? tierChipStyle(result.tier) : null") {{ actualText(result) }}
+                    span(:class="$style.tierDetail") {{ result.detail }}
         p(v-else :class="$style.empty") 选择音源和平台后开始测试，结果会保留在本次应用会话中。
 
     div(:class="$style.footer")
@@ -94,15 +106,15 @@ import { userApi } from '@renderer/store'
 import { clipboardWriteText } from '@common/utils/electron'
 import { toNewMusicInfo } from '@common/utils/tools'
 import musicSdk from '@renderer/utils/musicSdk'
-import { describeActualQuality } from '@renderer/core/player/actualQuality'
+import { buildTestTierList, describeActualQuality, summarizeTierResults } from '@renderer/core/player/actualQuality'
 import { getTestUserApiSources, probeAudioSource, sendTestUserApiRequest, stopTestUserApis } from '@renderer/utils/ipc'
 
 const platforms = [
-  { id: 'kw', name: '酷我', defaultKeyword: '晴天' },
-  { id: 'kg', name: '酷狗', defaultKeyword: '晴天' },
-  { id: 'tx', name: 'QQ', defaultKeyword: '晴天' },
-  { id: 'wy', name: '网易', defaultKeyword: '再也没有' },
-  { id: 'mg', name: '咪咕', defaultKeyword: '晴天' },
+  { id: 'kw', name: '酷我' },
+  { id: 'kg', name: '酷狗' },
+  { id: 'tx', name: 'QQ' },
+  { id: 'wy', name: '网易' },
+  { id: 'mg', name: '咪咕' },
 ]
 
 const qualityNames = {
@@ -118,8 +130,25 @@ const qualityNames = {
   ape: 'APE',
   wav: 'WAV',
 }
-const qualityOrder = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k']
+// 档位标签配色，区分方式与手机版检测页一致。
+const qualityColors = {
+  master: '#9b59b6',
+  atmos_plus: '#e74c3c',
+  atmos: '#e67e22',
+  hires: '#ff6b6b',
+  flac24bit: '#ff6b6b',
+  flac: '#4ecdc4',
+  '320k': '#45b7d1',
+  '192k': '#45b7d1',
+  '128k': '#95a5a6',
+  ape: '#4ecdc4',
+  wav: '#4ecdc4',
+}
 
+// 关键词只保存用户自己填写的值；v1 键里存的是旧版本的预填默认值，读取时丢弃。
+const KEYWORDS_STORAGE_KEY = 'lx_music_source_test_keywords_v2'
+const KEYWORDS_STORAGE_KEY_V1 = 'lx_music_source_test_keywords'
+const SETTINGS_STORAGE_KEY = 'lx_music_source_test_settings'
 const wait = async ms => await new Promise(resolve => setTimeout(resolve, ms))
 
 export default {
@@ -135,13 +164,16 @@ export default {
       apiList: userApi.list,
       selectedApis: [],
       selectedPlatforms: platforms.map(item => item.id),
-      keywords: Object.fromEntries(platforms.map(item => [item.id, item.defaultKeyword])),
+      keywords: Object.fromEntries(platforms.map(item => [item.id, ''])),
+      bulkKeyword: '',
       settings: {
         testTimeoutSeconds: '20',
         sourceIntervalSeconds: '0.5',
         qualityIntervalSeconds: '0.5',
       },
       results: [],
+      // 本次测试实际用到的关键词（按平台记录），用于结果里显示搜索对象。
+      keywordsUsed: {},
       busy: false,
       stopped: false,
       progressText: '',
@@ -158,7 +190,8 @@ export default {
       return this.apiList.length > 0 && this.selectedApis.length === this.apiList.length
     },
     canStart() {
-      return this.selectedApis.length > 0 && this.selectedPlatforms.length > 0
+      // 至少要有一个填了歌名的平台，否则测试跑不出任何结果。
+      return this.selectedApis.length > 0 && this.selectedPlatforms.some(id => String(this.keywords[id] || '').trim())
     },
     groupedResults() {
       const groups = []
@@ -236,8 +269,10 @@ export default {
     },
     loadSettings() {
       try {
-        const savedKeywords = JSON.parse(localStorage.getItem('lx_music_source_test_keywords') ?? '{}')
-        const savedSettings = JSON.parse(localStorage.getItem('lx_music_source_test_settings') ?? '{}')
+        // 旧版本会预填默认歌名并把预填值一起保存，换用新键避免把它当成用户填写的歌名恢复出来。
+        localStorage.removeItem(KEYWORDS_STORAGE_KEY_V1)
+        const savedKeywords = JSON.parse(localStorage.getItem(KEYWORDS_STORAGE_KEY) ?? '{}')
+        const savedSettings = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? '{}')
         this.platforms.forEach(platform => {
           if (typeof savedKeywords[platform.id] === 'string') this.keywords[platform.id] = savedKeywords[platform.id]
         })
@@ -245,11 +280,21 @@ export default {
       } catch {}
     },
     saveSettings() {
-      localStorage.setItem('lx_music_source_test_keywords', JSON.stringify(this.keywords))
-      localStorage.setItem('lx_music_source_test_settings', JSON.stringify(this.settings))
+      localStorage.setItem(KEYWORDS_STORAGE_KEY, JSON.stringify(this.keywords))
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(this.settings))
     },
     toggleAll(value) {
       this.selectedApis = value ? this.apiList.map(api => api.id) : []
+    },
+    // 一键把同一个歌名填给所有平台；「清空」用于换歌时一次性清掉。
+    applyKeywordsToAll() {
+      const keyword = String(this.bulkKeyword || '').trim()
+      if (!keyword) return
+      for (const platform of this.platforms) this.keywords[platform.id] = keyword
+    },
+    clearKeywords() {
+      for (const platform of this.platforms) this.keywords[platform.id] = ''
+      this.bulkKeyword = ''
     },
     handleClose() {
       this.stopTest()
@@ -389,34 +434,80 @@ export default {
     qualityLabel(quality) {
       return qualityNames[quality] || quality
     },
-    groupActualSpec(group) {
-      const rows = group.rows.filter(row => row.actualFormat || row.actualSampleRate)
-      if (!rows.length) return '无法确认'
-      const best = rows.reduce((current, row) => {
-        if (!current) return row
-        const currentRate = Number(current.actualSampleRate) || 0
-        const rowRate = Number(row.actualSampleRate) || 0
-        if (rowRate !== currentRate) return rowRate > currentRate ? row : current
-        return current.actualFormat ? current : row
-      }, null)
-      const fields = []
-      if (best.actualFormat) fields.push(String(best.actualFormat).toUpperCase())
-      if (best.actualSampleRate) fields.push(`${best.actualSampleRate / 1000}kHz`)
-      return fields.join(' · ') || '无法确认'
+    tierSummary(group) {
+      return summarizeTierResults(group.rows.map(row => ({ kind: row.kind ?? 'failed', tier: row.tier ?? null })))
     },
-    groupSummary(group) {
-      const passed = group.rows.filter(row => row.status === 'success').length
-      const downgraded = group.rows.filter(row => row.status === 'warning').length
-      const unknown = group.rows.filter(row => row.status === 'unknown').length
-      const unsupported = group.rows.filter(row => row.status === 'unsupported').length
-      const failed = group.rows.filter(row => row.status === 'failed').length
-      return [
-        `通过 ${passed}`,
-        `疑似降级 ${downgraded}`,
-        unknown ? `无法确认 ${unknown}` : '',
-        unsupported ? `不支持 ${unsupported}` : '',
-        `失败 ${failed}`,
-      ].filter(Boolean).join(' · ')
+    tierLabel(key) {
+      if (!key) return '—'
+      return qualityNames[key] || key
+    },
+    tierChipStyle(key) {
+      const color = qualityColors[key]
+      return color ? { backgroundColor: color, borderColor: color, color: '#fff' } : null
+    },
+    actualText(result) {
+      if (result.kind === 'failed') return result.statusLabel && result.statusLabel !== '失败' ? result.statusLabel : '获取失败'
+      if (result.kind === 'unsupported') return '不支持'
+      if (result.kind === 'unknown') return '无法确认'
+      const label = this.tierLabel(result.tier)
+      return result.kind === 'downgrade' ? `降级 ${label}` : label
+    },
+    summaryText(summary) {
+      const parts = [`通过 ${summary.passed}`, `降级 ${summary.downgraded}`]
+      if (summary.unknown) parts.push(`无法确认 ${summary.unknown}`)
+      if (summary.unsupported) parts.push(`不支持 ${summary.unsupported}`)
+      parts.push(`错误 ${summary.failed}`)
+      return parts.join(' · ')
+    },
+    groupSummaryText(group) {
+      return this.summaryText(this.tierSummary(group))
+    },
+    // 最高音质按平台各算各的：优先取该平台通过的档位，没有通过时取降级里最高的并标疑似。
+    bestQualityText(summary) {
+      if (!summary.bestTier) return '未知'
+      const label = this.tierLabel(summary.bestTier)
+      return summary.bestSuspected ? `疑似 ${label}` : label
+    },
+    blockKeywordText(block) {
+      const parts = []
+      if (block.keyword) parts.push(`搜索：${block.keyword}`)
+      if (block.song) parts.push(`找到：${block.song}`)
+      return parts.join(' · ')
+    },
+    // 按平台分块，平台状态与手机版一致：[OK] 有通过、[FAIL] 全部失败/不支持、[WARN] 其余。
+    platformBlocks(group) {
+      const blocks = []
+      const map = new Map()
+      for (const row of group.rows) {
+        const key = row.platformId || ''
+        let block = map.get(key)
+        if (!block) {
+          block = { platformId: key, platformName: row.platformName || '', rows: [] }
+          map.set(key, block)
+          blocks.push(block)
+        }
+        block.rows.push(row)
+      }
+      for (const block of blocks) {
+        const summary = summarizeTierResults(block.rows.map(row => ({ kind: row.kind ?? 'failed', tier: row.tier ?? null })))
+        block.keyword = this.keywordsUsed[block.platformId] || ''
+        block.song = block.rows.find(row => row.song)?.song ?? ''
+        block.bestTier = summary.bestTier
+        block.bestSuspected = summary.bestSuspected
+        block.bestText = this.bestQualityText(summary)
+        block.summaryText = this.summaryText(summary)
+        if (summary.passed > 0) {
+          block.state = 'ok'
+          block.stateLabel = '[OK]'
+        } else if (block.rows.every(row => row.kind === 'failed' || row.kind === 'unsupported')) {
+          block.state = 'fail'
+          block.stateLabel = '[FAIL]'
+        } else {
+          block.state = 'warn'
+          block.stateLabel = '[WARN]'
+        }
+      }
+      return blocks
     },
     markProgress() {
       this.progressCount = Math.min(this.progressCount + 1, this.progressTotal || Number.MAX_SAFE_INTEGER)
@@ -426,13 +517,16 @@ export default {
       for (const platform of this.platforms) {
         if (!this.isRunActive(runToken)) return
         if (!this.selectedPlatforms.includes(platform.id)) continue
+        // 没填歌名的平台直接跳过，不产出「关键词为空」的失败记录。
+        if (!String(this.keywords[platform.id] || '').trim()) continue
+        this.keywordsUsed[platform.id] = String(this.keywords[platform.id] || '').trim()
         this.progressText = `${api.name} · ${platform.name} · ${this.searchCache[platform.id] ? '使用已固定歌曲' : '搜索'}`
         let searchResult
         try {
           searchResult = await this.getSearchResult(platform)
         } catch (error) {
           if (!this.isRunActive(runToken)) return
-          this.addResult({ ...this.resultBase(api, platform, '', ''), status: 'failed', statusLabel: '失败', detail: `搜索失败：${this.errorMessage(error)}` })
+          this.addResult({ ...this.resultBase(api, platform, '', ''), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: `搜索失败：${this.errorMessage(error)}` })
           this.markProgress()
           if (this.errorMessage(error).includes('测试超时')) {
             stopTestUserApis([api.id])
@@ -444,20 +538,17 @@ export default {
         const song = songInfo ? `${songInfo.name || songInfo.songName || '未知歌曲'} - ${songInfo.singer || songInfo.artist || '未知歌手'}` : ''
         if (!songInfo) {
           if (!this.isRunActive(runToken)) return
-          this.addResult({ ...this.resultBase(api, platform, '', ''), status: 'failed', statusLabel: '失败', detail: '搜索结果为空' })
+          this.addResult({ ...this.resultBase(api, platform, '', ''), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: '搜索结果为空' })
           this.markProgress()
           continue
         }
         const platformCapability = capabilities?.[platform.id]
         const hasMusicUrl = platformCapability?.actions?.includes('musicUrl')
-        const qualityList = hasMusicUrl ? (platformCapability?.qualitys || []).slice().sort((a, b) => {
-          const aIndex = qualityOrder.indexOf(a)
-          const bIndex = qualityOrder.indexOf(b)
-          return (aIndex < 0 ? qualityOrder.length : aIndex) - (bIndex < 0 ? qualityOrder.length : bIndex)
-        }) : []
+        // 同一档位的别名键（hires / flac24bit）只保留一个，避免重复测试同一档。
+        const qualityList = hasMusicUrl ? buildTestTierList(platformCapability?.qualitys || []) : []
         if (!qualityList.length) {
           if (!this.isRunActive(runToken)) return
-          this.addResult({ ...this.resultBase(api, platform, '', song), status: 'unsupported', statusLabel: '不支持', detail: hasMusicUrl ? '该音源未声明可测试的音质档位' : '该音源未声明此平台的音乐地址能力' })
+          this.addResult({ ...this.resultBase(api, platform, '', song), status: 'unsupported', statusLabel: '不支持', kind: 'unsupported', tier: null, detail: hasMusicUrl ? '该音源未声明可测试的音质档位' : '该音源未声明此平台的音乐地址能力' })
           this.markProgress()
           continue
         }
@@ -478,7 +569,7 @@ export default {
             const detail = this.formatProbe(probe)
             if (!this.isRunActive(runToken)) return
             if (probe.error != null || (probe.httpStatus != null && probe.httpStatus >= 400) || !probe.bytesRead) {
-              this.addResult({ ...this.resultBase(api, platform, quality, song), status: 'failed', statusLabel: '失败', detail: probe.error ?? (probe.httpStatus ? `HTTP ${probe.httpStatus}` : '未读取到音频数据') })
+              this.addResult({ ...this.resultBase(api, platform, quality, song), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: probe.error ?? (probe.httpStatus ? `HTTP ${probe.httpStatus}` : '未读取到音频数据') })
             } else {
               const isSpecialRequest = ['atmos', 'atmos_plus'].includes(quality)
               const isAmbiguousContainer = probe.format === 'm4a' || probe.format === 'matroska'
@@ -501,12 +592,13 @@ export default {
                 : verdict.detected == null || isSpecialRequest
                   ? '实测档位：无法确认'
                   : `规格符合：${this.qualityLabel(verdict.quality)}`)
-              this.addResult({ ...this.resultBase(api, platform, quality, song), actualFormat: probe.format, actualSampleRate: probe.sampleRate, actualContentLength: probe.contentLength, status, statusLabel, detail: detailParts.join(' · ') })
+              const verdictKind = verdict.downgraded ? 'downgrade' : unverifiable ? 'unknown' : 'pass'
+              this.addResult({ ...this.resultBase(api, platform, quality, song), actualFormat: probe.format, actualSampleRate: probe.sampleRate, actualContentLength: probe.contentLength, status, statusLabel, kind: verdictKind, tier: verdictKind === 'unknown' ? null : verdict.quality, detail: detailParts.join(' · ') })
             }
             this.markProgress()
           } catch (error) {
             if (!this.isRunActive(runToken)) return
-            this.addResult({ ...this.resultBase(api, platform, quality, song), status: 'failed', statusLabel: '失败', detail: this.errorMessage(error) })
+            this.addResult({ ...this.resultBase(api, platform, quality, song), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
             this.markProgress()
             if (this.errorMessage(error).includes('测试超时')) {
               stopTestUserApis([api.id])
@@ -532,6 +624,7 @@ export default {
       this.busy = true
       this.stopped = false
       this.results = []
+      this.keywordsUsed = {}
       const body = this.$refs.body
       if (body) body.scrollTo({ top: 0, behavior: 'auto' })
       this.progressCount = 0
@@ -549,7 +642,7 @@ export default {
           } catch (error) {
             if (!this.isRunActive(runToken)) break
             const api = this.apiList.find(item => item.id === apiId)
-            this.addResult({ taskId, apiId, apiName: api?.name || apiId, platformId: '', platformName: '', quality: '', qualityLabel: '', song: '', status: 'failed', statusLabel: '初始化失败', detail: this.errorMessage(error) })
+            this.addResult({ taskId, apiId, apiName: api?.name || apiId, platformId: '', platformName: '', quality: '', qualityLabel: '', song: '', status: 'failed', statusLabel: '初始化失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
             stopTestUserApis([apiId])
           }
         }
@@ -570,7 +663,7 @@ export default {
           await wait(this.numberSetting('sourceIntervalSeconds') * 1000)
         }
       } catch (error) {
-        if (this.isRunActive(runToken)) this.addResult({ taskId, apiId: '', apiName: '测试', platformId: '', platformName: '', quality: '', qualityLabel: '', song: '', status: 'failed', statusLabel: '失败', detail: this.errorMessage(error) })
+        if (this.isRunActive(runToken)) this.addResult({ taskId, apiId: '', apiName: '测试', platformId: '', platformName: '', quality: '', qualityLabel: '', song: '', status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
       } finally {
         if (this.runToken === runToken) {
           this.runToken++
@@ -590,7 +683,7 @@ export default {
       this.progressText = '已停止'
     },
     copyResults() {
-      const text = this.results.map(result => `${result.apiName} | ${result.platformName} | ${result.qualityLabel} | ${result.statusLabel} | ${result.detail}${result.song ? ` | ${result.song}` : ''}`).join('\n')
+      const text = this.results.map(result => `${result.apiName} | ${result.platformName} | ${this.tierLabel(result.quality)} --> ${this.actualText(result)} | ${result.detail}${result.song ? ` | ${result.song}` : ''}`).join('\n')
       clipboardWriteText(text)
     },
   },
@@ -687,7 +780,10 @@ export default {
 .platformHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
 .platformState { flex: none; color: var(--color-font-label); font-size: 11px; }
 .platformSelected .platformState { color: var(--color-primary-font); }
-.keyword { width: 100%; min-width: 0; }
+.keyword { width: 100%; min-width: 0; box-sizing: border-box; }
+.bulkRow { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.bulkInput { flex: 1; min-width: 0; box-sizing: border-box; }
+.bulkBtn { flex: none; min-width: 74px; }
 .advanced { margin-top: 8px; padding: 9px 10px; border: 1px solid var(--color-primary-alpha-900); border-radius: @radius-border; color: var(--color-font-label); font-size: 12px; }
 .advanced summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; list-style: none; }
 .advanced summary::-webkit-details-marker { display: none; }
@@ -709,17 +805,29 @@ export default {
 .resultGroupHead p { margin: 3px 0 0; color: var(--color-font-label); font-size: 11px; line-height: 1.35; word-break: break-word; }
 .groupSpec { color: var(--color-primary-font) !important; }
 .groupMeta { display: flex; flex: none; align-items: flex-end; flex-direction: column; gap: 4px; padding-top: 2px; text-align: right; }
-.groupSummary { color: var(--color-font-label); font-size: 11px; white-space: nowrap; }
 .groupCount { color: var(--color-font-label); font-size: 11px; white-space: nowrap; }
-.resultRows { display: flex; flex-direction: column; }
-.resultRow { display: grid; grid-template-columns: 56px 84px 64px minmax(0, 1fr); align-items: start; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--color-primary-alpha-900); font-size: 12px; line-height: 1.4; }
-.resultPlatform, .resultQuality { color: var(--color-font); }
-.resultStatus { font-weight: 600; }
-.resultDetail { min-width: 0; color: var(--color-font-label); word-break: break-word; }
-.success .resultStatus { color: var(--color-primary-font); }
-.warning .resultStatus { color: #b97800; }
-.failed .resultStatus { color: #c94a4a; }
-.unsupported .resultStatus, .unknown .resultStatus { color: var(--color-font-label); }
+.groupInfo { flex: 1; min-width: 0; }
+.groupMeta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.bestQualityLabel { color: var(--color-font-label); font-size: 11px; white-space: nowrap; }
+.platformMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 10px; border-top: 1px solid var(--color-primary-alpha-900); }
+.platformSummary { color: var(--color-font-label); font-size: 11px; }
+.tierChip { display: inline-flex; align-items: center; padding: 1px 6px; border: 1px solid transparent; border-radius: 3px; font-size: 11px; line-height: 16px; white-space: nowrap; color: var(--color-font); background: var(--color-primary-background-hover); }
+.tierChipLarge { padding: 2px 8px; font-size: 12px; line-height: 18px; font-weight: 600; }
+.tierChip[data-suspected] { border-style: dashed; }
+.tierChipRequest { color: var(--color-font); background: var(--color-primary-background-hover); }
+.platformBlock + .platformBlock { border-top: 1px solid var(--color-primary-alpha-900); }
+.platformHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; background: var(--color-primary-background-hover); }
+.platformName { font-size: 12px; font-weight: 600; color: var(--color-font); }
+.platformState { font-size: 11px; font-weight: 600; }
+.platformSong { margin: 0; padding: 4px 10px 0; color: var(--color-font-label); font-size: 11px; line-height: 1.4; word-break: break-word; }
+.state_ok { color: #2e9e5b; }
+.state_warn { color: #b97800; }
+.state_fail { color: #c94a4a; }
+.tierRows { display: flex; flex-direction: column; }
+.tierRow { display: grid; grid-template-columns: auto 12px auto minmax(0, 1fr); align-items: start; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--color-primary-alpha-900); font-size: 12px; line-height: 1.4; }
+.tierArrow { color: var(--color-font-label); text-align: center; }
+.tierDetail { min-width: 0; color: var(--color-font-label); word-break: break-word; }
+.kind_unknown, .kind_unsupported, .kind_failed { color: var(--color-font-label); background: transparent; border-color: var(--color-primary-alpha-900); }
 .footer { flex: none; display: flex; align-items: flex-end; gap: 16px; margin-top: 0; padding: 11px 18px 14px; border-top: 1px solid var(--color-primary-alpha-900); background: var(--color-content-background); }
 .progressArea { flex: 1; min-width: 0; }
 .progressText { overflow: hidden; color: var(--color-font-label); font-size: 12px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
@@ -735,8 +843,8 @@ export default {
   .platformGrid { grid-template-columns: 1fr; }
   .resultGroupHead { flex-direction: column; }
   .groupMeta { align-items: flex-start; text-align: left; }
-  .groupSummary, .groupCount { white-space: normal; }
-  .resultRow { grid-template-columns: 48px 70px 58px minmax(0, 1fr); gap: 6px; }
+  .groupCount { white-space: normal; }
+  .tierRow { grid-template-columns: auto 12px auto minmax(0, 1fr); gap: 4px; }
   .footer { align-items: stretch; flex-direction: column; gap: 10px; padding: 10px 12px 12px; }
   .footerActions { justify-content: flex-end; }
 }

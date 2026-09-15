@@ -61,6 +61,40 @@ const qualityRank = (tier: string) => {
   return index < 0 ? QUALITY_RANK.length : index
 }
 
+// 24bit 无损在旧口径里叫 flac24bit、新口径叫 hires，两者是同一个档位。
+const QUALITY_TIER_ALIASES: Record<string, string> = { flac24bit: 'hires' }
+
+export const canonicalQualityTier = (tier: string) => QUALITY_TIER_ALIASES[tier] ?? tier
+
+/**
+ * 去掉互为别名的重复档位。旧音源脚本可能同时声明 hires 与 flac24bit，
+ * 逐档测试与展示只应保留其中一个。
+ */
+export const dedupeQualityTiers = <T extends string>(tiers: readonly T[]): T[] => {
+  const seen = new Set<string>()
+  return tiers.filter(tier => {
+    const canonical = canonicalQualityTier(tier)
+    if (seen.has(canonical)) return false
+    seen.add(canonical)
+    return true
+  })
+}
+
+// 音质测试与展示使用的档位顺序，索引越小档位越高。
+const QUALITY_TIER_ORDER = ['master', 'atmos_plus', 'atmos', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k']
+
+/**
+ * 音源脚本声明的档位 → 测试与展示用的档位列表：按档位高低排序，并去掉互为
+ * 别名的重复项（同时声明 hires 与 flac24bit 的旧脚本只会保留一个）。
+ */
+export const buildTestTierList = (declaredQualitys: readonly string[]): string[] => dedupeQualityTiers(
+  declaredQualitys.slice().sort((a, b) => {
+    const aIndex = QUALITY_TIER_ORDER.indexOf(a)
+    const bIndex = QUALITY_TIER_ORDER.indexOf(b)
+    return (aIndex < 0 ? QUALITY_TIER_ORDER.length : aIndex) - (bIndex < 0 ? QUALITY_TIER_ORDER.length : bIndex)
+  }),
+)
+
 const parseDuration = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
   if (typeof value !== 'string') return null
@@ -144,4 +178,62 @@ export const describeActualQuality = ({ probe, interval, requested }: {
     return { quality: 'flac', detected, downgraded: true }
   }
   return { quality: requestedTier, detected, downgraded: false }
+}
+
+export type TierVerdictKind = 'pass' | 'downgrade' | 'unknown' | 'unsupported' | 'failed'
+
+export interface TierVerdictRow {
+  kind: TierVerdictKind
+  /** 判定后对外显示的档位：通过时为请求档位，降级时为实测档位 */
+  tier?: string | null
+}
+
+export interface TierVerdictSummary {
+  passed: number
+  downgraded: number
+  unknown: number
+  unsupported: number
+  failed: number
+  /** 实际最高音质：通过的最高档位；没有通过时取降级结果里最高的档位 */
+  bestTier: string | null
+  /** bestTier 来自降级结果（只能算疑似）时为 true */
+  bestSuspected: boolean
+}
+
+const tierOrderIndex = (tier: string) => {
+  const index = QUALITY_TIER_ORDER.indexOf(tier)
+  return index < 0 ? QUALITY_TIER_ORDER.length : index
+}
+
+/** 汇总逐档结果，口径对齐手机版的「通过 / 降级 / 错误」与实际最高音质。 */
+export const summarizeTierResults = (rows: readonly TierVerdictRow[]): TierVerdictSummary => {
+  const summary: TierVerdictSummary = {
+    passed: 0,
+    downgraded: 0,
+    unknown: 0,
+    unsupported: 0,
+    failed: 0,
+    bestTier: null,
+    bestSuspected: false,
+  }
+  let bestPassed: string | null = null
+  let bestDowngraded: string | null = null
+  for (const row of rows) {
+    if (row.kind === 'pass') summary.passed++
+    else if (row.kind === 'downgrade') summary.downgraded++
+    else if (row.kind === 'unknown') summary.unknown++
+    else if (row.kind === 'unsupported') summary.unsupported++
+    else summary.failed++
+
+    const tier = typeof row.tier === 'string' ? row.tier : null
+    if (!tier) continue
+    if (row.kind === 'pass' && (bestPassed == null || tierOrderIndex(tier) < tierOrderIndex(bestPassed))) bestPassed = tier
+    if (row.kind === 'downgrade' && (bestDowngraded == null || tierOrderIndex(tier) < tierOrderIndex(bestDowngraded))) bestDowngraded = tier
+  }
+  if (bestPassed != null) summary.bestTier = bestPassed
+  else if (bestDowngraded != null) {
+    summary.bestTier = bestDowngraded
+    summary.bestSuspected = true
+  }
+  return summary
 }

@@ -33,3 +33,24 @@ test('the git fallback source keeps the same vocabulary, without legacy keys', (
   assert.deepEqual(list, expected.git)
   assert.ok(!list.includes('flac24bit') && !list.includes('192k'))
 })
+
+const readApplyQualityAliases = () => {
+  const source = fs.readFileSync('src/main/modules/userApi/renderer/preload.js', 'utf8')
+  const match = source.match(/const applyQualityAliases = ([\s\S]*?\n\})/)
+  assert.ok(match, 'applyQualityAliases not found in preload.js')
+  return new Function(`return ${match[1]}`)()
+}
+
+test('legacy scripts declaring flac24bit keep a usable 24bit tier', () => {
+  const applyQualityAliases = readApplyQualityAliases()
+  const supportQualitys = readSupportQualitys()
+  const filter = declared => applyQualityAliases(supportQualitys.wy.filter(q => declared.includes(q)), declared)
+
+  // 旧脚本声明 flac24bit：收敛后的集合里本来没有它，兼容逻辑要把它补回去。
+  assert.deepEqual(filter(['128k', '320k', 'flac', 'flac24bit']), ['128k', '320k', 'flac', 'flac24bit'])
+  // 新旧键都声明的脚本：两个键都会保留（播放按歌曲数据里的键请求）。
+  assert.deepEqual(filter(['128k', 'hires', 'flac24bit']), ['128k', 'hires', 'flac24bit'])
+  // 新口径脚本不受影响。
+  assert.deepEqual(filter(['128k', 'hires']), ['128k', 'hires'])
+  assert.deepEqual(filter(['128k']), ['128k'])
+})

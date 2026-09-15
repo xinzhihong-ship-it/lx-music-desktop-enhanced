@@ -38,6 +38,14 @@ const supportQualitys = {
   git: ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master', 'ape', 'wav'],
   local: [],
 }
+// 24bit 无损的新口径是 hires，旧音源脚本仍声明 flac24bit；两者互为别名，
+// 把脚本声明的键补回能力列表，避免旧脚本的 24bit 档位直接失效。
+const applyQualityAliases = (supportedQualitys, declaredQualitys) => {
+  const list = supportedQualitys.slice()
+  if (declaredQualitys.includes('flac24bit') && !list.includes('flac24bit')) list.push('flac24bit')
+  if (declaredQualitys.includes('hires') && !list.includes('hires')) list.push('hires')
+  return list
+}
 const supportActions = {
   kw: ['musicUrl'],
   kg: ['musicUrl'],
@@ -153,11 +161,7 @@ const handleInit = (context, info) => {
       if (!userSource || userSource.type !== 'music') continue
       const qualitys = supportQualitys[source]
       const actions = supportActions[source]
-      const supportedQualitys = qualitys.filter(q => userSource.qualitys.includes(q))
-      // 24bit 无损的新口径是 hires，旧音源脚本仍声明 flac24bit；两者互为别名，
-      // 保留脚本自己声明的键，避免旧脚本的 24bit 档位直接失效。
-      if (userSource.qualitys.includes('flac24bit') && !supportedQualitys.includes('flac24bit')) supportedQualitys.push('flac24bit')
-      if (userSource.qualitys.includes('hires') && !supportedQualitys.includes('hires')) supportedQualitys.push('hires')
+      const supportedQualitys = applyQualityAliases(qualitys.filter(q => userSource.qualitys.includes(q)), userSource.qualitys)
       sourceInfo.sources[source] = {
         type: 'music',
         actions: actions.filter(a => userSource.actions.includes(a)),
