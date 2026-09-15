@@ -477,6 +477,9 @@ jobs:
           test -s release-assets/latest-mac.yml
 
       - name: Create or update prerelease
+        # 正式版号（不含 beta / alpha / rc）由 main 分支的 release 工作流发布，
+        # 这里跳过，避免把已经发布的正式版重新标成预发布。
+        if: ${{ contains(steps.meta.outputs.version, 'beta') || contains(steps.meta.outputs.version, 'alpha') || contains(steps.meta.outputs.version, 'rc') }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
@@ -490,6 +493,7 @@ jobs:
           fi
 
       - name: Upload release assets
+        if: ${{ contains(steps.meta.outputs.version, 'beta') || contains(steps.meta.outputs.version, 'alpha') || contains(steps.meta.outputs.version, 'rc') }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
