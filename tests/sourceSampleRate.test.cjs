@@ -13,7 +13,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText
 const loadedModule = { exports: {} }
 new Function('module', 'exports', 'require', compiled)(loadedModule, loadedModule.exports, require)
-const { parseAudioSampleRate, probeAudioSourceSampleRate } = loadedModule.exports
+const { parseAudioSampleRate, probeAudioSourceSampleRate, probeAudioSourceInfo } = loadedModule.exports
 
 const findBinary = name => {
   const fileName = process.platform === 'win32' ? `${name}.exe` : name
@@ -23,7 +23,15 @@ const findBinary = name => {
     process.platform === 'darwin' && `/usr/local/bin/${fileName}`,
     path.resolve('resources', 'ffmpeg', `${process.platform}-${process.arch}`, fileName),
   ].filter(Boolean)
-  return candidates.find(file => fs.existsSync(file)) ?? null
+  return candidates.find(file => {
+    if (!fs.existsSync(file)) return false
+    // A bundled macOS binary can exist while one of its dylib dependencies is
+    // missing.  Treat that as unavailable so codec fixture tests are skipped
+    // with a clear environment limitation instead of failing before testing
+    // the parser itself.
+    const result = cp.spawnSync(file, ['-version'], { stdio: 'ignore' })
+    return result.status === 0
+  }) ?? null
 }
 
 const wave = rate => {
@@ -47,6 +55,50 @@ test('format header parsers return the playback sample rate', () => {
   assert.equal(parseAudioSampleRate(wave(96000)), 96000)
   assert.equal(parseAudioSampleRate(new Uint8Array()), null)
   assert.equal(parseAudioSampleRate(Buffer.from('not audio')), null)
+})
+
+test('invalid container metadata is not accepted as a sample rate', () => {
+  const bytes = Buffer.alloc(6)
+  bytes[0] = 0xb5
+  bytes[1] = 0x84
+  bytes.writeFloatBE(139334, 2)
+  assert.equal(parseAudioSampleRate(bytes), null)
+})
+
+test('metadata markers inside an HTML response are not accepted as audio', () => {
+  const bytes = Buffer.from('<html>OpusHead OggS mp4a 1A45DFA3</html>')
+  assert.equal(parseAudioSampleRate(bytes), null)
+})
+
+test('HTTP errors are reported as probe failures instead of URL-format evidence', async() => {
+  const server = http.createServer((_request, response) => response.writeHead(403).end())
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const result = await probeAudioSourceInfo(`http://127.0.0.1:${server.address().port}/song.mp3`)
+    assert.equal(result.error, 'HTTP 403')
+    assert.equal(result.bytesRead, 0)
+    assert.equal(result.format, null)
+  } finally { server.close() }
+})
+
+test('a HEAD rejection does not fail a readable ranged audio response', async() => {
+  const bytes = wave(44100)
+  const server = http.createServer((request, response) => {
+    if (request.method === 'HEAD') return response.writeHead(405).end()
+    response.writeHead(206, {
+      'content-type': 'audio/wav',
+      'content-range': `bytes 0-${bytes.length - 1}/${bytes.length}`,
+      'content-length': bytes.length,
+    })
+    response.end(bytes)
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const result = await probeAudioSourceInfo(`http://127.0.0.1:${server.address().port}/song.wav`)
+    assert.equal(result.sampleRate, 44100)
+    assert.equal(result.error, null)
+    assert.equal(result.httpStatus, 206)
+  } finally { server.close() }
 })
 
 const ffmpeg = findBinary('ffmpeg')

@@ -6,8 +6,11 @@ import USER_API_RENDERER_EVENT_NAME from '../rendererEvent/name'
 import { httpOverHttp, httpsOverHttp } from 'tunnel'
 
 
+let isTestRuntime = false
+const getRendererEventName = (name) => isTestRuntime ? `userApiTest_${name}` : USER_API_RENDERER_EVENT_NAME[name]
 const sendMessage = (action, data, status, message) => {
-  ipcRenderer.send(action, { data, status, message })
+  const name = Object.keys(USER_API_RENDERER_EVENT_NAME).find(key => USER_API_RENDERER_EVENT_NAME[key] === action)
+  ipcRenderer.send(name ? getRendererEventName(name) : action, { data, status, message })
 }
 
 let isInitedApi = false
@@ -163,7 +166,7 @@ const handleInit = (context, info) => {
   }
   sendMessage(USER_API_RENDERER_EVENT_NAME.init, sourceInfo, true)
 
-  ipcRenderer.on(USER_API_RENDERER_EVENT_NAME.request, (event, data) => {
+  ipcRenderer.on(getRendererEventName('request'), (event, data) => {
     handleRequest(context, data)
   })
 }
@@ -188,6 +191,7 @@ const onError = (errorMessage) => {
 }
 
 const initEnv = (userApi) => {
+  isTestRuntime = userApi.test === true
   proxy.host = userApi.proxy.host
   proxy.port = userApi.proxy.port
 

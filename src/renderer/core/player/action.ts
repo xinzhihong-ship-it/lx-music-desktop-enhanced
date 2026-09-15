@@ -17,6 +17,7 @@ import {
 import { appSetting } from '@renderer/store/setting'
 import { getMusicUrl, getPicPath, getLyricInfo } from '../music/index'
 import { getPlayQuality } from '../music/utils'
+import { resolveActualQuality } from './actualQuality'
 import { filterList } from './utils'
 import { requestMsg } from '@renderer/utils/message'
 import { getRandom } from '@renderer/utils/index'
@@ -31,6 +32,7 @@ import { isPlayErrorHandlingEnabled } from './errorStrategy'
 import { getVideoUrl } from '@renderer/utils/musicSdk/bili/api'
 import { biliPlaybackMode, biliVideoQuality, isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { toOldMusicInfo } from '@renderer/utils'
+import { probeAudioSource } from '@renderer/utils/ipc'
 import { setPlaybackIntent } from './playbackIntent'
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
@@ -56,6 +58,20 @@ const getMusicQualityLabel = (musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   if ('progress' in musicInfo) return '下载'
   if (musicInfo.source == 'local') return '本地'
   return quality ?? getPlayQuality(appSetting['player.playQuality'], musicInfo)
+}
+
+const probeAndSetActualQuality = async({ requestId, musicInfo, url }: { requestId: number, musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, url: string }) => {
+  if (!url || 'progress' in musicInfo || musicInfo.source == 'local') return
+  try {
+    const probe = await probeAudioSource(url)
+    if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
+    const onlineInfo = getOnlineMusicInfo(musicInfo)
+    if (!onlineInfo) return
+    const quality = resolveActualQuality(probe, onlineInfo.interval)
+    setPlayQuality(quality ?? 'unknown')
+  } catch {
+    if (requestId === activeUrlRequest && musicInfo.id == playMusicInfo.musicInfo?.id) setPlayQuality('unknown')
+  }
 }
 export const setShouldPlayAfterLoad = (val: boolean) => { shouldPlayAfterLoad = val }
 export const getShouldPlayAfterLoad = () => shouldPlayAfterLoad
@@ -205,7 +221,8 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     // 记录当前播放音质，用于在主界面显示。
     if (musicInfo.id == playMusicInfo.musicInfo?.id) {
-      setPlayQuality(getMusicQualityLabel(musicInfo, quality))
+      const initialQuality = getMusicQualityLabel(musicInfo, quality)
+      setPlayQuality('progress' in musicInfo || musicInfo.source === 'local' ? initialQuality : 'unknown')
     }
     if (isVideo) {
       await setResource(url, musicInfo as LX.Music.MusicInfo, undefined, audioUrl)
@@ -215,6 +232,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       const audirvanaFilePath = buildAudirvanaFilePath(musicInfo)
       try {
         await setResource(url, musicInfo as LX.Music.MusicInfo, audirvanaFilePath ?? undefined)
+        void probeAndSetActualQuality({ requestId, musicInfo, url })
         return
       } catch (err: any) {
         console.error('setResource failed', err)
@@ -229,6 +247,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
           if (refreshed && refreshed.url !== url) {
             try {
               await setResource(refreshed.url, musicInfo as LX.Music.MusicInfo, audirvanaFilePath ?? undefined)
+              void probeAndSetActualQuality({ requestId, musicInfo, url: refreshed.url })
               return
             } catch (err2: any) {
               console.error('[Audirvana] setResource retry failed', err2)
@@ -240,6 +259,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       }
     }
     await setResource(url, musicInfo as LX.Music.MusicInfo)
+    void probeAndSetActualQuality({ requestId, musicInfo, url })
   }).catch((err: any) => {
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     console.log(err)

@@ -11,6 +11,7 @@ import {
   setAllowShowUpdateAlert as saveAllowShowUpdateAlert,
 } from './utils'
 import { loadApi, setAllowShowUpdateAlert as setRendererEventAllowShowUpdateAlert, init } from './rendererEvent/rendererEvent'
+import { registerTestUserApi, stopTestUserApis } from './test'
 
 let userApiId: string | null
 
@@ -82,8 +83,10 @@ export * from './rendererEvent/rendererEvent'
 
 export default () => {
   init()
+  registerTestUserApi()
 
   global.lx.event_app.on('main_window_close', () => {
     void closeWindow()
+    stopTestUserApis()
   })
 }

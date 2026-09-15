@@ -191,6 +191,42 @@ export const userApiRequestCancel = (requestKey: LX.UserApi.UserApiRequestCancel
   rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api_cancel, requestKey)
 }
 
+export const getTestUserApiSources = async(ids: string[]) => {
+  return rendererInvoke<string[], Record<string, Partial<LX.UserApi.UserApiSources>>>(WIN_MAIN_RENDERER_EVENT_NAME.test_user_api_sources, ids)
+}
+
+export const sendTestUserApiRequest = async({ apiId, requestKey, data }: LX.UserApi.TestUserApiRequestParams): Promise<any> => {
+  return rendererInvoke<LX.UserApi.TestUserApiRequestParams, any>(WIN_MAIN_RENDERER_EVENT_NAME.test_user_api_request, {
+    apiId,
+    requestKey,
+    data,
+  })
+}
+
+export const testUserApiRequestCancel = (requestKey: string) => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.test_user_api_cancel, requestKey)
+}
+
+export const stopTestUserApis = (ids?: string[]) => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.test_user_api_stop, ids)
+}
+
+export const probeAudioSource = async(url: string) => {
+  return rendererInvoke<string, {
+    sampleRate: number | null
+    contentType: string | null
+    contentLength: number | null
+    format: string | null
+    formatSource: string | null
+    formatHint: string | null
+    bitrate: number | null
+    bitsPerSample: number | null
+    bytesRead: number
+    httpStatus: number | null
+    error: string | null
+  }>(WIN_MAIN_RENDERER_EVENT_NAME.probe_audio_source, url)
+}
+
 // export const setDesktopLyricInfo = (type, data, info) => {
 //   rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.set_lyric_info, {
 //     type,

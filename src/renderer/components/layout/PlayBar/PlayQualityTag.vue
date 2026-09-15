@@ -6,9 +6,11 @@
 import { computed } from '@common/utils/vueTools'
 import { playQuality, musicInfo } from '@renderer/store/player/state'
 import { appSetting } from '@renderer/store/setting'
+import { useI18n } from '@renderer/plugins/i18n'
 
 export default {
   setup() {
+    const t = useI18n()
     const label = computed(() => {
       if (!musicInfo.id) return ''
       const engineMap = {
@@ -18,7 +20,16 @@ export default {
       }
       const engine = engineMap[appSetting['player.playEngine']] ?? '内置'
       const quality = playQuality.value
-      return quality ? `${quality} · ${engine}` : engine
+      if (!quality) return engine
+      if (quality === 'unknown') return `${t('player__quality_unknown')} · ${engine}`
+      const qualityLabels = {
+        ape: 'APE',
+        wav: 'WAV',
+      }
+      const qualityKey = `setting__play_quality_${quality}`
+      const translated = t(qualityKey)
+      const qualityLabel = translated === qualityKey ? qualityLabels[quality] ?? quality : translated
+      return `${qualityLabel} · ${engine}`
     })
     return { label }
   },

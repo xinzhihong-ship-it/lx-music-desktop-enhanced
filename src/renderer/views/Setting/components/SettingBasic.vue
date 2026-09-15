@@ -48,6 +48,7 @@ dd
           span(v-if="item.statusLabel" :class="$style.status") {{ item.statusLabel }}
     .p.gap-top
       base-btn.btn(min @click="isShowUserApiModal = true") {{ $t('setting__basic_source_user_api_btn') }}
+      base-btn.btn(:class="$style.sourceTestBtn" min @click="isShowUserApiQualityTestModal = true") {{ $t('setting__basic_source_test_btn') }}
     .p.gap-top
       base-btn.btn(min @click="isShowAccountModal = true") {{ $t('setting__basic_account_btn') }}
 
@@ -111,6 +112,7 @@ ThemeSelectorModal(v-model="isShowThemeSelectorModal")
 ThemeEditModal(v-model="isShowThemeEditModal" :theme-id="editThemeId" @submit="handleRefreshTheme")
 play-timeout-modal(v-model="isShowPlayTimeoutModal")
 user-api-modal(v-model="isShowUserApiModal")
+user-api-quality-test-modal(v-model:show="isShowUserApiQualityTestModal" :current-api-id="appSetting['common.apiSource']")
 account-modal(v-model="isShowAccountModal")
 </template>
 
@@ -127,6 +129,7 @@ import ThemeSelectorModal from './ThemeSelectorModal.vue'
 import ThemeEditModal from './ThemeEditModal/index.vue'
 import PlayTimeoutModal from './PlayTimeoutModal.vue'
 import UserApiModal from './UserApiModal.vue'
+import UserApiQualityTestModal from './UserApiQualityTestModal.vue'
 import AccountModal from './AccountModal.vue'
 import { appSetting, updateSetting } from '@renderer/store/setting'
 import { getThemes, applyTheme, findTheme, buildBgUrl } from '@renderer/store/utils'
@@ -138,6 +141,7 @@ export default {
     ThemeEditModal,
     PlayTimeoutModal,
     UserApiModal,
+    UserApiQualityTestModal,
     AccountModal,
   },
   setup() {
@@ -255,6 +259,7 @@ export default {
     const { timeLabel } = useTimeout()
 
     const isShowUserApiModal = ref(false)
+    const isShowUserApiQualityTestModal = ref(false)
     const isShowAccountModal = ref(false)
     const getApiStatus = () => {
       let status
@@ -350,6 +355,7 @@ export default {
       timeLabel,
       apiSources,
       isShowUserApiModal,
+      isShowUserApiQualityTestModal,
       isShowAccountModal,
       windowSizeList,
       langList,
@@ -557,6 +563,10 @@ export default {
   .status {
     margin-left: 5px;
   }
+}
+
+.sourceTestBtn {
+  margin-left: 8px;
 }
 
 </style>

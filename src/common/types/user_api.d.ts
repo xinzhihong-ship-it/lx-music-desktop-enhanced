@@ -46,6 +46,9 @@ declare namespace LX {
       requestKey: string
       data: any
     }
+    interface TestUserApiRequestParams extends UserApiRequestParams {
+      apiId: string
+    }
     type UserApiRequestCancelParams = string
     type UserApiSetApiParams = string
 
