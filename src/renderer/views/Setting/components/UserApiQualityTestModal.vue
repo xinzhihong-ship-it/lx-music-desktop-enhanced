@@ -94,6 +94,7 @@ import { userApi } from '@renderer/store'
 import { clipboardWriteText } from '@common/utils/electron'
 import { toNewMusicInfo } from '@common/utils/tools'
 import musicSdk from '@renderer/utils/musicSdk'
+import { describeActualQuality } from '@renderer/core/player/actualQuality'
 import { getTestUserApiSources, probeAudioSource, sendTestUserApiRequest, stopTestUserApis } from '@renderer/utils/ipc'
 
 const platforms = [
@@ -380,9 +381,13 @@ export default {
       if (probe.format) fields.push(probe.format.toUpperCase())
       else if (probe.formatHint) fields.push(`后缀提示 ${probe.formatHint.toUpperCase()}`)
       if (probe.sampleRate) fields.push(`${probe.sampleRate / 1000}kHz`)
+      if (probe.bitsPerSample) fields.push(`${probe.bitsPerSample}bit`)
       if (probe.contentLength) fields.push(`${(probe.contentLength / 1024 / 1024).toFixed(2)}MB`)
       if (fields.length) return fields.join(' · ')
       return '规格无法确认'
+    },
+    qualityLabel(quality) {
+      return qualityNames[quality] || quality
     },
     groupActualSpec(group) {
       const rows = group.rows.filter(row => row.actualFormat || row.actualSampleRate)
@@ -475,22 +480,28 @@ export default {
             if (probe.error != null || (probe.httpStatus != null && probe.httpStatus >= 400) || !probe.bytesRead) {
               this.addResult({ ...this.resultBase(api, platform, quality, song), status: 'failed', statusLabel: '失败', detail: probe.error ?? (probe.httpStatus ? `HTTP ${probe.httpStatus}` : '未读取到音频数据') })
             } else {
-              const isLosslessRequest = ['flac', 'flac24bit', 'hires', 'master', 'ape', 'wav'].includes(quality)
               const isSpecialRequest = ['atmos', 'atmos_plus'].includes(quality)
-              const isLossy = ['mp3', 'aac', 'ogg', 'opus'].includes(probe.format)
-              const isAmbiguousContainer = probe.format === 'm4a'
+              const isAmbiguousContainer = probe.format === 'm4a' || probe.format === 'matroska'
               // A container magic/header alone is not proof that the response
               // contains playable audio.  Require parsed audio metadata before
               // calling a request successful or labelling it a downgrade.
               const hasAudioEvidence = probe.sampleRate != null
-              const mismatch = isLosslessRequest && isLossy && hasAudioEvidence
-              const uncertainContainer = isLosslessRequest && isAmbiguousContainer && hasAudioEvidence
-              const status = mismatch ? 'warning' : isSpecialRequest || uncertainContainer ? 'unknown' : hasAudioEvidence ? 'success' : 'unknown'
-              const statusLabel = mismatch ? '疑似降级' : isSpecialRequest || uncertainContainer ? '无法确认' : hasAudioEvidence ? '已获取' : '无法确认'
-              const resultDetail = isSpecialRequest && !probe.error
-                ? `${detail} · 专有档位无法仅凭文件确认`
-                : uncertainContainer ? `${detail} · M4A 容器无法仅凭采样率确认编码` : detail
-              this.addResult({ ...this.resultBase(api, platform, quality, song), actualFormat: probe.format, actualSampleRate: probe.sampleRate, actualContentLength: probe.contentLength, status, statusLabel, detail: resultDetail })
+              // 用与播放栏相同的换算规则判定档位，避免测试结论和界面显示互相矛盾。
+              const verdict = describeActualQuality({ probe, interval: testSongInfo.interval, requested: quality })
+              const uncertainContainer = isAmbiguousContainer && hasAudioEvidence && verdict.detected == null
+              // 专有档位（全景声等）无法仅凭容器证明，即使容器可解析也不判定为已获取。
+              const unverifiable = isSpecialRequest || uncertainContainer || !hasAudioEvidence || verdict.detected == null
+              const status = verdict.downgraded ? 'warning' : unverifiable ? 'unknown' : 'success'
+              const statusLabel = verdict.downgraded ? '疑似降级' : unverifiable ? '无法确认' : '已获取'
+              const detailParts = [detail]
+              if (isSpecialRequest) detailParts.push('专有档位无法仅凭文件确认')
+              else if (uncertainContainer) detailParts.push(`${String(probe.format).toUpperCase()} 容器无法仅凭采样率确认编码`)
+              detailParts.push(verdict.detected == null || isSpecialRequest
+                ? '实测档位：无法确认'
+                : verdict.downgraded
+                  ? `实测档位：${this.qualityLabel(verdict.quality)}`
+                  : `规格符合：${this.qualityLabel(verdict.quality)}`)
+              this.addResult({ ...this.resultBase(api, platform, quality, song), actualFormat: probe.format, actualSampleRate: probe.sampleRate, actualContentLength: probe.contentLength, status, statusLabel, detail: detailParts.join(' · ') })
             }
             this.markProgress()
           } catch (error) {

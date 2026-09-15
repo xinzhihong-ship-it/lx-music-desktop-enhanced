@@ -35,7 +35,7 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
   }
   const intent = load('src/renderer/core/player/playbackIntent.ts', {})
   const song = { id: 'song', source: 'kw', meta: {} }
-  const playerState = { musicInfo: { id: 'song' }, playMusicInfo: { musicInfo: song }, isPlay: { value: false }, playQuality: { value: '128k' }, playedList: [], tempPlayList: [], playInfo: { playerListId: 'list', playerPlayIndex: 0 } }
+  const playerState = { musicInfo: { id: 'song' }, playMusicInfo: { musicInfo: song }, isPlay: { value: false }, playQuality: { value: '128k' }, playQualityActual: { value: '' }, playedList: [], tempPlayList: [], playInfo: { playerListId: 'list', playerPlayIndex: 0 } }
   const plugin = {
     isEmpty: () => state.empty,
     setPause: () => { playerState.isPlay.value = false; hub.pause() },
@@ -50,7 +50,7 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     '@renderer/plugins/i18n': { useI18n: () => key => key },
     '@renderer/store/player/state': playerState,
     '@renderer/plugins/player': plugin,
-    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlay: value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
+    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlayQualityActual: noop, setPlay: value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
     '@renderer/store/setting': { appSetting: { 'player.playEngine': 'electron', 'common.apiSource': 'a', 'player.togglePlayMethod': 'listLoop' } },
     '@renderer/core/player/errorStrategy': strategy, './errorStrategy': strategy,
     '@renderer/core/music/utils': { QUALITY_RANK: [], getLowerPlayQuality: () => null },

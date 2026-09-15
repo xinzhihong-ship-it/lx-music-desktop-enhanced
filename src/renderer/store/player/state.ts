@@ -43,6 +43,10 @@ export const isShowLrcSelectContent = ref(false)
 // 当前实际播放音质（如 128k / 320k / flac / 本地 / 下载）
 export const playQuality = ref('')
 
+// 探测到的实际播放档位。仅用于播放栏显示，为空时回退到播放音质本身，
+// 这样换源、降质等逻辑仍然只依赖 playQuality。
+export const playQualityActual = ref('')
+
 export const playMusicInfo = shallowReactive<{
   /**
    * 当前播放歌曲的列表 id

@@ -13,6 +13,7 @@ import {
   playedList,
   tempPlayList,
   playQuality,
+  playQualityActual,
 } from './state'
 import { getListMusicsFromCache } from '@renderer/store/list/action'
 import { downloadList } from '@renderer/store/download/state'
@@ -59,6 +60,10 @@ export const setAllStatus = (val: string) => {
 
 export const setPlayQuality = (val: string) => {
   playQuality.value = val
+}
+
+export const setPlayQualityActual = (val: string) => {
+  playQualityActual.value = val
 }
 
 
@@ -186,6 +191,8 @@ export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.L
   playMusicInfo.isTempPlay = isTempPlay
 
   setPlayerMusicInfo(musicInfo)
+  // 换歌时清空上一首探测到的档位，避免新歌地址就绪前播放栏显示旧值。
+  setPlayQualityActual('')
 
   setProgress(0, 0)
 

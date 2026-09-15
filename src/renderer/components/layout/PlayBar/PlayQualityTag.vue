@@ -4,7 +4,7 @@
 
 <script>
 import { computed } from '@common/utils/vueTools'
-import { playQuality, musicInfo } from '@renderer/store/player/state'
+import { playQuality, playQualityActual, musicInfo } from '@renderer/store/player/state'
 import { appSetting } from '@renderer/store/setting'
 import { useI18n } from '@renderer/plugins/i18n'
 
@@ -19,7 +19,8 @@ export default {
         electron: '内置',
       }
       const engine = engineMap[appSetting['player.playEngine']] ?? '内置'
-      const quality = playQuality.value
+      // 优先显示探测到的实际档位，未探测到或证据不足时沿用请求档位。
+      const quality = playQualityActual.value || playQuality.value
       if (!quality) return engine
       if (quality === 'unknown') return `${t('player__quality_unknown')} · ${engine}`
       const qualityLabels = {
