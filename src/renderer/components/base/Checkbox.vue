@@ -1,5 +1,7 @@
 <template>
-  <div :class="$style.checkbox">
+  <!-- 传了 ariaLabel 时把它同时挂到根元素：悬停提示（Tips 插件读 aria-label）是从被悬停
+       的元素向上找的，只挂在勾选框那层的话，鼠标停在文字上时提示不会出现。 -->
+  <div :class="$style.checkbox" :aria-label="ariaLabel || null">
     <input
       :id="id" ref="dom_input" :type="need ? 'radio' : 'checkbox'" :aria-hidden="true" :checked="checked"
       :class="$style.input" :disabled="disabled" :value="value" :name="name" @input="handleInput($event.target.checked)"

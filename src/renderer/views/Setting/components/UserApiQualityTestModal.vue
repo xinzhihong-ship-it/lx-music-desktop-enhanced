@@ -31,7 +31,7 @@ material-modal(:show="show" teleport="#view" width="min(900px, calc(100vw - 28px
         div(:class="$style.sectionHead")
           div
             h3 测试平台与关键词
-            p(:class="$style.sectionHint") 每个平台只搜索一次，按音源脚本声明逐档请求；平台原生档位名称可能不同，实际以探测规格为准。关键词可只填歌名，也可写成「歌名 歌手」锁定版本；没填的平台会跳过。
+            p(:class="$style.sectionHint") 每个平台只搜索一次，按平台自己的音质档位逐档请求；平台怎么定义档位就按平台的标准判定，当前音源给不了的档位会标为不可测。关键词可只填歌名，也可写成「歌名 歌手」锁定版本；没填的平台会跳过。
           span(:class="$style.sectionMetaText") {{ selectedPlatforms.length }} 个平台
         div(:class="$style.bulkRow")
           base-input(v-model="bulkKeyword" :class="$style.bulkInput" placeholder="统一填写关键词（歌名，或 歌名 歌手）" :trim="false" :disabled="busy" @submit="applyKeywordsToAll")
@@ -62,7 +62,7 @@ material-modal(:show="show" teleport="#view" width="min(900px, calc(100vw - 28px
         div(:class="$style.sectionHead")
           div
             h3 测试结果
-            p(:class="$style.sectionHint") 展开每个音源可查看平台状态、请求档位与实际档位。
+            p(:class="$style.sectionHint") 展开每个音源可查看平台状态、平台档位与实测落点。
           span(v-if="results.length" :class="$style.sectionMetaText") {{ results.length }} 条记录
         div(v-if="results.length" ref="resultList" :class="$style.resultList")
           details(v-for="group in groupedResults" :key="group.apiId" :class="$style.resultGroup" :open="expandedGroups.includes(group.apiId)" @toggle="toggleGroup(group.apiId, $event)")
@@ -84,7 +84,7 @@ material-modal(:show="show" teleport="#view" width="min(900px, calc(100vw - 28px
                   span(:class="$style.platformSummary") {{ block.summaryText }}
                 div(:class="$style.tierRows")
                   div(v-for="(result, index) in block.rows" :key="`${result.quality}-${index}`" :class="$style.tierRow")
-                    span(:class="[$style.tierChip, $style.tierChipRequest]" :style="tierChipStyle(result.quality)") {{ tierLabel(result.quality) }}
+                    span(:class="[$style.tierChip, $style.tierChipRequest]" :style="tierChipStyle(result.quality)") {{ platformQualityLabel(result) }}
                     span(:class="$style.tierArrow") →
                     span(:class="[$style.tierChip, $style[`kind_${result.kind}`]]" :style="result.tier && result.kind !== 'unknown' ? tierChipStyle(result.tier) : null") {{ actualText(result) }}
                     span(:class="$style.tierDetail") {{ result.detail }}
@@ -106,7 +106,9 @@ import { userApi } from '@renderer/store'
 import { clipboardWriteText } from '@common/utils/electron'
 import { toNewMusicInfo } from '@common/utils/tools'
 import musicSdk from '@renderer/utils/musicSdk'
-import { buildTestTierList, describeActualQuality, summarizeTierResults } from '@renderer/core/player/actualQuality'
+import { describeActualQuality, summarizeTierResults } from '@renderer/core/player/actualQuality'
+import { buildPlatformTestPlan, describePlatformQuality } from '@renderer/core/quality/platformQualityVerdict'
+import { qualityFullLabel } from '@renderer/core/quality/labels'
 import { getTestUserApiSources, probeAudioSource, sendTestUserApiRequest, stopTestUserApis } from '@renderer/utils/ipc'
 
 const platforms = [
@@ -117,19 +119,6 @@ const platforms = [
   { id: 'mg', name: '咪咕' },
 ]
 
-const qualityNames = {
-  master: '臻品母带',
-  atmos_plus: '臻品音质2.0',
-  atmos: '臻品音质',
-  hires: 'Hires 无损24-Bit',
-  flac24bit: 'Hires 无损24-Bit',
-  flac: 'FLAC 无损',
-  '320k': '320K 高音',
-  '192k': '优质 192K',
-  '128k': '128K 普音',
-  ape: 'APE',
-  wav: 'WAV',
-}
 // 档位标签配色，区分方式与手机版检测页一致。
 const qualityColors = {
   master: '#9b59b6',
@@ -343,15 +332,22 @@ export default {
         this.expandedGroups = this.expandedGroups.filter(id => id !== apiId)
       }
     },
-    resultBase(api, platform, quality, song) {
+    // row 是平台档位表里的一行；搜索失败这类没有档位的结果只带平台信息。
+    resultBase(api, platform, row, song) {
+      const rowInfo = row ?? {}
+      const requestQuality = rowInfo.requestType ?? ''
       return {
         taskId: this.taskId,
         apiId: api.id,
         apiName: api.name,
         platformId: platform.id,
         platformName: platform.name,
-        quality,
-        qualityLabel: qualityNames[quality] || quality,
+        // 平台自己的档位（码与名称），测试结果按平台的叫法展示
+        platformQualityId: rowInfo.qualityId ?? '',
+        platformQualityName: rowInfo.nameKey ? this.$t(rowInfo.nameKey) : '',
+        // 传给音源脚本的软件档位键
+        requestQuality,
+        quality: requestQuality,
         song,
       }
     },
@@ -431,15 +427,17 @@ export default {
       if (fields.length) return fields.join(' · ')
       return '规格无法确认'
     },
-    qualityLabel(quality) {
-      return qualityNames[quality] || quality
-    },
     tierSummary(group) {
       return summarizeTierResults(group.rows.map(row => ({ kind: row.kind ?? 'failed', tier: row.tier ?? null })))
     },
     tierLabel(key) {
       if (!key) return '—'
-      return qualityNames[key] || key
+      return qualityFullLabel(this.$t, key)
+    },
+    // 结果行左侧展示平台自己的档位名；兜底行没有平台档位，退回软件档位名。
+    platformQualityLabel(result) {
+      if (result.platformQualityName) return result.platformQualityName
+      return result.requestQuality ? this.tierLabel(result.requestQuality) : '—'
     },
     tierChipStyle(key) {
       const color = qualityColors[key]
@@ -447,7 +445,8 @@ export default {
     },
     actualText(result) {
       if (result.kind === 'failed') return result.statusLabel && result.statusLabel !== '失败' ? result.statusLabel : '获取失败'
-      if (result.kind === 'unsupported') return '不支持'
+      // 「不支持」是整个平台不可用，「不适用」是这一档当前音源给不了，文案要分开
+      if (result.kind === 'unsupported') return result.statusLabel || '不支持'
       if (result.kind === 'unknown') return '无法确认'
       const label = this.tierLabel(result.tier)
       return result.kind === 'downgrade' ? `降级 ${label}` : label
@@ -512,6 +511,52 @@ export default {
     markProgress() {
       this.progressCount = Math.min(this.progressCount + 1, this.progressTotal || Number.MAX_SAFE_INTEGER)
     },
+    skipReasonText(row) {
+      if (row.reason === 'platform_proprietary') return '平台专有档位，软件里没有对应的音质键，无法请求'
+      if (row.reason === 'source_not_declared') return '当前音源未声明该档位'
+      return '当前音源未声明此平台的音乐地址能力'
+    },
+    // 判定一次请求的结果。有平台规格的档位按平台口径判（QQ 的 SQ 交付 24bit 算达标、
+    // 酷狗的无损要求 16bit 起），兜底行（脚本声明了、但平台档位表里没有的档位）退回软件档位规则。
+    buildVerdictResult({ api, platform, row, song, probe, testSongInfo, detail }) {
+      const base = {
+        ...this.resultBase(api, platform, row, song),
+        actualFormat: probe.format,
+        actualSampleRate: probe.sampleRate,
+        actualContentLength: probe.contentLength,
+      }
+      const detailParts = [detail]
+      let kind
+      let tier
+      if (row.spec) {
+        const verdict = describePlatformQuality({ probe, interval: testSongInfo.interval, source: platform.id, qualityId: row.qualityId })
+        kind = verdict.kind
+        tier = verdict.tier
+        // 容器可辨但读不到规格（m4a 里可能是 AAC 也可能是 ALAC）时说明一下，避免看起来像探测失败
+        if (verdict.actual == null) detailParts.push(`${String(probe.format || '该').toUpperCase()} 容器无法确认编码`)
+        if (kind === 'pass') {
+          detailParts.push(`规格符合：${this.tierLabel(tier)}`)
+        } else if (kind === 'downgrade') {
+          detailParts.push(`实测落点：${this.tierLabel(tier)}`)
+        } else {
+          detailParts.push(row.spec.verifiable ? '无法从文件确认规格' : '专有档位无法仅凭文件确认')
+          tier = null
+        }
+      } else {
+        // 兜底行：脚本声明了但平台档位表里没有这个档位，按软件档位的通用规则判定。
+        const verdict = describeActualQuality({ probe, interval: testSongInfo.interval, requested: row.requestType })
+        kind = verdict.downgraded ? 'downgrade' : verdict.detected == null ? 'unknown' : 'pass'
+        tier = kind === 'unknown' ? null : verdict.quality
+        detailParts.push(tier ? `实测落点：${this.tierLabel(tier)}` : '无法从文件确认规格')
+      }
+      // 平台档位自己的补充说明（如酷狗的蝰蛇母带在多数曲目上会回落成 320K）
+      if (row.noteKey) detailParts.push(this.$t(row.noteKey))
+      const status = kind === 'downgrade' ? 'warning' : kind === 'unknown' ? 'unknown' : 'success'
+      const statusLabel = kind === 'downgrade' ? '疑似降级' : kind === 'unknown' ? '无法确认' : '已获取'
+      // 说清这个平台档位落在软件里的哪一档，避免测试结论和播放设置对不上。
+      if (tier) detailParts.push(`对应软件档位：${this.tierLabel(tier)}`)
+      return { ...base, status, statusLabel, kind, tier, detail: detailParts.join(' · ') }
+    },
     async testOneApi(api, capabilities, runToken, taskId) {
       const stepTimeout = (this.numberSetting('testTimeoutSeconds') || 20) * 1000
       for (const platform of this.platforms) {
@@ -544,18 +589,36 @@ export default {
         }
         const platformCapability = capabilities?.[platform.id]
         const hasMusicUrl = platformCapability?.actions?.includes('musicUrl')
-        // 同一档位的别名键（hires / flac24bit）只保留一个，避免重复测试同一档。
-        const qualityList = hasMusicUrl ? buildTestTierList(platformCapability?.qualitys || []) : []
-        if (!qualityList.length) {
+        if (!hasMusicUrl) {
           if (!this.isRunActive(runToken)) return
-          this.addResult({ ...this.resultBase(api, platform, '', song), status: 'unsupported', statusLabel: '不支持', kind: 'unsupported', tier: null, detail: hasMusicUrl ? '该音源未声明可测试的音质档位' : '该音源未声明此平台的音乐地址能力' })
+          this.addResult({ ...this.resultBase(api, platform, null, song), status: 'unsupported', statusLabel: '不支持', kind: 'unsupported', tier: null, detail: '该音源未声明此平台的音乐地址能力' })
+          this.markProgress()
+          continue
+        }
+        // 以平台自己的档位表为骨架逐档测试：平台有哪几档就测哪几档，结论也按平台的叫法给出。
+        const plan = buildPlatformTestPlan({
+          source: platform.id,
+          declaredQualitys: platformCapability?.qualitys || [],
+          hasMusicUrl,
+        })
+        if (!plan.length) {
+          if (!this.isRunActive(runToken)) return
+          this.addResult({ ...this.resultBase(api, platform, null, song), status: 'unsupported', statusLabel: '不支持', kind: 'unsupported', tier: null, detail: '该平台没有可对照的音质档位' })
           this.markProgress()
           continue
         }
         const testSongInfo = this.normalizeSongInfo(songInfo, platform)
-        for (const quality of qualityList) {
+        for (const row of plan) {
           if (!this.isRunActive(runToken)) return
-          this.progressText = `${api.name} · ${platform.name} · ${qualityNames[quality] || quality}`
+          const rowLabel = row.nameKey ? this.$t(row.nameKey) : this.tierLabel(row.requestType)
+          this.progressText = `${api.name} · ${platform.name} · ${rowLabel}`
+          // 当前音源给不了的档位（脚本没声明，或平台专有而软件没有对应键）只出只读行，不发请求。
+          if (!row.requestable) {
+            this.addResult({ ...this.resultBase(api, platform, row, song), status: 'unsupported', statusLabel: '不适用', kind: 'unsupported', tier: null, detail: this.skipReasonText(row) })
+            this.markProgress()
+            continue
+          }
+          const quality = row.requestType
           try {
             const operation = (async() => {
               const url = await this.requestMusicUrl(api.id, platform.id, testSongInfo, quality, taskId)
@@ -569,36 +632,14 @@ export default {
             const detail = this.formatProbe(probe)
             if (!this.isRunActive(runToken)) return
             if (probe.error != null || (probe.httpStatus != null && probe.httpStatus >= 400) || !probe.bytesRead) {
-              this.addResult({ ...this.resultBase(api, platform, quality, song), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: probe.error ?? (probe.httpStatus ? `HTTP ${probe.httpStatus}` : '未读取到音频数据') })
+              this.addResult({ ...this.resultBase(api, platform, row, song), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: probe.error ?? (probe.httpStatus ? `HTTP ${probe.httpStatus}` : '未读取到音频数据') })
             } else {
-              const isSpecialRequest = ['atmos', 'atmos_plus'].includes(quality)
-              const isAmbiguousContainer = probe.format === 'm4a' || probe.format === 'matroska'
-              // A container magic/header alone is not proof that the response
-              // contains playable audio.  Require parsed audio metadata before
-              // calling a request successful or labelling it a downgrade.
-              const hasAudioEvidence = probe.sampleRate != null
-              // 用与播放栏相同的换算规则判定档位，避免测试结论和界面显示互相矛盾。
-              const verdict = describeActualQuality({ probe, interval: testSongInfo.interval, requested: quality })
-              const uncertainContainer = isAmbiguousContainer && hasAudioEvidence && verdict.detected == null
-              // 专有档位（全景声等）无法仅凭容器证明，即使容器可解析也不判定为已获取。
-              const unverifiable = isSpecialRequest || uncertainContainer || !hasAudioEvidence || verdict.detected == null
-              const status = verdict.downgraded ? 'warning' : unverifiable ? 'unknown' : 'success'
-              const statusLabel = verdict.downgraded ? '疑似降级' : unverifiable ? '无法确认' : '已获取'
-              const detailParts = [detail]
-              if (isSpecialRequest) detailParts.push('专有档位无法仅凭文件确认')
-              else if (uncertainContainer) detailParts.push(`${String(probe.format).toUpperCase()} 容器无法仅凭采样率确认编码`)
-              detailParts.push(verdict.downgraded
-                ? `实测档位：${this.qualityLabel(verdict.quality)}`
-                : verdict.detected == null || isSpecialRequest
-                  ? '实测档位：无法确认'
-                  : `规格符合：${this.qualityLabel(verdict.quality)}`)
-              const verdictKind = verdict.downgraded ? 'downgrade' : unverifiable ? 'unknown' : 'pass'
-              this.addResult({ ...this.resultBase(api, platform, quality, song), actualFormat: probe.format, actualSampleRate: probe.sampleRate, actualContentLength: probe.contentLength, status, statusLabel, kind: verdictKind, tier: verdictKind === 'unknown' ? null : verdict.quality, detail: detailParts.join(' · ') })
+              this.addResult(this.buildVerdictResult({ api, platform, row, song, probe, testSongInfo, detail }))
             }
             this.markProgress()
           } catch (error) {
             if (!this.isRunActive(runToken)) return
-            this.addResult({ ...this.resultBase(api, platform, quality, song), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
+            this.addResult({ ...this.resultBase(api, platform, row, song), status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
             this.markProgress()
             if (this.errorMessage(error).includes('测试超时')) {
               stopTestUserApis([api.id])
@@ -642,18 +683,22 @@ export default {
           } catch (error) {
             if (!this.isRunActive(runToken)) break
             const api = this.apiList.find(item => item.id === apiId)
-            this.addResult({ taskId, apiId, apiName: api?.name || apiId, platformId: '', platformName: '', quality: '', qualityLabel: '', song: '', status: 'failed', statusLabel: '初始化失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
+            this.addResult({ taskId, apiId, apiName: api?.name || apiId, platformId: '', platformName: '', quality: '', song: '', status: 'failed', statusLabel: '初始化失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
             stopTestUserApis([apiId])
           }
         }
+        // 进度总数按平台档位表的行数算，与实际产出的结果行数保持一致
         this.progressTotal = this.selectedApis.reduce((total, apiId) => {
           const sourceCapabilities = capabilities[apiId] || {}
           return total + this.selectedPlatforms.reduce((sourceTotal, platformId) => {
             const platformCapability = sourceCapabilities[platformId]
-            const count = platformCapability?.actions?.includes('musicUrl')
-              ? platformCapability.qualitys?.length || 0
-              : 0
-            return sourceTotal + Math.max(1, count)
+            if (!platformCapability?.actions?.includes('musicUrl')) return sourceTotal + 1
+            const plan = buildPlatformTestPlan({
+              source: platformId,
+              declaredQualitys: platformCapability.qualitys || [],
+              hasMusicUrl: true,
+            })
+            return sourceTotal + Math.max(1, plan.length)
           }, 0)
         }, 0)
         for (const apiId of this.selectedApis) {
@@ -663,7 +708,7 @@ export default {
           await wait(this.numberSetting('sourceIntervalSeconds') * 1000)
         }
       } catch (error) {
-        if (this.isRunActive(runToken)) this.addResult({ taskId, apiId: '', apiName: '测试', platformId: '', platformName: '', quality: '', qualityLabel: '', song: '', status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
+        if (this.isRunActive(runToken)) this.addResult({ taskId, apiId: '', apiName: '测试', platformId: '', platformName: '', quality: '', song: '', status: 'failed', statusLabel: '失败', kind: 'failed', tier: null, detail: this.errorMessage(error) })
       } finally {
         if (this.runToken === runToken) {
           this.runToken++
@@ -683,7 +728,7 @@ export default {
       this.progressText = '已停止'
     },
     copyResults() {
-      const text = this.results.map(result => `${result.apiName} | ${result.platformName} | ${this.tierLabel(result.quality)} --> ${this.actualText(result)} | ${result.detail}${result.song ? ` | ${result.song}` : ''}`).join('\n')
+      const text = this.results.map(result => `${result.apiName} | ${result.platformName} | ${this.platformQualityLabel(result)} --> ${this.actualText(result)} | ${result.detail}${result.song ? ` | ${result.song}` : ''}`).join('\n')
       clipboardWriteText(text)
     },
   },

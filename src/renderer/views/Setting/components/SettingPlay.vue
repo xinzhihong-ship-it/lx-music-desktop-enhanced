@@ -125,6 +125,7 @@ dd
     base-checkbox(
       v-for="item in playQualityList" :id="`setting_play_quality_${item}`" :key="item"
       name="setting_play_quality" need :model-value="appSetting['player.playQuality']" :value="item" :label="$t(`setting__play_quality_${item}`)"
+      :aria-label="qualityTip(item)"
       @update:model-value="updateSetting({'player.playQuality': $event})")
 
 dd(:aria-label="$t('setting__play_mediaDevice_title')")
@@ -151,6 +152,7 @@ import { appSetting, updateSetting } from '@renderer/store/setting'
 import { setPowerSaveBlocker } from '@renderer/core/player/utils'
 import { isPlay, playMusicInfo } from '@renderer/store/player/state'
 import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
+import { platformQualityTip } from '@renderer/core/quality/labels'
 import { isMac, log } from '@common/utils'
 import useDrag from '@renderer/utils/compositions/useDrag'
 import SettingVst3 from './SettingVst3.vue'
@@ -170,6 +172,9 @@ export default {
   setup() {
     const t = useI18n()
     const playQualityList = [...TRY_QUALITYS_LIST, '128k'].reverse()
+    // 同一档位在各平台的叫法不同（同样是 24bit 无损，酷狗叫 Hi-Res、网易叫高清臻音），
+    // 鼠标悬停时列出各平台自己的档位名，避免用户按软件档位名去猜平台行为。
+    const qualityTip = quality => platformQualityTip(t, quality)
     const errorStrategyList = [
       { id: 'auto', label: t('setting__play_error_strategy_auto') },
       { id: 'source', label: t('setting__play_error_strategy_source') },
@@ -447,6 +452,7 @@ export default {
       isMaxOutputChannelCount,
       handleUpdateMaxOutputChannelCount,
       playQualityList,
+      qualityTip,
       errorStrategyList,
       errorActionList,
       domErrorStrategyList,

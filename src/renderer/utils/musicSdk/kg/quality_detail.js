@@ -8,8 +8,13 @@ const qualityMap = {
   320: '320k',
   flac: 'flac',
   high: 'hires',
+  // 蝰蛇超清：实测约 3621kbps / 24bit，规格上已是母带级
   viper_clear: 'master',
+  // 官方的「蝰蛇母带」；多数曲目没有这一档，接口会回落成 320K 高品音质
+  viper_tape: 'master',
   viper_atmos: 'atmos',
+  // 杜比全景声
+  dolby: 'atmos',
 }
 
 const parseQualityInfo = (goods) => {

@@ -52,7 +52,8 @@ export const filterMusicInfoList = (rawList) => {
             size,
           }
           break
-        case 'ZQ':
+        // 咪咕有效的 24bit 档位码是 ZQ24（ZQ32 是 32bit wav），并没有 ZQ 这一档
+        case 'ZQ24':
           size = sizeFormate(type.size ?? type.androidSize)
           types.push({ type: 'hires', size })
           _types.hires = {
@@ -120,7 +121,8 @@ export const filterMusicInfoListV5 = (rawList) => {
             size,
           }
           break
-        case 'ZQ':
+        // 咪咕有效的 24bit 档位码是 ZQ24（ZQ32 是 32bit wav），并没有 ZQ 这一档
+        case 'ZQ24':
           size = sizeFormate(type.size ?? type.androidSize)
           types.push({ type: 'hires', size })
           _types.hires = {

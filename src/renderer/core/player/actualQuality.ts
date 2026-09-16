@@ -20,7 +20,8 @@ export interface ActualQualityResult {
   downgraded: boolean
 }
 
-interface AudioEvidence {
+/** 从文件头读到的音频规格，读不到有效证据时为 null */
+export interface AudioEvidence {
   lossless: boolean
   bitrate: number | null
   bits: number | null
@@ -237,3 +238,10 @@ export const summarizeTierResults = (rows: readonly TierVerdictRow[]): TierVerdi
   }
   return summary
 }
+
+/** 从探测结果读出音频规格；容器不可辨、专有容器或没读到有效数据时返回 null */
+export const describeAudioSpec = (probe: ActualAudioProbe | null | undefined, interval: unknown): AudioEvidence | null =>
+  readEvidence(probe, interval)
+
+/** 把音频规格折算成软件档位；无法证明时返回 null。按平台口径的判定会用到它对照落点。 */
+export const detectQualityTier = (evidence: AudioEvidence): string | null => resolveDetectedTier(evidence)

@@ -13,6 +13,7 @@
 import { qualityList } from '@renderer/store'
 import { createDownloadTasks } from '@renderer/store/download/action'
 import { getExt } from '@renderer/worker/download/utils'
+import { qualityFullLabel } from '@renderer/core/quality/labels'
 
 export default {
   props: {
@@ -63,28 +64,7 @@ export default {
       this.$emit('update:show', false)
     },
     getTypeName(quality) {
-      switch (quality) {
-        case 'master':
-          return this.$t('setting__play_quality_master')
-        case 'atmos_plus':
-          return this.$t('setting__play_quality_atmos_plus')
-        case 'atmos':
-          return this.$t('setting__play_quality_atmos')
-        case 'hires':
-        case 'flac24bit':
-          return this.$t('setting__play_quality_hires')
-        case 'flac':
-          return this.$t('setting__play_quality_flac')
-        case 'ape':
-        case 'wav':
-          return this.$t('download__lossless') + ' ' + quality.toUpperCase()
-        case '320k':
-          return this.$t('setting__play_quality_320k')
-        case '192k':
-          return this.$t('setting__play_quality_192k')
-        case '128k':
-          return this.$t('setting__play_quality_128k')
-      }
+      return qualityFullLabel(this.$t, quality)
     },
     getDownloadFormat(quality) {
       return getExt(quality).toUpperCase()

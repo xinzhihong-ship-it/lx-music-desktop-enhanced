@@ -111,6 +111,7 @@ import useMusicAdd from './useMusicAdd'
 import { downloadStatus } from '@renderer/store/download/state'
 import { appSetting, updateSetting } from '@renderer/store/setting'
 import { formatMusicName } from '@renderer/utils'
+import { qualityShortLabel } from '@renderer/core/quality/labels'
 import { addAudioConversionTasks, cancelAudioConversionTasks, getAudioConversionTasks, openDirInExplorer, removeAudioConversionTasks, retryAudioConversionTasks, showSelectDialog } from '@renderer/utils/ipc'
 
 export default {
@@ -271,23 +272,7 @@ export default {
     const getName = (downloadInfo) => {
       return formatMusicName(appSetting['download.fileName'], downloadInfo.metadata.musicInfo.name, downloadInfo.metadata.musicInfo.singer)
     }
-    const getTypeName = (quality) => {
-      switch (quality) {
-        case 'master':
-          return 'Master'
-        case 'atmos_plus':
-          return 'Atmos 2.0'
-        case 'atmos':
-          return 'Atmos'
-        case 'hires':
-        case 'flac24bit':
-          return 'Hires'
-        case 'flac':
-          return 'FLAC'
-        default:
-          return quality?.toUpperCase()
-      }
-    }
+    const getTypeName = (quality) => qualityShortLabel(window.i18n.t, quality)
     return {
       listRef,
       list,
