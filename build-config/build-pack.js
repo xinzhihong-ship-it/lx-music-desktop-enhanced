@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 const builder = require("electron-builder");
 const beforePack = require("./build-before-pack");
 const afterPack = require("./build-after-pack");
@@ -119,6 +120,26 @@ const withMpvResources = async (baseOptions, mpvPlatform, mpvArch) => {
 			throw new Error(
 				`Missing FFmpeg runtime for ${mpvPlatform}-${mpvArch}: ${missingBinaries.join(", ")}`,
 			);
+		// 发布产物必须在用户机上开箱可用：macOS 的 ffmpeg / ffprobe 只允许依赖系统库。
+		// 构建机上装了 Homebrew 的 libxcb / libX11 时，ffmpeg 的 configure 会自动按绝对路径链上，
+		// 用户机上 dyld 直接加载失败——这类「只在构建机能用」的产物不允许进入发布包。
+		if (mpvPlatform === "darwin") {
+			for (const name of requiredBinaries) {
+				const binaryPath = `${ffmpegResourcePath}/${name}`;
+				const dependencies = execFileSync("otool", ["-L", binaryPath], { encoding: "utf8" })
+					.split("\n")
+					.slice(1)
+					.map((line) => line.trim().split(/\s+/)[0])
+					.filter(Boolean);
+				const foreignDependencies = dependencies.filter(
+					(dependency) => !dependency.startsWith("/usr/lib/") && !dependency.startsWith("/System/"),
+				);
+				if (foreignDependencies.length)
+					throw new Error(
+						`FFmpeg runtime for darwin links non-system libraries and will fail to load on users' machines: ${binaryPath} -> ${foreignDependencies.join(", ")}`,
+					);
+			}
+		}
 		buildOptions.extraResources = [
 			...buildOptions.extraResources,
 			{

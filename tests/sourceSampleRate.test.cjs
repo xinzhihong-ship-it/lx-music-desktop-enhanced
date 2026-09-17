@@ -104,15 +104,30 @@ test('a HEAD rejection does not fail a readable ranged audio response', async() 
 const ffmpeg = findBinary('ffmpeg')
 const codecTest = ffmpeg ? test : test.skip
 
-codecTest('playback sample rate is correct for Opus and AAC, not metadata-parser aliases', async() => {
+// 项目自编的 ffmpeg 只启用 libmp3lame（应用内的转换也不提供 Opus 编码），只有系统 ffmpeg 才有
+// libopus。缺少该编码器时跳过 Opus 用例，避免把环境限制当成解析器回归。
+const supportsEncoder = name => {
+  if (!ffmpeg) return false
+  const result = cp.spawnSync(ffmpeg, ['-hide_banner', '-encoders'], { encoding: 'utf8' })
+  return result.status === 0 && (result.stdout ?? '').includes(name)
+}
+const opusTest = supportsEncoder('libopus') ? test : test.skip
+
+codecTest('playback sample rate is correct for AAC, not metadata-parser aliases', async() => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-source-rate-codecs-'))
+  try {
+    cp.execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=997:duration=0.2:sample_rate=96000', '-ac', '2', '-ar', '96000', path.join(root, 'in96.wav')])
+    cp.execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', path.join(root, 'in96.wav'), '-c:a', 'aac', '-b:a', '256k', path.join(root, 'a.m4a')])
+    assert.equal(await probeAudioSourceSampleRate(path.join(root, 'a.m4a')), 96000)
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+opusTest('playback sample rate is correct for Opus, not metadata-parser aliases', async() => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-source-rate-codecs-'))
   try {
     cp.execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=997:duration=0.2:sample_rate=8000', '-ac', '2', '-ar', '8000', path.join(root, 'in8.wav')])
     cp.execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', path.join(root, 'in8.wav'), '-c:a', 'libopus', '-b:a', '128k', path.join(root, 'op.ogg')])
-    cp.execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=997:duration=0.2:sample_rate=96000', '-ac', '2', '-ar', '96000', path.join(root, 'in96.wav')])
-    cp.execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', path.join(root, 'in96.wav'), '-c:a', 'aac', '-b:a', '256k', path.join(root, 'a.m4a')])
     assert.equal(await probeAudioSourceSampleRate(path.join(root, 'op.ogg')), 48000)
-    assert.equal(await probeAudioSourceSampleRate(path.join(root, 'a.m4a')), 96000)
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
