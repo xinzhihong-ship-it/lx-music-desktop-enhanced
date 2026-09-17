@@ -78,6 +78,19 @@ const virtualModules = new Map([
     export const transposeKey = (key, scale) => ({ key, scale, label: key, camelot: '' })
     export const getSemitonesFromPlaybackRate = () => 0
     export const MIN_CACHEABLE_CONFIDENCE = 0.5
+    export const formatKeyLabel = (key, scale) => (scale === 'minor' ? key + 'm 小调' : '1=' + key + ' 大调')
+    export const getCamelotCode = () => '9B'
+    export const normalizeUserTimeline = (input) => (input ?? [])
+      .filter((s) => s && Number.isFinite(s.at) && !!s.key && !!s.scale)
+      .map((s) => ({
+        at: Math.max(0, Math.round(s.at)),
+        key: s.key,
+        scale: s.scale,
+        label: (s.scale === 'minor' ? s.key + 'm 小调' : '1=' + s.key + ' 大调'),
+        camelot: '9B',
+        confidence: 1,
+      }))
+      .sort((a, b) => a.at - b.at)
   `],
 ])
 
@@ -400,4 +413,40 @@ test('retuneSpeed 电音深度支持 0~100 调节并持久化', async() => {
   assert.equal(retuneSpeed.value, 100, '超出 100 自动钳位到 100')
   setRetuneSpeed(-10)
   assert.equal(retuneSpeed.value, 0, '低于 0 自动钳位到 0')
+})
+
+test('取消「记住这首歌的基调」：只在本会话生效，不写库', async() => {
+  const mod = await import('../src/renderer/store/player/songKey.ts')
+  setSong('仅本次测试', '某歌手')
+  globalThis.__skSavedTimeline = null
+  globalThis.__skUserKey = null
+
+  // 单值：立刻生效，标记为「仅本次」，且没有写库
+  mod.applyCurrentSongKeyForSession({ key: 'A', scale: 'minor' })
+  assert.equal(mod.songKeyInfo.value.label, 'Am 小调')
+  assert.equal(mod.songKeyInfo.value.sessionOnly, true, '应标记为仅本次会话')
+  assert.equal(mod.songKeyInfo.value.source, 'user')
+  assert.equal(globalThis.__skSavedTimeline, null, '不应写入记忆（不写库）')
+
+  // 分段：同样只在本会话生效，时间轴要按用户设定生效
+  mod.applyCurrentSongKeyForSession({
+    key: 'C',
+    scale: 'major',
+    timeline: [
+      { at: 40, key: 'G', scale: 'major' },
+      { at: 0, key: 'C', scale: 'major' },
+    ],
+  })
+  assert.equal(mod.songKeyInfo.value.timeline.length, 2)
+  assert.equal(mod.songKeyInfo.value.timeline[0].label, '1=C 大调', '时间轴应按时间排序并补齐标签')
+  assert.equal(mod.songKeyInfo.value.timeline[1].label, '1=G 大调')
+  assert.equal(globalThis.__skSavedTimeline, null, '分段同样不应写入记忆')
+
+  // 切歌后这个值立刻作废，不会挂到下一首上（缓存/曲库都查不到 → 交给重新分析）
+  globalThis.__skResolve = async() => null
+  globalThis.__skResolveSync = () => null
+  globalThis.__skAnalyze = async() => null
+  setSong('下一首', '别的歌手')
+  await mod.updateCurrentSongKey()
+  assert.equal(mod.songKeyInfo.value, null, '「仅本次」的值不应该跟着切歌')
 })

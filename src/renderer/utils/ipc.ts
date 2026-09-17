@@ -382,6 +382,13 @@ export const fetchSongKeyAudio = async(source: string, maxBytes: number) => {
   ).catch(() => null)
 }
 
+export const fetchSongKeyPcm = async(source: string) => {
+  return await rendererInvoke<{ source: string }, LX.SongKey.PcmAudio | null>(
+    WIN_MAIN_RENDERER_EVENT_NAME.song_key_decode_pcm,
+    { source },
+  ).catch(() => null)
+}
+
 export const openNativeSongKeyWindow = () => {
   rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.open_song_key_window)
 }

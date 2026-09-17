@@ -20,12 +20,15 @@ import {
   getSavedUserKey,
   saveAnalyzedKey,
   setUserKeyTimeline,
+  normalizeUserTimeline,
   transposeKey,
   getSemitonesFromPlaybackRate,
   analyzeSongAudio,
   segmentAt,
   syncKeyToPlugin,
   sendMidiRetuneSpeed,
+  formatKeyLabel,
+  getCamelotCode,
   isRetuneSpeedAutomationSupported,
   MIN_CACHEABLE_CONFIDENCE,
   type NoteName,
@@ -209,9 +212,13 @@ export const updateCurrentSongKey = async(forceReanalyze = false) => {
   }
 
   // 内存未命中（切换到未知/待查新歌时）：立即清空上一首的旧基调，绝不把上一首歌的调挂在当前这首歌上！
+  // 但「重新分析」（forceReanalyze）是同一首歌的重算：保留当前结果显示，等新结果出来再整体替换。
+  // 否则分析期间面板会被清空（分段列表直接消失），失败时更是再也回不来。
   isKeyAnalyzing.value = true
-  songKeyInfo.value = null
-  playbackSeconds.value = 0
+  if (!forceReanalyze) {
+    songKeyInfo.value = null
+    playbackSeconds.value = 0
+  }
 
   try {
     if (!forceReanalyze) {
@@ -274,8 +281,9 @@ export const updateCurrentSongKey = async(forceReanalyze = false) => {
     }
 
     if (!analyzed) {
-      // 分析不出来就不显示，宁可空着也不编一个
-      songKeyInfo.value = null
+      // 分析不出来就不显示，宁可空着也不编一个；
+      // 重新分析失败时保留原有结果（它也是这首歌的真实结果，不是编的）
+      if (!forceReanalyze) songKeyInfo.value = null
       return
     }
 
@@ -342,7 +350,14 @@ export const closeIndependentSongKeyWindow = () => {
 // 监听独立窗口回传的保存/重置动作
 onSongKeyWindowSaveAction(async(data: any) => {
   if (!data?.name) return
-  if (data.mode === 'segments') {
+  if (data.remember === false) {
+    // 窗口里取消了「记住这首歌的基调」：只在本次播放生效，不写库
+    applyCurrentSongKeyForSession(
+      data.mode === 'segments'
+        ? { key: data.key, scale: data.scale, timeline: data.segments }
+        : { key: data.key, scale: data.scale },
+    )
+  } else if (data.mode === 'segments') {
     await saveCurrentSongKeyTimeline(data.segments)
   } else {
     await saveCurrentSongKey(data.key, data.scale)
@@ -403,7 +418,35 @@ export const clearCurrentSongKey = async() => {
   const singer = musicInfo.singer
   if (!name) return
   await clearUserKey(name, singer)
+  // 用户设定已删除：先把当前值清掉，再走重算（重算会保留当前显示，这里必须主动清）
+  songKeyInfo.value = null
   await updateCurrentSongKey(true)
+}
+
+/**
+ * 只在本次会话应用用户改的基调（面板/悬浮窗里取消了「记住这首歌的基调」）：
+ * 立刻生效并跟播、照常同步机架，但不写库 —— 下次播放这首歌仍走曲库 / 分析缓存 / 重新分析。
+ */
+export const applyCurrentSongKeyForSession = (payload: {
+  key: NoteName
+  scale: LX.SongKey.Scale
+  timeline?: LX.SongKey.Segment[]
+}) => {
+  if (!musicInfo.name) return
+  const timeline = payload.timeline?.length ? normalizeUserTimeline(payload.timeline) : []
+  const primary = timeline[0] ?? { key: payload.key, scale: payload.scale }
+  songKeyInfo.value = {
+    key: primary.key as NoteName,
+    scale: primary.scale,
+    label: formatKeyLabel(primary.key as NoteName, primary.scale),
+    camelot: getCamelotCode(primary.key as NoteName, primary.scale),
+    source: 'user',
+    custom: true,
+    sessionOnly: true,
+    confidence: 1,
+    timeline: timeline.length ? timeline : undefined,
+    updatedAt: Date.now(),
+  }
 }
 
 // Watch musicInfo change to automatically resolve song key

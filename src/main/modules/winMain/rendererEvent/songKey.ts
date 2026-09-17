@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { ipcMain } from 'electron'
 import { mainHandle, mainOn } from '@common/mainIpc'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
-import { fetchSongKeyAudio } from '@main/utils/songKeyAudio'
+import { fetchSongKeyAudio, decodeSongKeyPcm } from '@main/utils/songKeyAudio'
 import { getBiliCdnHeaders } from '../mpvVideoController'
 import {
   createSongKeyWindow,
@@ -21,6 +21,13 @@ export interface SongKeyAudioPayload {
 export interface SongKeyAudioResult {
   bytes: Uint8Array
   totalBytes: number | null
+  truncated: boolean
+}
+
+export interface SongKeyPcmAudioResult {
+  pcm: Uint8Array
+  sampleRate: number
+  duration: number
   truncated: boolean
 }
 
@@ -48,6 +55,28 @@ export default () => {
           bytes: chunk.bytes,
           totalBytes: chunk.totalBytes,
           truncated: chunk.truncated,
+        }
+      } catch {
+        return null
+      }
+    },
+  )
+
+  // 整曲 PCM（ffmpeg 解码）：大文件时间轴用，避免只分析开头一段
+  mainHandle<SongKeyAudioPayload, SongKeyPcmAudioResult | null>(
+    WIN_MAIN_RENDERER_EVENT_NAME.song_key_decode_pcm,
+    async({ params }) => {
+      const source = normalizeSource(params?.source)
+      if (!source) return null
+      const headers = /\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(source) ? getBiliCdnHeaders() : {}
+      try {
+        const result = await decodeSongKeyPcm(source, headers)
+        if (!result) return null
+        return {
+          pcm: result.pcm,
+          sampleRate: result.sampleRate,
+          duration: result.duration,
+          truncated: result.truncated,
         }
       } catch {
         return null

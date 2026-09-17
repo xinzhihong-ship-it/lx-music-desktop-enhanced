@@ -17,13 +17,22 @@ import http from 'node:http'
 // ── 虚拟渲染进程 ipc 模块 ─────────────────────────────────────────
 globalThis.__skQueue = []
 globalThis.__skCalls = []
+globalThis.__skPcmQueue = []
+globalThis.__skPcmCalls = []
 globalThis.__skStore = {}
 
 const virtualModules = new Map([
+  ['electron', `
+    export const app = { isPackaged: false }
+  `],
   ['@renderer/utils/ipc', `
     export const fetchSongKeyAudio = async (source, maxBytes) => {
       globalThis.__skCalls.push({ source, maxBytes })
       return globalThis.__skQueue.shift() ?? null
+    }
+    export const fetchSongKeyPcm = async (source) => {
+      globalThis.__skPcmCalls.push({ source })
+      return globalThis.__skPcmQueue.shift() ?? null
     }
     export const getUserSongKeys = async () => globalThis.__skStore
     export const saveUserSongKeys = (keys) => { globalThis.__skStore = keys }
@@ -41,6 +50,9 @@ registerHooks({
     }
     if (specifier === '@common/ipcNames') {
       return { url: new URL('../src/common/ipcNames.ts', import.meta.url).href, shortCircuit: true }
+    }
+    if (specifier === './ffmpegBinary') {
+      return { url: new URL('../src/main/utils/ffmpegBinary.ts', import.meta.url).href, shortCircuit: true }
     }
     if (specifier === './ksAlgorithm') {
       return { url: new URL('../src/renderer/utils/musicKey/ksAlgorithm.ts', import.meta.url).href, shortCircuit: true }
@@ -242,6 +254,19 @@ test('HTTP：404 时返回 null', async() => {
 const primeFetch = (...chunks) => {
   globalThis.__skQueue = chunks.slice()
   globalThis.__skCalls = []
+  globalThis.__skPcmQueue = []
+  globalThis.__skPcmCalls = []
+}
+
+/** 把 Float32 采样做成主进程那侧的 11kHz 单声道 s16le PCM 载荷 */
+const pcmPayload = (samples, sampleRate = 11025) => {
+  const pcm = new Uint8Array(samples.length * 2)
+  const view = new DataView(pcm.buffer)
+  for (let i = 0; i < samples.length; i++) {
+    const value = Math.max(-1, Math.min(1, samples[i]))
+    view.setInt16(i * 2, Math.round(value * 32767), true)
+  }
+  return { pcm, sampleRate, duration: samples.length / sampleRate, truncated: false }
 }
 
 test('解码成功时返回真实分析结果，且 source 为 analysis', async() => {
@@ -276,13 +301,14 @@ test('首块解码失败但完整文件在兜底范围内时，自动取全量�
   assert.equal(globalThis.__skCalls[1].maxBytes, 2 * 1024 * 1024)
 })
 
-test('完整文件超出兜底上限时放弃，不编造结果', async() => {
+test('完整文件超出兜底上限时不再拉全量字节，改走 ffmpeg PCM；PCM 也拿不到就不编造结果', async() => {
   primeFetch({ bytes: new Uint8Array(1024), totalBytes: 200 * 1024 * 1024, truncated: true })
   globalThis.__skDecodeHandler = () => null
 
   const info = await analyzeSongAudio('http://example.com/huge.flac')
   assert.equal(info, null)
-  assert.equal(globalThis.__skCalls.length, 1, '不应为一个超大文件发起全量请求')
+  assert.equal(globalThis.__skCalls.length, 1, '不应为一个超大文件发起全量字节请求')
+  assert.equal(globalThis.__skPcmCalls.length, 1, '超大文件应当改问 ffmpeg 要整曲 PCM')
 })
 
 test('完全取不到音频数据时返回 null', async() => {
@@ -550,4 +576,136 @@ test('RetuneSpeed 自动同步能力按平台区分（Windows 支持 / macOS 不
     expected,
     `当前平台 ${process.platform} 的能力标记应为 ${expected}`,
   )
+})
+
+// ── 大文件：整曲 PCM 通路 ────────────────────────────────────────
+
+test('超过取全量上限的大文件：改用整曲 PCM 建时间轴，不再只看开头一段', async() => {
+  // 首块只有 20 秒（截断），总长 60MB（无损常见体积，超过 48MB 上限）。
+  // 合成素材在第 30 秒转调：只看首块永远看不到这一段。
+  primeFetch({ bytes: new Uint8Array(1024), totalBytes: 60 * 1024 * 1024, truncated: true })
+  const song = modulatingSong(11025, null, null, 30, 60)
+  // 首块（截断解码）只解出前 20 秒，且是同一个调
+  globalThis.__skDecodeHandler = () => makeAudioBuffer(song.subarray(0, 11025 * 20), 11025)
+  globalThis.__skPcmQueue = [pcmPayload(song)]
+
+  const info = await analyzeSongAudio('http://example.com/huge-lossless.flac')
+  assert.ok(info)
+  assert.equal(globalThis.__skPcmCalls.length, 1, '大文件应当走 ffmpeg PCM 通路')
+  assert.equal(globalThis.__skCalls.length, 1, '不应再拉一遍 60MB 字节')
+  assert.ok(Array.isArray(info.timeline))
+  assert.ok(info.timeline.length >= 2, `整曲 PCM 应能分析出转调，实际 ${info.timeline.length} 段`)
+  assert.equal(info.timeline[info.timeline.length - 1].label, '1=D 大调', '第 30 秒后的副歌应当是 D 大调')
+  // 主调取时长最长的段，60 秒里两段各 30 秒，取到哪一段都合法，但必须是真实分析出来的两段之一
+  assert.ok(['1=G 大调', '1=D 大调'].includes(info.label))
+})
+
+test('PCM 通路拿不到音频时退回首块结果，而不是返回空', async() => {
+  primeFetch({ bytes: new Uint8Array(1024), totalBytes: 60 * 1024 * 1024, truncated: true })
+  globalThis.__skDecodeHandler = () => makeAudioBuffer(gMajorSamples(11025, 40), 11025)
+  globalThis.__skPcmQueue = [null]
+
+  const info = await analyzeSongAudio('http://example.com/huge-lossless.flac')
+  assert.ok(info, 'PCM 不可用（例如没有随包 ffmpeg）时必须退回首块结果')
+  assert.equal(info.label, '1=G 大调')
+  assert.equal(info.source, 'analysis')
+})
+
+test('服务端不报总长（分块传输）时也走 PCM 通路，避免只分析开头', async() => {
+  primeFetch({ bytes: new Uint8Array(1024), totalBytes: null, truncated: true })
+  globalThis.__skDecodeHandler = () => null
+  globalThis.__skPcmQueue = [pcmPayload(modulatingSong(11025, null, null, 30, 60))]
+
+  const info = await analyzeSongAudio('http://example.com/stream.flac')
+  assert.ok(info)
+  assert.equal(globalThis.__skPcmCalls.length, 1)
+  assert.ok(info.timeline.length >= 2)
+})
+
+// ── 主进程 PCM 解码（真跑内置 ffmpeg） ───────────────────────────
+
+/** 生成一段 16bit 单声道 WAV（G 大调和弦），用来喂真 ffmpeg */
+const wavFixture = (seconds = 12, sampleRate = 44100) => {
+  const count = Math.floor(sampleRate * seconds)
+  const pcm = Buffer.alloc(count * 2)
+  for (let i = 0; i < count; i++) {
+    const t = i / sampleRate
+    const value =
+      0.5 * Math.sin(2 * Math.PI * 196.0 * t) +
+      0.3 * Math.sin(2 * Math.PI * 246.94 * t) +
+      0.3 * Math.sin(2 * Math.PI * 293.66 * t)
+    pcm.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(value * 32767))), i * 2)
+  }
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + pcm.length, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
+  header.writeUInt32LE(sampleRate, 24)
+  header.writeUInt32LE(sampleRate * 2, 28)
+  header.writeUInt16LE(2, 32)
+  header.writeUInt16LE(16, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(pcm.length, 40)
+  return Buffer.concat([header, pcm])
+}
+
+const { decodeSongKeyPcm } = await import('../src/main/utils/songKeyAudio.ts')
+const { analyzeAudioKey } = await import('../src/renderer/utils/musicKey/ksAlgorithm.ts')
+
+test('decodeSongKeyPcm：本地文件解成 11kHz 单声道 PCM，时长与调性都对得上', async(t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-pcm-'))
+  const file = path.join(dir, '和弦.wav')
+  await fs.writeFile(file, wavFixture(12))
+
+  const result = await decodeSongKeyPcm(file)
+  if (!result) {
+    t.skip('本机没有随包分发的 ffmpeg，跳过（打包版一定有）')
+    return
+  }
+  assert.equal(result.sampleRate, 11025)
+  assert.ok(Math.abs(result.duration - 12) < 0.5, `时长应约 12 秒，实际 ${result.duration}`)
+  // s16le 单声道：字节数 = 采样数 * 2
+  assert.equal(result.pcm.length, Math.round(result.duration * result.sampleRate) * 2)
+
+  // 解出来的 PCM 直接喂给分析算法，应当还是 G 大调
+  const samples = new Float32Array(result.pcm.length / 2)
+  const view = new DataView(result.pcm.buffer, result.pcm.byteOffset, result.pcm.length)
+  for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768
+  const key = analyzeAudioKey(samples, result.sampleRate)
+  assert.equal(key.label, '1=G 大调')
+})
+
+test('decodeSongKeyPcm：不是音频的文件返回 null，不抛错', async() => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-pcm-'))
+  const file = path.join(dir, 'not-audio.bin')
+  await fs.writeFile(file, Buffer.alloc(4096, 7))
+  assert.equal(await decodeSongKeyPcm(file), null)
+})
+
+test('decodeSongKeyPcm：服务端接上但不回响应头时按超时放弃，不会干等几分钟', async() => {
+  const net = await import('node:net')
+  // 只接受连接、一个字节都不回
+  const sockets = new Set()
+  const server = net.createServer((socket) => {
+    sockets.add(socket)
+    socket.on('close', () => sockets.delete(socket))
+    socket.on('error', () => {})
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  try {
+    const t0 = Date.now()
+    const result = await decodeSongKeyPcm(`http://127.0.0.1:${port}/stall.flac`, {}, { responseTimeoutMs: 400 })
+    const elapsed = Date.now() - t0
+    assert.equal(result, null)
+    assert.ok(elapsed < 5000, `应在超时后很快返回，实际 ${elapsed}ms`)
+  } finally {
+    // 客户端中止后连接可能仍挂着，必须主动断开，否则 server.close() 永远等下去
+    for (const socket of sockets) socket.destroy()
+    await new Promise((resolve) => server.close(resolve))
+  }
 })

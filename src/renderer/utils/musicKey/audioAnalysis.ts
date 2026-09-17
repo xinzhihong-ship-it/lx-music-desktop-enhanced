@@ -1,4 +1,4 @@
-import { fetchSongKeyAudio } from '@renderer/utils/ipc'
+import { fetchSongKeyAudio, fetchSongKeyPcm } from '@renderer/utils/ipc'
 import { NOTE_NAMES, analyzeAudioKey, formatKeyLabel, getCamelotCode, type NoteName } from './ksAlgorithm'
 
 /**
@@ -77,6 +77,15 @@ const decodeAudio = async(bytes: Uint8Array): Promise<AudioBuffer | null> => {
     // 截断的容器（FLAC/ALAC 等）无法解码，由调用方决定是否取更大分片
     return null
   }
+}
+
+/** 主进程 ffmpeg 解出来的 11kHz 单声道 s16le PCM 转成分析用的 Float32 采样 */
+const pcmToFloat32 = (bytes: Uint8Array): Float32Array => {
+  const count = Math.floor(bytes.byteLength / 2)
+  const samples = new Float32Array(count)
+  const view = new DataView(bytes.buffer, bytes.byteOffset, count * 2)
+  for (let i = 0; i < count; i++) samples[i] = view.getInt16(i * 2, true) / 32768
+  return samples
 }
 
 /**
@@ -298,9 +307,32 @@ export const analyzeSongAudio = async(
       decoded = (await decodeAudio(fullBytes)) ?? decoded
     }
   }
-  if (!decoded) return null
 
-  const resampled = await resampleToMono(decoded)
+  // 首块覆盖不了整首歌：文件超过取全量上限（无损常见 50~100MB），或服务端没给总长。
+  // 这时首块（4MB）可能只有开头十几秒，逐窗分析出来的时间轴会严重失真（4 分钟的曲子常常只剩 1 段）。
+  const oversized = Boolean(first?.truncated) && (!total || total > TIMELINE_FETCH_LIMIT)
+
+  let resampled: { samples: Float32Array, sampleRate: number } | null = null
+  let duration = 0
+
+  // 整曲优先：大文件交给主进程的 ffmpeg 解出整首歌的 PCM（11kHz 单声道，几分钟的曲子也就几 MB）；
+  // 解不出来（没有随包 ffmpeg 等）再退回首块，至少维持旧行为。
+  if (oversized || !decoded) {
+    const pcm = await fetchSongKeyPcm(source)
+    const pcmBytes = toBytes(pcm?.pcm)
+    if (pcm?.sampleRate && pcmBytes?.length) {
+      const samples = pcmToFloat32(pcmBytes)
+      if (samples.length >= 1024) {
+        resampled = { samples, sampleRate: pcm.sampleRate }
+        duration = pcm.duration
+      }
+    }
+  }
+
+  if (!resampled && decoded) {
+    resampled = await resampleToMono(decoded)
+    duration = decoded.duration
+  }
   if (!resampled || resampled.samples.length < 1024) return null
 
   const results = await analyzeWindows(resampled.samples, resampled.sampleRate)
@@ -308,7 +340,7 @@ export const analyzeSongAudio = async(
   let primary: LX.SongKey.Segment | null = null
 
   if (timeline.length) {
-    primary = pickPrimary(timeline, decoded.duration)
+    primary = pickPrimary(timeline, duration)
   } else {
     // 逐窗分析因局部杂音/低音量未达到置信门槛时，对整曲全量采样跑一次全局 K-S 分析兜底，
     // 保证有歌曲播放时绝不轻易返回空，解决"偶尔不显示"的问题

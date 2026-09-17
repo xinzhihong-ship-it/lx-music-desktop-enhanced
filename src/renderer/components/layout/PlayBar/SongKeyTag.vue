@@ -49,7 +49,9 @@ export default {
 
     const tooltipText = computed(() => {
       if (!songKeyInfo.value) return '点击设置基调'
-      const source = isCustom.value ? '已记忆基调' : isDatabase.value ? '经典谱库' : '音频分析'
+      const source = songKeyInfo.value.sessionOnly
+        ? '仅本次会话（未写入记忆）'
+        : isCustom.value ? '已记忆基调' : isDatabase.value ? '经典谱库' : '音频分析'
       const camelot = effectiveSongKey.value?.camelot ? ` (Camelot ${effectiveSongKey.value.camelot})` : ''
       const confidence = songKeyInfo.value?.source === 'analysis' && songKeyInfo.value.confidence
         ? ` · 置信度 ${Math.round(songKeyInfo.value.confidence * 100)}%`

@@ -28,8 +28,8 @@
         </div>
       </div>
 
-      <div v-if="showAnalyzingHint" :class="$style.analyzingHint">
-        正在分析这首歌的基调，结果出来后会自动填入下面的编辑器
+      <div v-if="notice || showAnalyzingHint" :class="$style.analyzingHint">
+        {{ notice || analyzingHintText }}
       </div>
 
       <div :class="$style.modeSwitch">
@@ -159,18 +159,17 @@
         </div>
       </div>
 
-      <div v-if="mode === 'whole'" :class="$style.section">
-        <label :class="$style.rememberLabel">
-          <input v-model="remember" type="checkbox" :class="$style.checkbox" />
-          <span>记住这首歌就这个基调（下次播放直接采用）</span>
-        </label>
-      </div>
-
       <div :class="$style.footer">
-        <label :class="$style.syncPluginLabel" title="全局设置：开启后对所有歌曲生效，任何正在播放或切换的歌曲，其调性与实时转调都会自动同步给系统内挂载的 Auto-Tune 电音插件">
-          <input v-model="isPluginSyncEnabled" type="checkbox" :class="$style.checkbox" />
-          <span>全局同步机架 (Auto-Tune)</span>
-        </label>
+        <div :class="$style.footerFlags">
+          <label :class="$style.syncPluginLabel" title="全局设置：开启后对所有歌曲生效，任何正在播放或切换的歌曲，其调性与实时转调都会自动同步给系统内挂载的 Auto-Tune 电音插件">
+            <input v-model="isPluginSyncEnabled" type="checkbox" :class="$style.checkbox" />
+            <span>全局同步机架 (Auto-Tune)</span>
+          </label>
+          <label :class="$style.rememberLabel" title="勾选后把当前设定的基调写入本地记忆，下次播放这首歌直接采用；取消勾选则只在本次播放生效，不会写入记忆（下次播放仍走曲库 / 重新分析）">
+            <input v-model="remember" type="checkbox" :class="$style.checkbox" />
+            <span>记住这首歌的基调（下次播放直接采用）</span>
+          </label>
+        </div>
         <div :class="$style.footerBtns">
           <base-btn :class="$style.btnSecondary" @click="handleReanalyze">重新分析</base-btn>
           <base-btn v-if="isCustom" :class="$style.btnSecondary" @click="handleReset">恢复自动识别</base-btn>
@@ -195,6 +194,7 @@ import {
   isRetuneSpeedAutomationSupported,
   saveCurrentSongKey,
   saveCurrentSongKeyTimeline,
+  applyCurrentSongKeyForSession,
   clearCurrentSongKey,
   updateCurrentSongKey,
   openIndependentSongKeyWindow,
@@ -252,8 +252,17 @@ export default {
       return scale === 'minor' ? `${key}m 小调` : `1=${key} 大调`
     }
 
-    /** 用户是否已经动过编辑器：动过之后就不能再被迟到的分析结果覆盖 */
+    /** 用户是否改过编辑器内容（改调式/改分段/改时间/删段）：改过之后不再被迟到的分析结果覆盖 */
     const touched = ref(false)
+    /** 用户是否手动选过「整首统一 / 分段设置」：选过之后不再按分析结果的段数自动切换模式 */
+    const modePinned = ref(false)
+
+    const applyModeFromTimeline = (timeline) => {
+      if (modePinned.value) return
+      // 有转调就直接进分段模式，用户多半是来改换调点的；
+      // 用户自己存的分段同样要能看见并继续改，不能因为来源是 user 就藏起来
+      mode.value = (timeline?.length ?? 0) > 1 ? 'segments' : 'whole'
+    }
 
     /** 打开弹窗时把已有的调性（用户设的 / 分析出来的）灌进编辑器 */
     const hydrate = () => {
@@ -265,12 +274,11 @@ export default {
       if (timeline?.length) {
         segments.value = timeline.map((segment) => ({ at: segment.at, key: segment.key, scale: segment.scale }))
         prefilledFromAnalysis.value = info.source !== 'user'
-        // 有转调就直接进分段模式，用户多半是来改换调点的
-        mode.value = timeline.length > 1 && info.source !== 'user' ? 'segments' : 'whole'
+        applyModeFromTimeline(timeline)
       } else {
         segments.value = [{ at: 0, key: selectedKey.value, scale: selectedScale.value }]
         prefilledFromAnalysis.value = false
-        mode.value = 'whole'
+        applyModeFromTimeline(null)
       }
 
       // 打开时优先定位到当前正在播放的那一段，而非死板重置到第 0 段
@@ -377,7 +385,9 @@ export default {
     })
 
     const switchMode = (next) => {
-      touched.value = true
+      // 切换模式不算「改过内容」：早先这里把 touched 置 true，导致点一下「分段设置」之后
+      // 分析结果再也灌不进面板（分段/调一直空着），看起来就像功能没实现。
+      modePinned.value = true
       mode.value = next
       if (next === 'segments') {
         // 从整首模式切过来时，至少有一段
@@ -477,19 +487,45 @@ export default {
     watch(
       () => props.modelValue,
       (show) => {
-        if (show) hydrate()
+        if (show) {
+          // 每次打开都让模式跟着数据走，用户上次的手动选择不跨次沿用
+          modePinned.value = false
+          hydrate()
+        }
       },
     )
 
+    // 切歌：上一首的编辑整体作废（否则面板会把上一首的调与分段留在新歌上，
+    // 新歌分析完了也灌不进来）。新歌的分析结果回来后由下面的 watch 自动填入。
+    watch(() => [musicInfo.name, musicInfo.singer], () => {
+      touched.value = false
+      userSelectedSegment.value = false
+      modePinned.value = false
+      if (props.modelValue) hydrate()
+    })
+
     // 弹窗开着的时候分析结果才回来（很常见：刚切歌就点开标签）。
-    // 用户还没动过就自动补进去，动过就绝不覆盖。
+    // 用户改过内容就绝不覆盖；只是切过模式的话，内容照样灌进来。
     watch(songKeyInfo, () => {
       if (!props.modelValue || touched.value) return
       hydrate()
     })
 
+    // 分析中（首次分析 / 重新分析）都提示，用户动过编辑器就不再打扰
     const showAnalyzingHint = computed(() =>
-      props.modelValue && isKeyAnalyzing.value && !songKeyInfo.value && !touched.value)
+      props.modelValue && isKeyAnalyzing.value && !touched.value)
+    const analyzingHintText = computed(() => songKeyInfo.value
+      ? '正在按当前音源重新分析，结果出来后会自动刷新上面的分段'
+      : '正在分析这首歌的基调，结果出来后会自动填入下面的编辑器')
+
+    /** 一次性说明提示（如「已手动记忆基调」），几秒后自动消失 */
+    const notice = ref('')
+    let noticeTimer = null
+    const showNotice = (text, ms = 7000) => {
+      notice.value = text
+      if (noticeTimer) clearTimeout(noticeTimer)
+      noticeTimer = setTimeout(() => { notice.value = '' }, ms)
+    }
 
     const musicName = computed(() => musicInfo.name || '当前歌曲')
     const musicSinger = computed(() => musicInfo.singer || '')
@@ -498,6 +534,7 @@ export default {
 
     const currentSource = computed(() => songKeyInfo.value?.source ?? 'analysis')
     const sourceText = computed(() => {
+      if (songKeyInfo.value?.sessionOnly) return '仅本次'
       switch (songKeyInfo.value?.source) {
         case 'user':
           return '已记忆'
@@ -521,7 +558,14 @@ export default {
     }
 
     const handleSave = async() => {
-      if (mode.value === 'segments') {
+      if (!remember.value) {
+        // 取消勾选「记住」：只让这次播放生效，不写库（下次播放仍走曲库 / 分析缓存 / 重新分析）
+        applyCurrentSongKeyForSession(
+          mode.value === 'segments'
+            ? { key: selectedKey.value, scale: selectedScale.value, timeline: segments.value.map((segment) => ({ ...segment })) }
+            : { key: selectedKey.value, scale: selectedScale.value },
+        )
+      } else if (mode.value === 'segments') {
         await saveCurrentSongKeyTimeline(segments.value.map((segment) => ({ ...segment })))
       } else {
         await saveCurrentSongKey(selectedKey.value, selectedScale.value)
@@ -535,10 +579,18 @@ export default {
     }
 
     const handleReanalyze = async() => {
+      // 已手动记忆的歌：强制重算只会原样返回用户设定，不会重跑分析 —— 说清楚，
+      // 否则用户点完看到面板毫无变化，会以为按钮坏了。
+      // （「仅本次」的值没写库，重算会正常覆盖它，不用拦）
+      if (songKeyInfo.value?.source === 'user' && !songKeyInfo.value.sessionOnly) {
+        showNotice('这首歌已手动记忆基调，重新分析不会覆盖它；想重新识别请先点「恢复自动识别」')
+        return
+      }
       // 就地重新分析：不关面板，结果回来后由 watch(songKeyInfo) 自动灌入新的时间轴。
-      // （以前这里先 handleClose()，点一下面板整个消失，看起来像"UI 没了"。）
       touched.value = false
       userSelectedSegment.value = false
+      // 重新分析就是为了拿到新结果，模式让结果自己决定
+      modePinned.value = false
       await updateCurrentSongKey(true)
     }
 
@@ -550,6 +602,8 @@ export default {
       pickNote,
       pickScale,
       showAnalyzingHint,
+      analyzingHintText,
+      notice,
       remember,
       isPluginSyncEnabled,
       retuneSpeed,
@@ -1036,6 +1090,14 @@ export default {
   padding: 12px 20px 16px;
   background-color: var(--color-content-background);
   box-shadow: 0 -6px 10px -6px rgb(0 0 0 / 18%);
+}
+
+// 开关组：与「全局同步机架」并排，两种模式下都能看到
+.footerFlags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
 }
 
 .footerBtns {

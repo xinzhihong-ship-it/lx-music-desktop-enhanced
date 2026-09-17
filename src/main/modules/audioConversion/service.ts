@@ -1,6 +1,4 @@
-import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { lstatSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -10,11 +8,11 @@ import {
   parseFfmpegTime,
   shouldDeleteSource,
 } from '@common/utils/audioConversion'
+import { getBinaryPath } from '@main/utils/ffmpegBinary'
 
 const taskFilePath = () =>
   path.join(global.lxDataPath, 'audio-conversion-tasks.json')
 
-const getPlatformArch = () => `${process.platform}-${process.arch}`
 const isAbsolutePath = (value: unknown): value is string => (
   typeof value === 'string' &&
   value.length > 0 &&
@@ -22,33 +20,6 @@ const isAbsolutePath = (value: unknown): value is string => (
   !value.includes('\0') &&
   path.isAbsolute(value)
 )
-
-const isTrustedExecutable = (filePath: string) => {
-  try {
-    const stats = lstatSync(filePath)
-    return stats.isFile() && !stats.isSymbolicLink() && (process.platform === 'win32' || (stats.mode & 0o111) !== 0)
-  } catch {
-    return false
-  }
-}
-
-const getBinaryPath = (name: 'ffmpeg' | 'ffprobe') => {
-  const fileName = process.platform === 'win32' ? `${name}.exe` : name
-  const resourceRoot = app.isPackaged
-    ? path.resolve(process.resourcesPath, 'bin')
-    : path.resolve(process.cwd(), 'resources', 'ffmpeg', getPlatformArch())
-  const binaryPath = path.resolve(resourceRoot, fileName)
-  const relativePath = path.relative(resourceRoot, binaryPath)
-  if (
-    path.basename(binaryPath) !== fileName ||
-    relativePath.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relativePath) ||
-    !isTrustedExecutable(binaryPath)
-  ) {
-    throw new Error(`未找到受控 ${name}：${binaryPath}`)
-  }
-  return binaryPath
-}
 
 const getOutputPath = (
   inputPath: string,

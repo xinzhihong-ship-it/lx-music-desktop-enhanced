@@ -52,6 +52,10 @@ registerHooks({
     if (specifier == '@common/utils/playErrorStrategy') {
       return { url: new URL('../src/common/utils/playErrorStrategy.ts', import.meta.url).href, shortCircuit: true }
     }
+    // playbackIntent 是无外部依赖的纯状态模块：加载真实实现，不用假桩，避免用例被假语义骗过
+    if (specifier == '@renderer/core/player/playbackIntent') {
+      return { url: new URL('../src/renderer/core/player/playbackIntent.ts', import.meta.url).href, shortCircuit: true }
+    }
     return nextResolve(specifier, context)
   },
 })

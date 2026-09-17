@@ -17,6 +17,11 @@ declare namespace LX {
        * 只有真实音频分析会产生；曲库/手动设定的结果是单值，没有这个字段。
        */
       timeline?: Segment[]
+      /**
+       * 只在本次会话生效（用户取消了「记住这首歌的基调」）：不写库，
+       * 下次播放这首歌仍走曲库 / 分析缓存 / 重新分析。
+       */
+      sessionOnly?: boolean
     }
 
     /** 时间轴上的一段：从 at 秒开始（到下一段的 at 结束）都是这个调 */
@@ -33,6 +38,14 @@ declare namespace LX {
     interface AudioChunk {
       bytes: Uint8Array
       totalBytes: number | null
+      truncated: boolean
+    }
+
+    /** 主进程用 ffmpeg 把整首歌解出来的分析用 PCM（11kHz 单声道 s16le） */
+    interface PcmAudio {
+      pcm: Uint8Array
+      sampleRate: number
+      duration: number
       truncated: boolean
     }
 

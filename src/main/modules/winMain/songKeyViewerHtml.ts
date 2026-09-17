@@ -440,10 +440,14 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
   </div>
 
   <div class="footer">
-    <div style="flex: 1; display: flex; align-items: center;">
+    <div style="flex: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px;">
       <label style="display:inline-flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; color:var(--color-font-label);" title="全局设置：开启后对所有歌曲生效，任何正在播放或切换的歌曲，其调性与实时转调都会自动同步给系统内挂载的 Auto-Tune 电音插件">
         <input type="checkbox" id="syncPluginCheck" style="cursor:pointer;" />
         <span>全局同步机架 (Auto-Tune)</span>
+      </label>
+      <label style="display:inline-flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; color:var(--color-font-label);" title="勾选后把当前设定的基调写入本地记忆，下次播放这首歌直接采用；取消勾选则只在本次播放生效，不会写入记忆（下次播放仍走曲库 / 重新分析）">
+        <input type="checkbox" id="rememberCheck" style="cursor:pointer;" checked />
+        <span>记住这首歌的基调（下次播放直接采用）</span>
       </label>
     </div>
     <button type="button" class="btn btn-secondary" id="reanalyzeBtn">重新分析</button>
@@ -471,11 +475,29 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
     let editingSegmentIndex = -1;
     let touched = false;
     let userSelectedSegment = false;
+    let modePinned = false;
+    /** 「保存并应用」是否写入本地记忆（下次播放直接采用）；取消勾选则只在本次播放生效 */
+    let remember = true;
     let currentData = null;
     let currentSongId = '';
     let currentKeyVersion = '';
+    let noticeText = '';
+    let noticeUntil = 0;
+
+    /** 顶部提示条：分析中 / 一次性说明（例如"已手动记忆基调"） */
+    function showNotice(text, ms) {
+      noticeText = text || '';
+      noticeUntil = Date.now() + (ms || 4000);
+      const box = document.getElementById('analyzingBox');
+      if (box) {
+        box.textContent = text;
+        box.style.display = 'block';
+      }
+    }
 
     function sendInstantAudition() {
+      // 与内置面板保持一致：只有开启「全局同步机架 (Auto-Tune)」时才把试听基调推给插件
+      if (!currentData || !currentData.isPluginSyncEnabled) return;
       if (ipcRenderer) {
         ipcRenderer.send('song_key_window_instant_audition', {
           key: selectedKey,
@@ -560,8 +582,7 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
       sendInstantAudition();
     };
 
-    function switchMode(newMode) {
-      touched = true;
+    function applyMode(newMode) {
       mode = newMode;
       document.getElementById('modeWhole').classList.toggle('active', mode === 'whole');
       document.getElementById('modeSegments').classList.toggle('active', mode === 'segments');
@@ -574,6 +595,13 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
         updateNoteSelection();
         renderSegments();
       }
+    }
+
+    function switchMode(newMode) {
+      // 切换模式不算「改过内容」：早先这里把 touched 置 true，点一下模式后段落选择就再也不跟播了
+      // （与内置面板同一个坑）。用户手选的模式用 modePinned 记住，数据回来时不再自动改模式。
+      modePinned = true;
+      applyMode(newMode);
     }
 
     document.getElementById('modeWhole').onclick = () => switchMode('whole');
@@ -714,6 +742,10 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
       } catch (e) {}
     };
 
+    document.getElementById('rememberCheck').onchange = function() {
+      remember = Boolean(this.checked);
+    };
+
     document.getElementById('saveBtn').onclick = () => {
       if (!currentData || !currentData.name) return;
       if (ipcRenderer) {
@@ -723,6 +755,7 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
           mode,
           key: selectedKey,
           scale: selectedScale,
+          remember,
           segments: segments.map(s => ({ ...s }))
         });
       }
@@ -730,6 +763,16 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
 
     document.getElementById('reanalyzeBtn').onclick = () => {
       if (!currentData || !currentData.name) return;
+      // 已手动记忆的歌：强制重算只会原样返回用户设定，不会重跑分析 —— 得明确说清楚，
+      // 否则用户点完看到界面毫无变化，会以为这个按钮坏了。
+      // （「仅本次」的值没写库，重算会正常覆盖它，不用拦）
+      if (currentData.songKeyInfo && currentData.songKeyInfo.source === 'user' && !currentData.songKeyInfo.sessionOnly) {
+        showNotice('这首歌用的是你手动保存的基调，重新分析不会覆盖它；想重新识别请先点「恢复自动识别」', 7000);
+        return;
+      }
+      // 重新分析就是为了拿到新结果：模式让结果自己决定，并立刻给出反馈
+      modePinned = false;
+      showNotice('正在重新分析…', 4000);
       if (ipcRenderer) {
         ipcRenderer.send('winMain_song_key_window_reanalyze_action', {
           name: currentData.name,
@@ -793,6 +836,7 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
         currentKeyVersion = '';
         touched = false;
         userSelectedSegment = false;
+        modePinned = false;
         editingSegmentIndex = -1;
       }
 
@@ -812,7 +856,10 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
       const sourceMap = { user: '已记忆', database: '经典谱库', analysis: '音频分析' };
       const source = data.songKeyInfo?.source;
       const sourceTag = document.getElementById('sourceTag');
-      if (source && sourceMap[source]) {
+      if (data.songKeyInfo && data.songKeyInfo.sessionOnly) {
+        sourceTag.style.display = 'inline-block';
+        sourceTag.textContent = '仅本次';
+      } else if (source && sourceMap[source]) {
         sourceTag.style.display = 'inline-block';
         sourceTag.textContent = sourceMap[source];
       } else {
@@ -820,7 +867,19 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
         sourceTag.textContent = data.isKeyAnalyzing ? '分析中' : '';
       }
 
-      document.getElementById('analyzingBox').style.display = (data.isKeyAnalyzing && !data.currentKey) ? 'block' : 'none';
+      // 反馈优先：一次性提示 > 分析中（保留旧结果时也要提示，否则点「重新分析」看起来毫无反应）
+      const analyzingBox = document.getElementById('analyzingBox');
+      if (noticeUntil > Date.now()) {
+        analyzingBox.textContent = noticeText;
+        analyzingBox.style.display = 'block';
+      } else if (data.isKeyAnalyzing) {
+        analyzingBox.textContent = data.currentKey
+          ? '正在按当前音源重新分析，结果出来后会自动刷新…'
+          : '正在分析这首歌的基调，结果出来后会自动更新…';
+        analyzingBox.style.display = 'block';
+      } else {
+        analyzingBox.style.display = 'none';
+      }
       document.getElementById('resetBtn').style.display = (source === 'user') ? 'inline-block' : 'none';
 
       if (data.isPluginSyncEnabled !== undefined) {
@@ -837,18 +896,17 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
       // 歌曲切换或分析结果更新时灌入数据
       if ((songChanged || keyChanged) && data.songKeyInfo) {
         const info = data.songKeyInfo;
+        // 新结果进来时结束未完成的改时间编辑（它引用的是旧数据）
+        editingSegmentIndex = -1;
         selectedKey = info.key || 'C';
         selectedScale = info.scale || 'major';
         if (info.timeline && info.timeline.length) {
           segments = info.timeline.map(s => ({ at: s.at, key: s.key, scale: s.scale }));
-          if (info.timeline.length > 1 && info.source !== 'user') {
-            mode = 'segments';
-            document.getElementById('modeWhole').classList.remove('active');
-            document.getElementById('modeSegments').classList.add('active');
-            document.getElementById('segmentSection').style.display = 'block';
-          }
+          // 有转调就进分段模式；用户自己存的分段同样要能看见并继续改（不能因为来源是 user 就藏起来）
+          if (!modePinned) applyMode(info.timeline.length > 1 ? 'segments' : 'whole');
         } else {
           segments = [{ at: 0, key: selectedKey, scale: selectedScale }];
+          if (!modePinned) applyMode('whole');
         }
         // 初始定位到当前播放段落
         const curPos = Math.floor(data.playbackSeconds || 0);
@@ -871,6 +929,8 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
         segments = [{ at: 0, key: 'C', scale: 'major' }];
         updateNoteSelection();
         renderSegments();
+      } else if (editingSegmentIndex >= 0) {
+        // 正在改时间：这轮同步只更新顶部信息，别重建段落列表（否则输入框被重建、输入内容丢失）
       } else {
         // 播放中进度刷新（每500ms）：焦点实时跟随播放进度动态切换
         if (!userSelectedSegment && !touched) {

@@ -8,6 +8,7 @@ const virtualModules = new Map([
     export const getUserSongKeys = async () => globalThis.__songKeyTestStore;
     export const saveUserSongKeys = (keys) => { globalThis.__songKeyTestStore = keys; };
     export const fetchSongKeyAudio = async () => null;
+    export const fetchSongKeyPcm = async () => null;
   `],
   ['@common/rendererIpc', `
     export const rendererInvoke = async () => true;
