@@ -111,12 +111,14 @@ import useMusicAdd from './useMusicAdd'
 import { downloadStatus } from '@renderer/store/download/state'
 import { appSetting, updateSetting } from '@renderer/store/setting'
 import { formatMusicName } from '@renderer/utils'
+import { useI18n } from '@renderer/plugins/i18n'
 import { qualityShortLabel } from '@renderer/core/quality/labels'
 import { addAudioConversionTasks, cancelAudioConversionTasks, getAudioConversionTasks, openDirInExplorer, removeAudioConversionTasks, retryAudioConversionTasks, showSelectDialog } from '@renderer/utils/ipc'
 
 export default {
   name: 'Download',
   setup() {
+    const t = useI18n()
     const listRef = ref()
     const { tabs, activeTab } = useTab()
     const convertFormat = computed({
@@ -272,7 +274,9 @@ export default {
     const getName = (downloadInfo) => {
       return formatMusicName(appSetting['download.fileName'], downloadInfo.metadata.musicInfo.name, downloadInfo.metadata.musicInfo.singer)
     }
-    const getTypeName = (quality) => qualityShortLabel(window.i18n.t, quality)
+    // 注意：这里必须传 useI18n() 返回的闭包，不能传 window.i18n.t——
+    // 后者是依赖 this 的方法，脱离对象传出去会抛错，导致任务行渲染不出来。
+    const getTypeName = (quality) => qualityShortLabel(t, quality)
     return {
       listRef,
       list,

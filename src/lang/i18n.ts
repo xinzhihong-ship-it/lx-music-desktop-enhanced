@@ -54,7 +54,7 @@ const setLanguage = (lang: Langs) => {
 }
 
 const createI18n = (): I18n => {
-  return i18n = {
+  const api: I18n = {
     locale: locale.value,
     fallbackLocale: 'zh-cn',
     availableLocales: Object.keys(messages) as Langs[],
@@ -80,6 +80,13 @@ const createI18n = (): I18n => {
       return this.getMessage(key, val)
     },
   }
+  // 上面这些方法内部通过 this 读写自身状态。绑定 this 后，即使被当作普通函数传出去
+  // （例如 qualityShortLabel(window.i18n.t, ...)），也不会因 this 丢失而抛错。
+  api.setLanguage = api.setLanguage.bind(api)
+  api.fillMessage = api.fillMessage.bind(api)
+  api.getMessage = api.getMessage.bind(api)
+  api.t = api.t.bind(api)
+  return i18n = api
 }
 
 
