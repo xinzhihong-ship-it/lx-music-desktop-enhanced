@@ -535,7 +535,10 @@ export default {
     }
 
     const handleReanalyze = async() => {
-      handleClose()
+      // 就地重新分析：不关面板，结果回来后由 watch(songKeyInfo) 自动灌入新的时间轴。
+      // （以前这里先 handleClose()，点一下面板整个消失，看起来像"UI 没了"。）
+      touched.value = false
+      userSelectedSegment.value = false
       await updateCurrentSongKey(true)
     }
 
@@ -1006,6 +1009,9 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  // 不允许被压缩：放不下时让整行换行，而不是把「全局同步机架 (Auto-Tune)」折成两行
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--color-font);
   cursor: pointer;
@@ -1022,6 +1028,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  // 一行放不下时让按钮组整体换到下一行，避免按钮文字被压到折行
+  flex-wrap: wrap;
   gap: 10px;
   // 负外边距让吸底条铺满弹窗宽度，遮住滚上来的内容
   margin: 20px -20px 0;
@@ -1033,6 +1041,9 @@ export default {
 .footerBtns {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
+  // 换行后仍靠右对齐
+  margin-left: auto;
   gap: 10px;
 }
 
