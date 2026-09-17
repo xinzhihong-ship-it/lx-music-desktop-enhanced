@@ -36,6 +36,9 @@ export default () => {
   mainHandle<number>(WIN_MAIN_RENDERER_EVENT_NAME.mpv_setVolume, async({ params: volume }) => {
     return withMpvError(async() => getMpvController().setVolume(volume))
   })
+  mainHandle<boolean>(WIN_MAIN_RENDERER_EVENT_NAME.mpv_setMute, async({ params: isMute }) => {
+    return withMpvError(async() => getMpvController().setMute(isMute))
+  })
   mainHandle<number>(WIN_MAIN_RENDERER_EVENT_NAME.mpv_getPosition, async() => {
     return withMpvError(async() => getMpvController().getPosition())
   })

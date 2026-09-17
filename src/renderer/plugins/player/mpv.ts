@@ -165,7 +165,14 @@ export const setVolume = (value: number) => {
 
 export const setMute = (isMute: boolean) => {
   muted = isMute
-  void invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_setVolume, isMute ? 0 : volume).catch(err => {
+  // 取消静音前先把当前音量同步过去：静音期间改音量不会发给 mpv（见 setVolume），
+  // 否则主进程会拿旧音量恢复，听起来像"音量没生效"。
+  if (!isMute) {
+    void invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_setVolume, volume).catch(err => {
+      console.error('mpv set volume failed', err)
+    })
+  }
+  void invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_setMute, isMute).catch(err => {
     console.error('mpv set mute failed', err)
   })
 }

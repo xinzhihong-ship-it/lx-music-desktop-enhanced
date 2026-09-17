@@ -128,6 +128,11 @@ declare global {
       'player.mpv.bitPerfectMode': boolean
 
       /**
+       * macOS：coreaudio 驱动初始化失败过的设备 id（这些设备继续用 avfoundation 驱动）
+       */
+      'player.mpv.aoFallbackDevices': string[]
+
+      /**
        * 是否显示任务栏进度条
        */
       'player.isShowTaskProgess': boolean

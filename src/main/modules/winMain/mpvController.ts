@@ -6,9 +6,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { log } from '@common/utils'
 import { sendEvent } from '@main/modules/winMain/main'
+import { getProxy } from '@main/utils'
 import * as accountSessions from '@main/modules/account/sessions'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { getBundledMacMpvAppNames } from '@common/utils/mpvCompatibility'
+import { isCoreAudioMappedDevice, resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
 
 export type MpvPathSource =
   | 'custom'
@@ -279,7 +281,14 @@ export class MpvController {
   pausedAt = 0
   loadedUrl = ''
   private cachedVolume: number | null = null
+  private cachedMute = false
   private cachedAudioDevice: string | null = null
+  /** 当前 AO 名称（如 avfoundation/coreaudio），播放开始后探测一次并缓存 */
+  private audioOutputKind: string | null = null
+  /** 是否已经给 AO 下过静音提示（用于取消静音时还原） */
+  private aoMuteHintActive = false
+  /** coreaudio 打不开设备时的自动回退只触发一次，避免重启风暴 */
+  private audioFallbackTriggered = false
   private videoInputConfPath = ''
 
   constructor(options: MpvControllerOptions = {}) {
@@ -314,10 +323,15 @@ export class MpvController {
     this.process = mpvProcess
 
     mpvProcess.stdout?.on('data', (data) => {
-      log.info(`mpv stdout: ${String(data).trim()}`)
+      const text = String(data).trim()
+      log.info(`mpv stdout: ${text}`)
+      // mpv 的日志（含 AO 初始化失败）走的是 stdout，静音/驱动回退的检测也要看这里
+      this.handleAudioDriverInitFailure(text)
     })
     mpvProcess.stderr?.on('data', (data) => {
-      log.warn(`mpv stderr: ${String(data).trim()}`)
+      const text = String(data).trim()
+      log.warn(`mpv stderr: ${text}`)
+      this.handleAudioDriverInitFailure(text)
     })
     mpvProcess.once('error', (err) => {
       this.startError = err
@@ -352,8 +366,9 @@ export class MpvController {
       await this.command(['observe_property', 4, 'idle-active']).catch((err) =>
         log.warn(err),
       )
-      if (this.cachedVolume != null) {
-        await this.command(['set_property', 'volume', this.cachedVolume]).catch(
+      const initialVolume = this.cachedMute ? 0 : this.cachedVolume
+      if (initialVolume != null) {
+        await this.command(['set_property', 'volume', initialVolume]).catch(
           (err) => log.warn(err),
         )
       }
@@ -361,7 +376,7 @@ export class MpvController {
         await this.command([
           'set_property',
           'audio-device',
-          this.cachedAudioDevice,
+          this.resolveAudioDevice(this.cachedAudioDevice),
         ]).catch((err) => log.warn(err))
       }
       this.sendEvent('started', mpvPath)
@@ -432,7 +447,8 @@ export class MpvController {
       mediaDeviceId !== 'Default' &&
       mediaDeviceId !== 'communications'
     ) {
-      args.push(`--audio-device=${mediaDeviceId}`)
+      this.cachedAudioDevice = mediaDeviceId
+      args.push(`--audio-device=${this.resolveAudioDevice(mediaDeviceId)}`)
     }
 
     const extraArgs = global.lx.appSetting['player.mpv.extraArgs']
@@ -456,6 +472,19 @@ export class MpvController {
       log.info('Using extraArgs from config')
     } else {
       log.info('No extraArgs in config, using default audio device')
+    }
+
+    // 代理：mpv 用的是 FFmpeg 自带的 http 实现，既不跟随系统代理、也不读 http_proxy 环境变量，
+    // 只认 --http-proxy；而内置播放引擎走 Chromium（跟随系统/环境代理）。网络需要代理时
+    // （典型是代理软件的 fake-IP 模式），不把代理交给 mpv 就会出现「内置引擎能放、mpv 报
+    // Couldn't connect to server」——这里把应用识别到的代理（设置 / 启动参数 / 环境变量）透传过去。
+    const hasHttpProxyArg = args.some((arg) => arg === '--http-proxy' || arg.startsWith('--http-proxy='))
+    if (!hasHttpProxyArg) {
+      const proxy = getProxy()
+      if (proxy) {
+        args.push(`--http-proxy=http://${proxy.host}:${proxy.port}`)
+        log.info(`mpv http proxy: http://${proxy.host}:${proxy.port}`)
+      }
     }
 
     log.info(`mpv final args: ${args.join(' ')}`)
@@ -543,6 +572,8 @@ export class MpvController {
         // loaded / duration 事件推迟到 loadUrl 完成所有初始化（pause、seek 0）后再发送，
         // 避免 renderer 在待恢复 seek 还没应用前就进入播放。
         if (this.fileLoadedResolve) this.fileLoadedResolve()
+        // AO 此时才真正打开：探测驱动类型，并把当前静音状态同步给驱动
+        void this.syncMuteHintWithAudioDriver()
         break
       case 'playback-restart':
         // 只有在真正有文件在播放时才上报 playing，避免空闲/加载状态误报。
@@ -885,10 +916,147 @@ export class MpvController {
     this.sendEvent('seeked')
   }
 
+  /**
+   * macOS：把应用保存的 avfoundation 设备映射成 mpv 默认的 coreaudio（缓冲小、音量即时生效），
+   * 详见 @common/utils/mpvAudioDevice 的说明。
+   */
+  private resolveAudioDevice(deviceId: string): string {
+    // 视频实例（macOS 上走原生播放器，这里只是 Windows/Linux 的进程内播放器）不做映射：
+    // 它没有 AO 失败后的自动回退能力，保持原有 avfoundation 行为，避免"选了设备没声"。
+    if (this.isVideo) return deviceId
+    return resolveMpvAudioDevice(deviceId, {
+      isMacPlatform: isMac,
+      fallbackDevices: global.lx.appSetting['player.mpv.aoFallbackDevices'] ?? [],
+    })
+  }
+
   async setVolume(volume: number): Promise<void> {
     this.cachedVolume = volume
+    // 静音期间只记住音量，不写 mpv（与 renderer 侧的约定一致），避免静音被意外解除
+    if (this.cachedMute) return
     if (!this.socket) return
     await this.command(['set_property', 'volume', volume])
+  }
+
+  /**
+   * 静音/取消静音。
+   *
+   * avfoundation AO 会把约 2 秒音频提前排进队列，而 mpv 的软件音量是在数据"入队之前"
+   * 施加的 —— 所以只写 volume 要等队列放完才听得见（这就是静音延迟几秒的来源）。
+   * 这个 AO 自己支持音量（在渲染输出端生效），于是 avfoundation 上改走 ao-volume：
+   * 静音 = ao-volume 0，取消静音 = ao-volume 100，软件音量始终保持在用户音量上
+   * （若把软件音量写成 0，取消静音又会因为队列而慢 2 秒 —— 这一点是实测踩过的坑）。
+   * 驱动不支持（写失败）或不是 avfoundation 时，退回原来的软件音量方案。
+   */
+  async setMute(isMute: boolean): Promise<void> {
+    this.cachedMute = isMute
+    if (!this.socket) return
+    if (await this.applyAoLevelMute(isMute)) {
+      await this.command([
+        'set_property',
+        'volume',
+        this.cachedVolume ?? 100,
+      ]).catch(() => {})
+      return
+    }
+    const softwareVolume = isMute ? 0 : (this.cachedVolume ?? 100)
+    await this.command(['set_property', 'volume', softwareVolume]).catch((err) =>
+      log.warn(err),
+    )
+  }
+
+  private async detectAudioOutputKind(force = false): Promise<string | null> {
+    if (!this.socket) return null
+    if (this.audioOutputKind && !force) return this.audioOutputKind
+    const kind = await this.command<string | null>([
+      'get_property',
+      'current-ao',
+    ]).catch(() => null)
+    if (typeof kind == 'string' && kind) this.audioOutputKind = kind
+    return this.audioOutputKind
+  }
+
+  /**
+   * 用 AO 自身的音量做静音（仅 macOS 的 avfoundation AO）。返回是否成功。
+   */
+  private async applyAoLevelMute(isMute: boolean): Promise<boolean> {
+    if (!isMac) return false
+    const kind = await this.detectAudioOutputKind()
+    if (kind != 'avfoundation') return false
+    const ok = await this.command([
+      'set_property',
+      'ao-volume',
+      isMute ? 0 : 100,
+    ]).then(() => true).catch(() => false)
+    if (!ok) return false
+    this.aoMuteHintActive = isMute
+    return true
+  }
+
+  /**
+   * 播放开始（AO 真正打开）后调用：探测驱动类型，并把应用当前静音状态同步给驱动。
+   */
+  private async syncMuteHintWithAudioDriver(): Promise<void> {
+    if (!isMac) return
+    const kind = await this.detectAudioOutputKind(true)
+    if (!kind) return
+    if (this.cachedMute) {
+      if (await this.applyAoLevelMute(true)) {
+        // 驱动级静音已生效：软件音量恢复成用户音量，取消静音时才能立刻有声
+        await this.command([
+          'set_property',
+          'volume',
+          this.cachedVolume ?? 100,
+        ]).catch(() => {})
+      }
+    } else if (this.aoMuteHintActive) {
+      await this.applyAoLevelMute(false)
+    }
+  }
+
+  /**
+   * macOS：coreaudio 驱动打不开某些设备（实测：部分 USB 声卡/聚合设备会报
+   * "unable to set the input channel layout"）。检测到后把该设备记进回退名单，
+   * 并立刻用 avfoundation 重启，保证"选了设备就有声"。
+   */
+  private handleAudioDriverInitFailure(text: string): void {
+    if (!isMac || this.isVideo || this.audioFallbackTriggered) return
+    if (!text.includes('Failed to initialize audio driver')) return
+    const deviceId = this.cachedAudioDevice
+    if (!deviceId) return
+    const fallbackDevices = global.lx.appSetting['player.mpv.aoFallbackDevices'] ?? []
+    if (
+      !isCoreAudioMappedDevice(deviceId, {
+        isMacPlatform: isMac,
+        fallbackDevices,
+      })
+    ) { return }
+
+    this.audioFallbackTriggered = true
+    log.warn(
+      `[mpv] coreaudio 无法打开设备，改用 avfoundation 并记住该设备: ${deviceId}`,
+    )
+    try {
+      global.lx.event_app.update_config({
+        'player.mpv.aoFallbackDevices': [...fallbackDevices, deviceId],
+      })
+    } catch (err) {
+      log.warn(err as Error)
+    }
+    void this.restartWithFallbackDevice()
+  }
+
+  private async restartWithFallbackDevice(): Promise<void> {
+    try {
+      const time = await this.getPosition().catch(() => 0)
+      await restartMpvController({
+        url: this.loadedUrl || undefined,
+        time: time > 0 ? time : undefined,
+        playing: this.hasFileLoaded && !this.isPaused,
+      })
+    } catch (err) {
+      log.error('[mpv] 回退到 avfoundation 失败:', err as Error)
+    }
   }
 
   async setAudioDevice(device: string): Promise<void> {
@@ -897,7 +1065,7 @@ export class MpvController {
     await this.command([
       'set_property',
       'audio-device',
-      this.cachedAudioDevice,
+      this.resolveAudioDevice(this.cachedAudioDevice),
     ])
   }
 

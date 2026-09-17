@@ -302,6 +302,17 @@ export const setPowerSaveBlocker = (enabled: boolean) => {
 }
 
 
+const parseProxy = (value: string): { host: string, port: number } | null => {
+  const str = value.trim().replace(/^[a-z][a-z\d+.-]*:\/\//i, '')
+  if (!str) return null
+  const [host, port = ''] = str.split(':')
+  if (!host) return null
+  return {
+    host,
+    port: parseInt(port || '80'),
+  }
+}
+
 let envProxy: null | { host: string, port: number } = null
 export const getProxy = () => {
   if (global.lx.appSetting['network.proxy.enable'] && global.lx.appSetting['network.proxy.host']) {
@@ -316,13 +327,12 @@ export const getProxy = () => {
       port: envProxy.port,
     }
   } else {
+    // 启动参数是 Chromium 风格的 --proxy-server=http://host:port，可能带协议前缀；
+    // 直接按 ':' 切会把 host 切成 "http"，必须走 parseProxy（mpv 等外部程序要的是裸 host:port）
     const envProxyStr = envParams.cmdParams['proxy-server']
     if (envProxyStr && typeof envProxyStr == 'string') {
-      const [host, port = ''] = envProxyStr.split(':')
-      return envProxy = {
-        host,
-        port: parseInt(port || '80'),
-      }
+      const parsed = parseProxy(envProxyStr)
+      if (parsed) return envProxy = parsed
     }
   }
 

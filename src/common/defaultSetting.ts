@@ -36,6 +36,8 @@ const defaultSetting: LX.AppSetting = {
   'player.mpv.path': '',
   'player.mpv.extraArgs': [],
   'player.mpv.bitPerfectMode': true,
+  // macOS：coreaudio 驱动打不开的设备（部分 USB 声卡/聚合设备），记录后一直沿用 avfoundation
+  'player.mpv.aoFallbackDevices': [],
   'player.isShowTaskProgess': true,
   'player.isShowStatusBarLyric': false,
   'player.volume': 1,
