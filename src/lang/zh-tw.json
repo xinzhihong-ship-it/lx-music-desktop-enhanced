@@ -86,6 +86,7 @@
   "download__quality": "品質",
   "download__running": "正在下載",
   "download__status": "狀態",
+  "download__task_exist_tip": "以下歌曲在下載清單裡已有相同任務，未重複加入：\n{names}",
   "conversion__add_files": "新增本機檔案轉換",
   "conversion__select_files": "選擇要轉換的音訊檔案",
   "conversion__select_output": "選擇轉換輸出資料夾",

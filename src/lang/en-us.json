@@ -86,6 +86,7 @@
   "download__quality": "Quality",
   "download__running": "Downloading",
   "download__status": "Status",
+  "download__task_exist_tip": "These songs already have the same task in the download list:\n{names}",
   "conversion__add_files": "Convert Local Files",
   "conversion__select_files": "Select audio files to convert",
   "conversion__select_output": "Select conversion output folder",

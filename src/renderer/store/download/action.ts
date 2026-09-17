@@ -20,6 +20,13 @@ import { arrPush, arrUnshift, joinPath } from '@renderer/utils'
 import { DOWNLOAD_STATUS } from '@common/constants'
 import { proxy } from '../index'
 import { buildSavePath } from './utils'
+import { qualityShortLabel } from '@renderer/core/quality/labels'
+import { dialog } from '@renderer/plugins/Dialog'
+import type { Message } from '@root/lang'
+
+// window.i18n.t 的键被声明成字面量联合类型，而 qualityShortLabel 需要 (key: string) => string，
+// 这里包一层收口（键由 labels 内部固定给出，运行时不会越界）。
+const translate = (key: string): string => window.i18n.t(key as keyof Message)
 
 const waitingUpdateTasks = new Map<string, LX.Download.ListItem>()
 let timer: NodeJS.Timeout | null = null
@@ -289,6 +296,29 @@ const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
   void checkStartTask()
 }
 
+/**
+ * 同一首歌的不同音质常常落到同一个文件名（母带 / Hi-Res / 无损都是 .flac），
+ * 目标文件已被同一首歌的其它音质占用时，把音质写进文件名，让多个音质可以共存。
+ * 只处理这种情况：其它软件放在下载目录的同名文件仍然按「存在同名文件时跳过下载」处理。
+ * @param downloadInfo 下载任务
+ * @param savePath 保存目录
+ */
+const resolveFileName = async(downloadInfo: LX.Download.ListItem, savePath: string): Promise<string> => {
+  const { fileName, quality } = downloadInfo.metadata
+  if (!appSetting['download.skipExistFile']) return fileName
+  const filePath = joinPath(savePath, fileName)
+  const occupiedByOtherQuality = downloadList.some(item =>
+    item.id !== downloadInfo.id &&
+    item.metadata.quality != quality &&
+    item.metadata.filePath == filePath,
+  )
+  if (!occupiedByOtherQuality) return fileName
+  if (!await window.lx.worker.download.fileExists(filePath)) return fileName
+  const suffixedFileName = fileName.replace(/(\.[^.]+)$/, ` [${qualityShortLabel(translate, quality)}]$1`)
+  // 带音质后缀的文件也存在时交回原名，让「跳过同名文件」的检查去报错
+  return await window.lx.worker.download.fileExists(joinPath(savePath, suffixedFileName)) ? fileName : suffixedFileName
+}
+
 const handleStartTask = async(downloadInfo: LX.Download.ListItem) => {
   if (!downloadInfo.metadata.url) {
     setStatusText(downloadInfo, window.i18n.t('download_status_url_getting'))
@@ -302,7 +332,9 @@ const handleStartTask = async(downloadInfo: LX.Download.ListItem) => {
   }
 
   const savePath = buildSavePath(downloadInfo)
-  const filePath = joinPath(savePath, downloadInfo.metadata.fileName)
+  const fileName = await resolveFileName(downloadInfo, savePath)
+  if (fileName != downloadInfo.metadata.fileName) downloadInfo.metadata.fileName = fileName
+  const filePath = joinPath(savePath, fileName)
   if (downloadInfo.metadata.filePath != filePath) updateFilePath(downloadInfo, filePath)
 
   setStatusText(downloadInfo, window.i18n.t('download_status_start'))
@@ -364,18 +396,64 @@ const checkStartTask = async() => {
 }
 
 /**
- * 过滤重复任务
+ * 重置任务以便重新下载：清空进度与链接，回到等待队列
+ * @param downloadInfo 下载列表里已有的任务
+ */
+const resetTaskForRedownload = (downloadInfo: LX.Download.ListItem) => {
+  downloadInfo.progress = 0
+  downloadInfo.downloaded = 0
+  downloadInfo.total = 0
+  downloadInfo.speed = ''
+  downloadInfo.writeQueue = 0
+  downloadInfo.isComplate = false
+  downloadInfo.metadata.url = null
+  setStatus(downloadInfo, DOWNLOAD_STATUS.WAITING)
+}
+
+/**
+ * 提示这些歌曲在下载列表里已有正在进行的任务
+ * @param list 被保留原任务、未重新添加的歌曲
+ */
+const showExistTaskTip = (list: LX.Download.ListItem[]) => {
+  if (!list.length) return
+  void dialog({
+    message: window.i18n.t('download__task_exist_tip', {
+      names: list.map(item => item.metadata.musicInfo.name).join('\n'),
+    }),
+    selection: true,
+    confirmButtonText: window.i18n.t('ok'),
+  })
+}
+
+/**
+ * 处理重复任务：已完成 / 出错的重置后重新入队，正在下载 / 等待 / 暂停的保留原任务并提示，
+ * 不再像以前那样静默丢弃。
  * @param list
  */
 const filterTask = (list: LX.Download.ListItem[]) => {
-  const set = new Set<string>()
-  for (const item of downloadList) set.add(item.id)
-  return list.filter(item => {
-    if (set.has(item.id)) return false
-    markRaw(item.metadata)
-    set.add(item.id)
-    return true
-  })
+  const taskMap = new Map(downloadList.map(item => [item.id, item]))
+  const newTasks: LX.Download.ListItem[] = []
+  const existTasks: LX.Download.ListItem[] = []
+  for (const item of list) {
+    const existTask = taskMap.get(item.id)
+    if (!existTask) {
+      markRaw(item.metadata)
+      taskMap.set(item.id, item)
+      newTasks.push(item)
+      continue
+    }
+    switch (existTask.status) {
+      case DOWNLOAD_STATUS.COMPLETED:
+      case DOWNLOAD_STATUS.ERROR:
+        resetTaskForRedownload(existTask)
+        break
+      default:
+        existTasks.push(existTask)
+        break
+    }
+  }
+  showExistTaskTip(existTasks)
+  return newTasks
 }
 /**
  * 创建下载任务

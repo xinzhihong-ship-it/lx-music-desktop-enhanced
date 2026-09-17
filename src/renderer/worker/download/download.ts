@@ -25,6 +25,16 @@ export const checkList = (list: LX.Download.ListItem[], musicInfo: LX.Music.Musi
   return list.some(s => s.id === musicInfo.id && (s.metadata.quality === quality || s.metadata.ext === ext))
 }
 
+/**
+ * 目标文件是否已存在（判定口径与下面的跳过同名文件检查保持一致：文件大小需大于 100 字节）
+ * 供渲染进程在下载前判断是否需要给文件名加音质后缀
+ * @param filePath 文件路径
+ */
+export const fileExists = async(filePath: string): Promise<boolean> => {
+  const stats = await getFileStats(filePath)
+  return !!stats && stats.size > 100
+}
+
 // const removeTask = (id: string) => {
 //   dls.delete(id)
 //   tryNum.delete(id)
