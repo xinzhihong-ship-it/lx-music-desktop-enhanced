@@ -24,19 +24,23 @@ Produced by `bash build-config/build-ffmpeg-macos.sh <arch>`:
   ```
   ./configure --prefix=<out> --arch=<arch> --cc='clang -arch <arch>' \
     --disable-gpl --disable-nonfree --disable-debug --disable-doc --disable-ffplay \
-    --disable-network --disable-libxcb --disable-xlib --enable-libmp3lame \
+    --disable-network --disable-libxcb --disable-xlib --disable-lzma --disable-bzlib \
+    --enable-libmp3lame \
     --extra-cflags="-I<lame>/include" --extra-ldflags="-L<lame>/lib" --extra-libs='-lmp3lame'
   ```
 
-  `--disable-libxcb --disable-xlib` is required on macOS: without it, configure auto-detects the
-  build machine's Homebrew `libxcb` / `libX11` and links them by absolute path, and the shipped
-  binary then fails to load (dyld) on machines without Homebrew.
+  The `--disable-*` list is required on macOS: without it, configure auto-detects whatever the
+  build machine has from Homebrew (`libxcb`, `libX11`, `xz`/liblzma, …) and links it by absolute
+  path, and the shipped binary then fails to load (dyld) on machines without Homebrew. The x64 CI
+  runner hit exactly this with `/usr/local/opt/xz/lib/liblzma.5.dylib`, which the build guard now
+  rejects. macOS ships no liblzma at all and the converter does not need lzma/bz2, so disabling
+  them costs users nothing.
 - SHA-256 of the current `darwin-arm64` pair (a rebuilt pair with the same recipe is expected to
   reproduce these; CI artifacts are authoritative):
 
   ```
-  8482807d25d37fe8621ebcc90f7cda566b668909a24584bb59c407c81d77e1cd  ffmpeg
-  a25c37169808d973b5da55516c79a4d73c4ec9d0c7fccfff9307bc16a292225d  ffprobe
+  4ecfe8ff4c9522b5b698c395f13441d5461d1712a6c23017b8966a10cf858300  ffmpeg
+  7f1de8a48a9860ca65c1482e09a3ff0e64aea51a2ae1600d5457fa38119acb7d  ffprobe
   ```
 
 ## Source offer

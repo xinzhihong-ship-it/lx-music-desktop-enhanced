@@ -135,6 +135,24 @@ const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, i
     }
   })
 }
+/**
+ * 本地歌曲的音源脚本会把中文 / 空格文件名以百分号编码返回（例如
+ * /Users/…/Desktop/%E7%99%BD%E9%9C%B2.mp3），播放引擎按字面路径找不到文件，
+ * 会直接报「音频加载出错」并自动切歌（基调分析也会因为没等到可用音源而失败）。
+ * 这里对本地歌曲的纯路径地址解一次编码；带协议的地址（http(s)、file:// 等）交给引擎自己处理。
+ */
+const normalizeLocalPlayUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, url: string): string => {
+  const source = 'progress' in musicInfo ? musicInfo.metadata.musicInfo.source : musicInfo.source
+  if (!url || source !== 'local') return url
+  if (/^[a-z][a-z\d+.-]*:/i.test(url)) return url
+  try {
+    return decodeURIComponent(url)
+  } catch {
+    // 路径里含非法 % 序列时保持原样
+    return url
+  }
+}
+
 const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false): Promise<MusicUrlResult | null> => {
   // this.musicInfo.url = await getMusicPlayUrl(targetSong, type)
   setAllStatus(window.i18n.t('player__getting_url'))
@@ -175,7 +193,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     const quality = result.type ?? (onlineMusicInfo
       ? (resolvedQuality ?? getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo))
       : appSetting['player.playQuality'])
-    return { url: result.url, quality, audioUrl: result.audioUrl, isVideo }
+    return { url: normalizeLocalPlayUrl(musicInfo, result.url), quality, audioUrl: result.audioUrl, isVideo }
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   }).catch(err => {
     // console.log('err', err.message)

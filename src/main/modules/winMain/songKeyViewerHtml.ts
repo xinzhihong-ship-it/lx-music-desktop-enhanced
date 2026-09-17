@@ -473,6 +473,7 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
     let userSelectedSegment = false;
     let currentData = null;
     let currentSongId = '';
+    let currentKeyVersion = '';
 
     function sendInstantAudition() {
       if (ipcRenderer) {
@@ -789,10 +790,18 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
       const songChanged = Boolean(songId && songId !== currentSongId);
       if (songChanged) {
         currentSongId = songId;
+        currentKeyVersion = '';
         touched = false;
         userSelectedSegment = false;
         editingSegmentIndex = -1;
       }
+
+      // 同一首歌点「重新分析」时 songId 不变，但新的分析结果会带来新的时间轴：
+      // 用分析结果的版本号判断，否则段落 / 轮盘会一直停在旧结果（表现为“重新检测没反应”）。
+      const keyVersion = data.songKeyInfo
+        ? [(data.songKeyInfo.updatedAt ?? ''), (data.songKeyInfo.timeline ? data.songKeyInfo.timeline.length : 0), (data.songKeyInfo.key || '')].join(':')
+        : '';
+      const keyChanged = Boolean(data.songKeyInfo) && keyVersion !== currentKeyVersion;
 
       document.getElementById('songName').textContent = data.name || '等待播放…';
       document.getElementById('songSinger').textContent = data.singer ? ('- ' + data.singer) : '';
@@ -825,8 +834,8 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
         document.getElementById('speedNote').style.display = data.retuneSpeedAuto ? 'none' : 'block';
       }
 
-      // 歌曲切换时初始灌入数据
-      if (songChanged && data.songKeyInfo) {
+      // 歌曲切换或分析结果更新时灌入数据
+      if ((songChanged || keyChanged) && data.songKeyInfo) {
         const info = data.songKeyInfo;
         selectedKey = info.key || 'C';
         selectedScale = info.scale || 'major';
@@ -853,6 +862,7 @@ export const getSongKeyViewerHtml = (): string => `<!DOCTYPE html>
           selectedKey = segments[curIdx].key;
           selectedScale = segments[curIdx].scale;
         }
+        currentKeyVersion = keyVersion;
         updateNoteSelection();
         renderSegments();
       } else if (songChanged && !data.songKeyInfo && !data.isKeyAnalyzing) {

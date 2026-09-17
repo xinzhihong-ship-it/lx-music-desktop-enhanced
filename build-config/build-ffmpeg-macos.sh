@@ -32,9 +32,11 @@ fi
 git -C "$source" fetch --depth 1 origin "$ffmpeg_commit"
 git -C "$source" checkout --detach "$ffmpeg_commit"
 make -C "$source" distclean || true
-# --disable-libxcb / --disable-xlib：构建机（CI runner）往往装了 Homebrew 的 libxcb / libX11，
-# ffmpeg 的 configure 一旦探测到就会按绝对路径链上，产物到没有 Homebrew 的用户机上会 dyld 加载失败。
-# 这里连同 -autodetect 的其它入口一起排除掉，只保留显式启用的 libmp3lame（静态，见上面的 lame 构建）。
+# --disable-libxcb / --disable-xlib / --disable-lzma / --disable-bzlib：
+# 构建机（CI runner）装了 Homebrew 的 libxcb / libX11 / xz 时，ffmpeg 的 configure 一旦探测到
+# 就会按绝对路径链上，产物到没有 Homebrew 的用户机上会 dyld 加载失败。macOS 自带 zlib 等系统库，
+# 但上面这几个在用户机上是没有的（lzma 甚至完全没有系统版本），禁用不损失可用功能。
+# 只保留显式启用的 libmp3lame（静态，见上面的 lame 构建）。
 configure_args=(
   --prefix="$source/out"
   --arch="$arch"
@@ -47,6 +49,8 @@ configure_args=(
   --disable-network
   --disable-libxcb
   --disable-xlib
+  --disable-lzma
+  --disable-bzlib
   --enable-libmp3lame
   --extra-cflags="-I$lame/include"
   --extra-ldflags="-L$lame/lib"
