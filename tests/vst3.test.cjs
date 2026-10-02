@@ -3,7 +3,7 @@ const { test } = require('node:test')
 const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
-const { startHost, defaultDirectories, findPlugins } = require('../native/vst3-host/client.cjs')
+const { startHost, defaultDirectories, findPlugins, scanPlugins } = require('../native/vst3-host/client.cjs')
 const { Vst3Chain } = require('../native/vst3-host/chain.cjs')
 const { randomUUID } = require('node:crypto')
 
@@ -30,6 +30,58 @@ test('scanner deduplicates bundles, preserves missing paths and stops at bundle 
 })
 
 const executable = path.resolve('native/vst3-host/target/debug', process.platform === 'win32' ? 'lx-vst3-host.exe' : 'lx-vst3-host')
+
+test('scan progress reports discovery, pre-probe and completion milestones', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lx-vst3-progress-'))
+  try {
+    await fs.mkdir(path.join(root, 'Alpha.vst3'), { recursive: true })
+    await fs.mkdir(path.join(root, 'Beta.vst3'), { recursive: true })
+    await fs.mkdir(path.join(root, 'Alpha.vst3', 'Nested.vst3'), { recursive: true })
+    const missing = path.join(root, 'missing')
+
+    // 未传回调（或传了非函数）时必须零开销且不抛错，否则关闭进度的调用方会直接崩。
+    assert.equal((await findPlugins([missing], 'not-a-function')).warnings.length, 1)
+
+    const discovered = []
+    const found = await findPlugins([root], progress => discovered.push(progress))
+    assert.equal(found.paths.length, 2)
+    assert.equal(discovered.every(progress => progress.phase === 'discover'), true)
+    assert.equal(discovered.at(-1).done, true)
+    assert.equal(discovered.at(-1).found, 2)
+    assert.ok(discovered.some(progress => progress.path.endsWith('Alpha.vst3')))
+
+    const reports = []
+    const result = await scanPlugins(executable, [root], progress => reports.push(progress))
+    // 空目录伪装的 .vst3 包探测必然失败，正好覆盖失败路径的上报。
+    assert.equal(result.plugins.length, 0)
+    assert.equal(result.warnings.length, 2)
+
+    // 首条必须是强制上报的 discover 起点，否则目录遍历期间界面没有任何反馈。
+    assert.deepEqual(reports[0], { phase: 'discover', visited: 0, found: 0 })
+    assert.equal(reports.at(-1).phase, 'done')
+    assert.equal(reports.filter(progress => progress.phase === 'discover' && progress.done).length, 1)
+    assert.equal(reports.at(-1).current, 2)
+    assert.equal(reports.at(-1).total, 2)
+    assert.ok(Number.isFinite(reports.at(-1).elapsed))
+
+    const probes = reports.filter(progress => progress.phase === 'probe')
+    const pre = probes.filter(progress => !progress.name && !progress.error)
+    const post = probes.filter(progress => progress.name || progress.error)
+    // 每个插件都要有探测前和探测后两次上报，共 2 × 2。
+    assert.deepEqual(pre.map(progress => progress.current), [0, 1])
+    assert.deepEqual(post.map(progress => progress.current), [1, 2])
+    assert.equal(pre.every(progress => progress.total === 2 && progress.path), true)
+    assert.equal(probes.every(progress => Number.isFinite(progress.elapsed)), true)
+    // 探测前的上报必须先于同一插件的探测结果：单个插件要启动进程并加载模块，
+    // 耗时以秒计，没有这条前置上报界面就会长时间停在同一个进度上。
+    for (const progress of pre) {
+      const preIndex = reports.indexOf(progress)
+      const postIndex = reports.findIndex(item => item.phase === 'probe' && item.path === progress.path && (item.name || item.error))
+      assert.ok(preIndex < postIndex, `probe ${progress.current} must report before it finishes`)
+    }
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+})
+
 test('native errors are recoverable; process exit rejects further requests', async () => {
   const host = await startHost(executable)
   try {

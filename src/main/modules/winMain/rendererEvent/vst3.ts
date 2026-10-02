@@ -11,8 +11,7 @@ import { validateVst3HostBinary } from '../../../../../native/vst3-host/binary.c
 
 let chain: Vst3Chain | null = null
 
-const getDirectories = () => {
-  const custom = global.lx.appSetting['player.vst3.directories']
+const getDirectories = (custom = global.lx.appSetting['player.vst3.directories']) => {
   if (!Array.isArray(custom) || custom.length > 128 || custom.some(directory => typeof directory !== 'string' || !path.isAbsolute(directory))) {
     throw new Error('Invalid VST3 directories')
   }
@@ -49,11 +48,50 @@ export const processVst3Audio = async(inputs: Float32Array[]): Promise<{ outputs
 }
 
 export default () => {
-  let scanning: Promise<unknown> | null = null
-  mainHandle(WIN_MAIN_RENDERER_EVENT_NAME.vst3_scan, async() => {
-    if (scanning) return scanning
-    const directories = getDirectories()
-    scanning = scanPlugins(executablePath(), directories).then((result: object) => ({ ...result, directories })).finally(() => { scanning = null })
+  let scanning: Promise<LX.Vst3.ScanResponse> | null = null
+  let scanningKey = ''
+  let latestProgress: LX.Vst3.ScanProgress | null = null
+  const scanSubscribers = new Set<Electron.WebContents>()
+  const sendScanProgress = (sender: Electron.WebContents, progress: LX.Vst3.ScanProgress) => {
+    if (sender.isDestroyed()) {
+      scanSubscribers.delete(sender)
+      return
+    }
+    try {
+      sender.send(WIN_MAIN_RENDERER_EVENT_NAME.vst3_scan_progress, progress)
+    } catch {
+      scanSubscribers.delete(sender)
+    }
+  }
+  const publishScanProgress = (progress: LX.Vst3.ScanProgress) => {
+    latestProgress = progress
+    for (const sender of scanSubscribers) sendScanProgress(sender, progress)
+  }
+  mainHandle<string[] | undefined, LX.Vst3.ScanResponse>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_scan, async({ event, params }) => {
+    const directories = getDirectories(params)
+    const customDirectories = [...(params ?? global.lx.appSetting['player.vst3.directories'])]
+    const key = JSON.stringify([...customDirectories].sort((a, b) => a.localeCompare(b)))
+    // 相同目录共享扫描；不同目录等待当前扫描结束后重新扫描，避免旧结果写入新目录缓存。
+    while (true) {
+      if (!scanning) break
+      if (key === scanningKey) {
+        scanSubscribers.add(event.sender)
+        if (latestProgress) sendScanProgress(event.sender, latestProgress)
+        return scanning
+      }
+      try { await scanning } catch {}
+    }
+    const executable = executablePath()
+    scanningKey = key
+    latestProgress = null
+    scanSubscribers.add(event.sender)
+    scanning = scanPlugins(executable, directories, publishScanProgress)
+      .then((result: LX.Vst3.ScanResult) => ({ ...result, directories, customDirectories }))
+      .finally(() => {
+        scanning = null
+        latestProgress = null
+        scanSubscribers.clear()
+      })
     return scanning
   })
   mainHandle<number>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_configure, async({ params: sampleRate }) => {

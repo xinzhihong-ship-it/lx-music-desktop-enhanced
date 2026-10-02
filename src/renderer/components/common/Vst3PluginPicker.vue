@@ -28,7 +28,25 @@
             <input v-model="filterText" :class="$style.filterInput" type="search" :placeholder="$t('player__vst3_search')">
           </div>
           <section :class="$style.current">
-            <p v-if="scanning" :class="$style.empty">{{ $t('setting__vst3_scanning') }}</p>
+            <div v-if="scanning" :class="$style.progress">
+              <p :class="$style.progressTitle">{{ progressLabel }}</p>
+              <div
+                :class="$style.progressTrack"
+                role="progressbar"
+                :aria-label="progressLabel"
+                :aria-valuemin="0"
+                :aria-valuemax="progressIndeterminate ? undefined : progressMax"
+                :aria-valuenow="progressIndeterminate ? undefined : progressValue"
+              >
+                <div
+                  :class="[$style.progressBar, progressIndeterminate ? $style.progressBarIndeterminate : '']"
+                  :style="progressIndeterminate ? undefined : { width: progressPercent + '%' }"
+                />
+              </div>
+              <p v-if="!progressIndeterminate" :class="$style.progressHint">{{ $t('player__vst3_scan_completed', { current: progressValue, total: progressMax, percent: progressPercent }) }}</p>
+              <p v-if="progressPath" :class="$style.progressPath" :title="progressPath">{{ progressPath }}</p>
+              <p :class="$style.progressHint">{{ $t('player__vst3_scan_elapsed', { time: progressSeconds }) }}</p>
+            </div>
             <p v-else-if="!filtered.length" :class="$style.empty">
               {{ plugins.length ? $t('player__vst3_empty_result') : $t('player__vst3_scan_hint') }}
               <button v-if="!plugins.length" type="button" :class="$style.linkButton" @click="scan">{{ $t('setting__vst3_scan') }}</button>
@@ -61,11 +79,14 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from '@common/utils/vueTools'
+import { computed, onBeforeUnmount, ref, watch } from '@common/utils/vueTools'
 import { appSetting, updateSetting } from '@renderer/store/setting'
-import { scanVst3Plugins } from '@renderer/utils/ipc'
+import { onVst3ScanProgress, scanVst3Plugins } from '@renderer/utils/ipc'
 import { randomUUID } from 'node:crypto'
 import { cleanVst3Error, plainVst3Chain } from '@renderer/plugins/player/vst3'
+import { useI18n } from '@root/lang'
+
+const t = useI18n()
 
 const props = defineProps({
   show: {
@@ -75,7 +96,7 @@ const props = defineProps({
 })
 defineEmits(['close'])
 
-// 扫描结果全应用共享，重开面板与设置页复用，无需重复扫描。
+// 每个面板保留内存结果，多个面板通过持久化缓存复用结果。
 const plugins = ref([])
 const warnings = ref([])
 const scanning = ref(false)
@@ -83,6 +104,72 @@ const error = ref('')
 const filterText = ref('')
 const scanned = ref(false)
 const scanTime = ref(0)
+
+// 扫描进度：主进程每探完一个插件推送一次。探测单个插件要新建宿主进程并加载模块，
+// 可能耗时数秒，没有进度界面就会长时间空白，看起来像卡死。
+const scanProgress = ref(null)
+const progressSeconds = ref(0)
+let stopProgressListener = null
+let progressTimer = null
+
+const stopProgressWatch = () => {
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
+  }
+  if (stopProgressListener) {
+    stopProgressListener()
+    stopProgressListener = null
+  }
+  progressSeconds.value = 0
+}
+let scanToken = 0
+onBeforeUnmount(() => {
+  ++scanToken
+  stopProgressWatch()
+})
+
+const progressLabel = computed(() => {
+  const progress = scanProgress.value
+  if (!progress) return t('setting__vst3_scanning')
+  if (progress.phase === 'discover') {
+    return t('player__vst3_scan_discovering', { found: progress.found ?? 0 })
+  }
+  if (progress.phase === 'probe') {
+    if (progress.error) return t('player__vst3_scan_failed', { name: progress.path ?? '' })
+    if (progress.name) return t('player__vst3_scan_probed', { name: progress.name })
+    return t('player__vst3_scan_probing', { name: progress.path ?? '' })
+  }
+  return t('setting__vst3_scanning')
+})
+const progressMax = computed(() => scanProgress.value?.total ?? 0)
+const progressValue = computed(() => scanProgress.value?.current ?? 0)
+const progressIndeterminate = computed(() => {
+  const progress = scanProgress.value
+  return !progress || progress.phase === 'discover' || !progress.total
+})
+const progressPercent = computed(() => {
+  if (progressIndeterminate.value) return 0
+  return Math.min(100, Math.floor((progressValue.value / progressMax.value) * 100))
+})
+const progressPath = computed(() => scanProgress.value?.path ?? '')
+
+const startProgressWatch = () => {
+  stopProgressWatch()
+  scanProgress.value = null
+  progressSeconds.value = 0
+  let startedAt = Date.now()
+  progressTimer = setInterval(() => {
+    progressSeconds.value = Math.floor((Date.now() - startedAt) / 1000)
+  }, 500)
+  stopProgressListener = onVst3ScanProgress(progress => {
+    scanProgress.value = progress
+    if (Number.isFinite(progress.elapsed)) {
+      startedAt = Date.now() - progress.elapsed
+      progressSeconds.value = Math.floor(progress.elapsed / 1000)
+    }
+  })
+}
 
 const filtered = computed(() => {
   const keyword = filterText.value.trim().toLowerCase()
@@ -95,8 +182,18 @@ const filtered = computed(() => {
 const addedPaths = computed(() => new Set(appSetting['player.vst3.chain'].map(slot => slot.path)))
 const chainFull = computed(() => appSetting['player.vst3.chain'].length >= 16)
 
-// 扫描结果持久化到 localStorage，应用重启后仍有效；只有用户手动刷新才重新扫描。
+// 扫描结果持久化到 localStorage，应用重启后可复用；手动刷新或自定义目录变化时重新扫描。
 const SCAN_CACHE_KEY = 'lx_vst3_scan_cache'
+
+// 缓存目录用 JSON 编码，避免路径中的换行符造成指纹碰撞。
+const directoriesKey = directories => JSON.stringify((Array.isArray(directories) ? [...directories] : [])
+  .sort((a, b) => a.localeCompare(b)))
+const directoryFingerprint = () => directoriesKey(appSetting['player.vst3.directories'])
+const cacheMatchesDirectories = cached => cached?.version === 2 && Array.isArray(cached.directories) &&
+  directoriesKey(cached.directories) === directoryFingerprint()
+
+// 当前列表对应的目录指纹。为空表示还没扫过，与任何目录都不匹配。
+const scannedDirectories = ref('')
 
 const applyCache = cached => {
   plugins.value = cached.plugins.map(plugin => ({
@@ -105,22 +202,37 @@ const applyCache = cached => {
   }))
   warnings.value = Array.isArray(cached.warnings) ? cached.warnings : []
   scanTime.value = cached.time || 0
+  scannedDirectories.value = directoriesKey(cached.directories)
   scanned.value = true
 }
 
+// 同一面板只保留一个进行中的请求；令牌阻止卸载后的异步回写。
 const scan = async() => {
+  if (scanning.value) return
+  const token = ++scanToken
+  const scanDirectories = [...appSetting['player.vst3.directories']]
   scanning.value = true
   error.value = ''
+  startProgressWatch()
   try {
-    const result = await scanVst3Plugins()
+    const result = await scanVst3Plugins(scanDirectories)
+    if (token !== scanToken) return
+    // 目录在扫描中改变时丢弃旧结果，收尾后按新目录重扫。
+    if (directoriesKey(result.customDirectories) !== directoryFingerprint()) {
+      scanned.value = false
+      return
+    }
     plugins.value = result.plugins
     warnings.value = result.warnings
     scanTime.value = Date.now()
+    scannedDirectories.value = directoriesKey(result.customDirectories)
     scanned.value = true
     try {
       localStorage.setItem(SCAN_CACHE_KEY, JSON.stringify({
+        version: 2,
         time: scanTime.value,
         warnings: result.warnings,
+        directories: result.customDirectories,
         plugins: result.plugins.map(plugin => ({
           path: plugin.path,
           name: plugin.details.info.name,
@@ -129,16 +241,24 @@ const scan = async() => {
       }))
     } catch {}
   } catch (err) {
-    error.value = cleanVst3Error(err)
+    if (token === scanToken) error.value = cleanVst3Error(err)
   } finally {
-    scanning.value = false
+    if (token === scanToken) {
+      scanning.value = false
+      stopProgressWatch()
+      if (props.show && directoriesKey(scanDirectories) !== directoryFingerprint()) void scan()
+    }
   }
 }
-watch(() => props.show, show => {
-  if (!show || scanned.value) return
+watch([() => props.show, directoryFingerprint], ([show]) => {
+  if (!show || scanning.value) return
+  // 目录没变且已有结果，直接复用，不重复扫描。
+  if (scanned.value && scannedDirectories.value === directoryFingerprint()) return
   try {
     const cached = JSON.parse(localStorage.getItem(SCAN_CACHE_KEY) ?? 'null')
-    if (Array.isArray(cached?.plugins)) {
+    // 只有缓存记录的目录与当前设置一致才复用，否则用户改过自定义路径后
+    // 面板会一直显示旧列表，看起来像自定义路径没生效。
+    if (Array.isArray(cached?.plugins) && cacheMatchesDirectories(cached)) {
       applyCache(cached)
       return
     }
@@ -283,6 +403,56 @@ const addPlugin = path => {
 .current {
   flex: 1;
   min-height: 0;
+}
+.progress {
+  padding: 20px 16px;
+  text-align: center;
+}
+.progressTitle {
+  margin: 0 0 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.progressTrack {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--color-primary-light-400-alpha-700);
+}
+.progressBar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-primary);
+  transition: width .25s ease;
+}
+// 目录遍历阶段还不知道插件总数，无法给出百分比，用流动条表示仍在工作。
+.progressBarIndeterminate {
+  width: 35%;
+  animation: vst3-progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes vst3-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+.progressPath {
+  margin: 10px 0 0;
+  font-size: 11px;
+  opacity: .65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.progressHint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  opacity: .55;
 }
 .listScroll {
   height: 100%;

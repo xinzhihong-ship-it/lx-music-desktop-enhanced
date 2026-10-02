@@ -7,12 +7,22 @@ import { APP_EVENT_NAMES, DATA_KEYS, DEFAULT_SETTING } from '@common/constants'
 
 type RemoveListener = () => void
 
-export const scanVst3Plugins = async() => {
-  return rendererInvoke<{
+export const scanVst3Plugins = async(directories: string[]) => {
+  return rendererInvoke<string[], {
     plugins: Array<{ path: string, details: { info: { name: string, vendor: string } } }>
     warnings: Array<{ path: string, error: string }>
     directories: string[]
-  }>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_scan)
+    customDirectories: string[]
+  }>(WIN_MAIN_RENDERER_EVENT_NAME.vst3_scan, directories)
+}
+
+// 扫描进度是主进程主动推送的：探测单个插件需要新建宿主进程并加载模块，
+// 可能耗时数秒，只靠 vst3_scan 的返回值界面会长时间没有任何反馈。
+export const onVst3ScanProgress = (callback: (progress: LX.Vst3.ScanProgress) => void): RemoveListener => {
+  const listener: LX.IpcRendererEventListenerParams<LX.Vst3.ScanProgress> = ({ params }) => {
+    callback(params)
+  }
+  return rendererOn(WIN_MAIN_RENDERER_EVENT_NAME.vst3_scan_progress, listener)
 }
 
 export const openVst3Editor = async(params: { id: string, open: boolean }) => {

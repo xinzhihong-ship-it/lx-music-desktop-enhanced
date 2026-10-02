@@ -95,6 +95,7 @@ const modules = {
     save_sound_effect_convolution_preset: 'winMain_save_sound_effect_convolution_preset',
     mpv_init: 'winMain_mpv_init',
     vst3_scan: 'winMain_vst3_scan',
+    vst3_scan_progress: 'winMain_vst3_scan_progress',
     vst3_configure: 'winMain_vst3_configure',
     vst3_process: 'winMain_vst3_process',
     vst3_editor: 'winMain_vst3_editor',

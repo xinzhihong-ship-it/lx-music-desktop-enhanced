@@ -149,13 +149,27 @@ function defaultDirectories(platform = process.platform, home = os.homedir(), en
   return []
 }
 
-async function findPlugins(directories) {
+// 扫描进度上报。未传回调时零开销；传了则按 interval 节流，
+// 避免目录遍历阶段每个条目都触发一次 IPC。force 用于阶段切换等必须送达的关键点。
+const createProgressReporter = (onProgress, interval = 120) => {
+  if (typeof onProgress !== 'function') return null
+  let last = 0
+  return (payload, force = false) => {
+    const now = Date.now()
+    if (!force && now - last < interval) return
+    last = now
+    try { onProgress(payload, force) } catch {}
+  }
+}
+
+async function findPlugins(directories, onProgress) {
   if (!Array.isArray(directories) || directories.length > 136 || directories.some(dir => typeof dir !== 'string' || !path.isAbsolute(dir))) {
     throw new Error('Expected absolute paths: up to 128 custom directories plus system VST3 directories')
   }
   const plugins = new Set()
   const visited = new Set()
   const warnings = []
+  const report = createProgressReporter(onProgress)
   let scanLimitReached = false
   const visit = async directory => {
     if (scanLimitReached) return
@@ -170,6 +184,7 @@ async function findPlugins(directories) {
       const stat = await fs.stat(real)
       if (path.extname(real).toLowerCase() === '.vst3') {
         plugins.add(real)
+        report?.({ phase: 'discover', visited: visited.size, found: plugins.size, path: real })
         return
       }
       if (!stat.isDirectory()) throw new Error('Not a directory')
@@ -178,23 +193,40 @@ async function findPlugins(directories) {
           await visit(path.join(real, item.name))
         }
       }
+      report?.({ phase: 'discover', visited: visited.size, found: plugins.size, path: real })
     } catch (error) { warnings.push({ path: directory, error: error.message }) }
   }
   for (const directory of directories) await visit(directory)
+  report?.({ phase: 'discover', visited: visited.size, found: plugins.size, done: true }, true)
   return { paths: [...plugins].sort(), warnings }
 }
 
-async function scanPlugins(executable, directories) {
-  const { paths, warnings } = await findPlugins(directories)
+async function scanPlugins(executable, directories, onProgress) {
+  const report = createProgressReporter(onProgress)
+  const startedAt = Date.now()
+  report?.({ phase: 'discover', visited: 0, found: 0 }, true)
+  const { paths, warnings } = await findPlugins(directories, (payload, force) => report?.(payload, force))
   const plugins = []
-  for (const candidate of paths) {
+  for (const [index, candidate] of paths.entries()) {
+    // 探测前先上报一次：单个插件的探测要启动进程并加载模块，耗时以秒计，
+    // 不先上报的话整段探测期间界面没有任何变化，看起来就像卡死。
+    report?.({ phase: 'probe', current: index, total: paths.length, path: candidate, elapsed: Date.now() - startedAt }, true)
     let host
     try {
       host = await startHost(executable)
-      plugins.push({ path: candidate, details: await host.request({ command: 'probe', path: candidate }) })
-    } catch (error) { warnings.push({ path: candidate, error: error.message }) }
+      const details = await host.request({ command: 'probe', path: candidate })
+      plugins.push({ path: candidate, details })
+      report?.({
+        phase: 'probe', current: index + 1, total: paths.length, path: candidate,
+        name: details?.info?.name, vendor: details?.info?.vendor, elapsed: Date.now() - startedAt,
+      }, true)
+    } catch (error) {
+      warnings.push({ path: candidate, error: error.message })
+      report?.({ phase: 'probe', current: index + 1, total: paths.length, path: candidate, error: error.message, elapsed: Date.now() - startedAt }, true)
+    }
     finally { host?.close() }
   }
+  report?.({ phase: 'done', current: paths.length, total: paths.length, elapsed: Date.now() - startedAt }, true)
   return { plugins, warnings }
 }
 

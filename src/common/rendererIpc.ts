@@ -53,12 +53,14 @@ export async function rendererInvoke <T, V>(name: string, params?: T): Promise<V
   }
 }
 
-export function rendererOn(name: string, listener: LX.IpcRendererEventListener): void
-export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void
-export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void {
-  ipcRenderer.on(name, (event, params) => {
+export function rendererOn(name: string, listener: LX.IpcRendererEventListener): () => void
+export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): () => void
+export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): () => void {
+  const handler = (event: Electron.IpcRendererEvent, params: T) => {
     listener({ event, params })
-  })
+  }
+  ipcRenderer.on(name, handler)
+  return () => { ipcRenderer.removeListener(name, handler) }
 }
 
 export function rendererOnce(name: string, listener: LX.IpcRendererEventListener): void
