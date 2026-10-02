@@ -93,7 +93,11 @@ module.exports = async(context) => {
         `macOS 视频原生桥不能交叉编译：目标 ${targetArch || arch}，当前构建进程 ${process.arch}`,
       )
     }
-    if (!buildMpvVideoNative()) {
+    // 开发环境可通过环境变量跳过视频原生桥构建：该系统功能需要 brew 安装的
+    // libmpv，与音频设备枚举、VST3 扫描等无关。生产打包不设该变量，行为不变。
+    if (process.env.LX_SKIP_MPV_VIDEO_NATIVE === '1') {
+      console.warn('[mpv video] native bridge skipped via LX_SKIP_MPV_VIDEO_NATIVE=1')
+    } else if (!buildMpvVideoNative()) {
       throw new Error(
         'macOS 视频原生桥构建失败：请先安装对应架构的 mpv（brew install mpv）',
       )
@@ -108,7 +112,13 @@ module.exports = async(context) => {
   const vst3TargetArch = arch === Arch.x64 ? 'x64' : arch === Arch.arm64 ? 'arm64' : arch === Arch.ia32 ? 'ia32' : arch === Arch.armv7l ? 'armv7l' : ''
   const vst3Plan = getVst3HostPlan(electronPlatformName, vst3TargetArch || arch)
   if (vst3Plan.supported) {
-    buildVst3Host(electronPlatformName, vst3TargetArch || arch)
+    // 开发环境可复用已有编译产物，避免依赖本地 Rust 工具链；生产打包不设
+    // 该变量，仍会从源码重新构建并校验，行为不变。
+    if (process.env.LX_SKIP_VST3_BUILD === '1' && fs.existsSync(vst3Plan.sourcePath)) {
+      console.warn('[vst3] reusing existing host build via LX_SKIP_VST3_BUILD=1')
+    } else {
+      buildVst3Host(electronPlatformName, vst3TargetArch || arch)
+    }
   } else {
     await fsPromises.unlink(vst3Plan.sourcePath).catch(() => {})
     console.warn(`[vst3] ${vst3Plan.reason}; package will omit the VST3 host`)
