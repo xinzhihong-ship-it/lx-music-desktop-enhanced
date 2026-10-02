@@ -59,6 +59,16 @@ export interface MpvControllerOptions {
 const isWin = process.platform == 'win32'
 const isMac = process.platform == 'darwin'
 
+// 首次枚举音频设备的超时。带 quarantine 的 App 首次启动 mpv 时，macOS 会做
+// Gatekeeper 在线校验；若 mpv 为 x86_64 二进制还需 Rosetta 首次翻译，单次可能
+// 持续数十秒。给足窗口避免误判为空设备列表；后续调用走快速路径。
+const FIRST_RUN_DEVICE_TIMEOUT_MS = 60_000
+const DEVICE_LIST_TIMEOUT_MS = 10_000
+// 进程级预热标记：一旦 mpv 成功产出过输出，后续改用较短的超时。
+let mpvSpawnWarmedUp = false
+// 设备列表缓存，避免频繁 spawn；预热完成后基本不再触发冷启动。
+let cachedAudioDevices: Array<{ id: string, name: string }> | null = null
+
 const sanitizeUrl = (url: string) => {
   try {
     const parsed = new URL(url)
@@ -1224,12 +1234,26 @@ export class MpvController {
   /**
    * 运行 mpv --audio-device=help 获取可用设备列表
    */
-  static async listAudioDevices(): Promise<
+  static async listAudioDevices(options: { timeoutMs?: number } = {}): Promise<
   Array<{ id: string, name: string }>
   > {
     const mpvPath = resolveMpvPath()
+    // 已成功枚举过则直接回缓存，避免重复 spawn 再次触发冷启动。
+    if (cachedAudioDevices != null && options.timeoutMs == null) {
+      log.info('[listAudioDevices] using cached devices')
+      return cachedAudioDevices
+    }
     log.info(
       `[listAudioDevices] mpv path: ${mpvPath.path} source: ${mpvPath.source}`,
+    )
+    // 首次运行带 quarantine 的 App 时，Gatekeeper 会做一次在线校验；若 mpv 还是
+    // x86_64 二进制（Rosetta），首次翻译所有依赖 dylib 也会额外耗时。两者叠加经常
+    // 超过 5 秒，导致设备列表为空。首次调用给足时间，之后的快速路径秒回。
+    const isFirstRun = !mpvSpawnWarmedUp
+    const effectiveTimeout = options.timeoutMs ??
+      (isFirstRun ? FIRST_RUN_DEVICE_TIMEOUT_MS : DEVICE_LIST_TIMEOUT_MS)
+    log.info(
+      `[listAudioDevices] timeout=${effectiveTimeout}ms firstRun=${isFirstRun}`,
     )
     return new Promise((resolve) => {
       // 仅枚举设备，不加载用户配置，不初始化视频/窗口，避免 probing 时抢占音频设备
@@ -1253,6 +1277,13 @@ export class MpvController {
         if (settled) return
         settled = true
         if (timeout != null) clearTimeout(timeout)
+        // 只要进程曾经正常输出或退出，就认为预热完成，后续走快速路径。
+        if (devices.length > 1 || output.length > 0) {
+          mpvSpawnWarmedUp = true
+        }
+        // 只有拿到真实设备（多于仅默认项）才写缓存，失败结果不缓存，
+        // 让下次调用仍能用宽松超时重试。
+        if (devices.length > 1) cachedAudioDevices = devices
         resolve(devices)
       }
       proc.stdout?.on('data', (data) => {
@@ -1303,11 +1334,36 @@ export class MpvController {
       })
       timeout = setTimeout(() => {
         if (settled) return
-        log.warn('[listAudioDevices] mpv timeout')
+        log.warn(
+          `[listAudioDevices] mpv timeout after ${effectiveTimeout}ms (firstRun=${isFirstRun})`,
+        )
         proc.kill()
+        // 超时不代表预热完成，保留 warmedUp=false，让下次调用继续用宽松超时。
         finish([])
-      }, 5000)
+      }, effectiveTimeout)
     })
+  }
+
+  /**
+   * 预热 mpv 进程：提前消化首次运行的 Gatekeeper 在线校验与 x86_64 二进制
+   * 的 Rosetta 翻译开销。在 App 启动后调用，使后续设备枚举与播放器启动走快路径。
+   * 失败不影响主流程，仅记录日志。
+   */
+  static async warmupMpv(): Promise<void> {
+    if (isWin) return
+    const mpvPath = resolveMpvPath()
+    try {
+      log.info(`[warmupMpv] start source=${mpvPath.source}`)
+      const startedAt = Date.now()
+      const devices = await MpvController.listAudioDevices({
+        timeoutMs: FIRST_RUN_DEVICE_TIMEOUT_MS,
+      })
+      log.info(
+        `[warmupMpv] done in ${Date.now() - startedAt}ms devices=${devices.length}`,
+      )
+    } catch (err) {
+      log.warn(`[warmupMpv] failed: ${(err as Error).message}`)
+    }
   }
 }
 
