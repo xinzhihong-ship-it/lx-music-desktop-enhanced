@@ -156,17 +156,20 @@ export const getPlaylistTrackIds = async(sessionValue: LX.Account.LoginSession |
   const session = requireSession(sessionValue)
   const tracks: LX.Account.PlaylistTrackInfo[] = []
   let page = 1
+  const seenIds = new Set<string>()
   // 收藏夹内容接口返回完整媒体信息，id 用 bvid 便于详情构建，removeId 用 aid 便于取消收藏
-  while (page <= 25) {
+  while (page <= 200) {
     const body = await biliGet<{ data?: { medias?: any[], has_more?: boolean } }>(
       `${API_URL}/x/v3/fav/resource/list?media_id=${encodeURIComponent(playlistId)}&pn=${page}&ps=40&platform=web`,
       session.cookies,
     )
+    const previousCount = seenIds.size
     for (const media of body.data?.medias ?? []) {
-      if (!media.bvid || !media.id) continue
+      if (!media.bvid || !media.id || seenIds.has(String(media.bvid))) continue
+      seenIds.add(String(media.bvid))
       tracks.push({ id: String(media.bvid), removeId: String(media.id) })
     }
-    if (!body.data?.has_more) break
+    if (!body.data?.has_more || seenIds.size === previousCount) break
     page++
   }
   return tracks

@@ -7,6 +7,7 @@ import {
   removeAccountPlaylistTracks,
 } from '@renderer/utils/ipc'
 import { clearAccountCookieCache } from '@renderer/utils/musicSdk/bili/util'
+import { recordPlaylistChange } from '@renderer/utils/platformPlaylistChanges'
 
 export interface PlatformPlaylistDestination {
   account: LX.Account.PlatformAccount
@@ -99,6 +100,7 @@ export const addToPlatformPlaylist = async(
   musicList: LX.Music.MusicInfoOnline[],
 ) => {
   await addAccountPlaylistTracks(toMutationRequest(destination, musicList))
+  recordPlaylistChange(destination, musicList, 'add', platformPlaylistRevision.value + 1)
   platformPlaylistRevision.value++
 }
 
@@ -107,5 +109,6 @@ export const removeFromPlatformPlaylist = async(
   musicList: LX.Music.MusicInfoOnline[],
 ) => {
   await removeAccountPlaylistTracks(toMutationRequest(destination, musicList))
+  recordPlaylistChange(destination, musicList, 'remove', platformPlaylistRevision.value + 1)
   platformPlaylistRevision.value++
 }

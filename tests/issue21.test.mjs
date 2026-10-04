@@ -21,6 +21,8 @@ const state = globalThis.__issue21 = {
   legacyResult: null, // 覆盖老接口响应；null 表示成功
   playlistResult: null, // 覆盖写入后重新读取歌单的歌曲
   playlistPages: null, // 覆盖分页读取结果
+  playlistTotal: undefined,
+  playlistHasMore: undefined,
   loginExchangeResult: null, // 覆盖扫码二次换票响应
   mqttHandlers: null,
   loginCookies: null, // 覆盖 QQ 登录窗口返回的 cookies
@@ -71,7 +73,8 @@ const virtualModules = new Map([
         if (method === 'CgiGetDiss') {
           const songBegin = Number(entry.options?.json?.req_0?.param?.song_begin ?? 0)
           const page = globalThis.__issue21.playlistPages
-            ? (globalThis.__issue21.playlistPages[Math.floor(songBegin / 500)] ?? [])
+            ? (globalThis.__issue21.playlistPages.find((_, index, pages) =>
+              pages.slice(0, index).reduce((sum, rows) => sum + rows.length, 0) === songBegin) ?? [])
             : globalThis.__issue21.playlistResult
           return {
             statusCode: 200,
@@ -85,6 +88,8 @@ const virtualModules = new Map([
                     { mid: '004Zb7Tt2vGaCC', id: 7654321, title: 'song-7654321' },
                   ],
                   ...(globalThis.__issue21.playlistPages ? {} : { hasmore: 0, total_song_num: 2 }),
+                  ...(globalThis.__issue21.playlistTotal == null ? {} : { total_song_num: globalThis.__issue21.playlistTotal }),
+                  ...(globalThis.__issue21.playlistHasMore == null ? {} : { hasmore: globalThis.__issue21.playlistHasMore }),
                 },
               },
             },
@@ -158,6 +163,8 @@ const reset = () => {
   state.legacyResult = null
   state.playlistResult = null
   state.playlistPages = null
+  state.playlistTotal = undefined
+  state.playlistHasMore = undefined
   state.loginExchangeResult = null
   state.mqttHandlers = null
 }
@@ -273,6 +280,9 @@ test('渲染层映射：QQ 音乐歌曲必须带出 songMid', async() => {
 
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
+      if (specifier === '@renderer/utils/platformPlaylistChanges') {
+        return { url: new URL('../src/renderer/utils/platformPlaylistChanges.ts', import.meta.url).href, shortCircuit: true }
+      }
       const virtual = virtualStore.get(specifier)
       if (virtual != null) {
         return { url: `data:text/javascript,${encodeURIComponent(virtual)}`, shortCircuit: true }
@@ -409,6 +419,31 @@ test('QQ 歌单详情分页在缺少 total/hasmore 时仍能读取满页后的�
   assert.equal(tracks[0].detail.songmid, 'mid-0')
   assert.equal(tracks.at(-1).id, 'mid-500')
   assert.equal(state.requests.filter(request => request.options?.json?.req_0?.method === 'CgiGetDiss').length, 2)
+})
+
+for (const hasMore of [undefined, 1]) {
+  test(`QQ 歌单短页仍读取已知剩余歌曲（hasmore=${hasMore}）`, async() => {
+    reset()
+    state.playlistTotal = 267
+    state.playlistHasMore = hasMore
+    state.playlistPages = [
+      Array.from({ length: 167 }, (_, index) => ({ mid: `mid-${index}`, id: index + 1, title: `song-${index}` })),
+      Array.from({ length: 100 }, (_, index) => ({ mid: `mid-${index + 167}`, id: index + 168, title: `song-${index + 167}` })),
+    ]
+    const tracks = await getPlaylistTrackIds(makeSession(), '123', '88')
+    assert.equal(tracks.length, 267)
+    assert.equal(tracks.at(-1).id, 'mid-266')
+    assert.equal(state.requests.at(-1).options.json.req_0.param.song_begin, 167)
+  })
+}
+
+test('QQ 歌单明确没有下一页时保持停止行为', async() => {
+  reset()
+  state.playlistTotal = 267
+  state.playlistHasMore = 0
+  state.playlistPages = [[{ mid: 'available', id: 1, title: 'available' }]]
+  assert.equal((await getPlaylistTrackIds(makeSession(), '123', '88')).length, 1)
+  assert.equal(state.requests.length, 1)
 })
 
 test('QQ 歌单重复分页会停止，不会因为 hasmore 缺失陷入循环', async() => {

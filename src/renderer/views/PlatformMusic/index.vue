@@ -97,6 +97,7 @@ import wyMusicDetail from '@renderer/utils/musicSdk/wy/musicDetail'
 import { dialog } from '@renderer/plugins/Dialog'
 import SearchList from '@renderer/views/List/MusicList/components/SearchList.vue'
 import { filterMusicRows } from '@renderer/utils/filterMusicRows'
+import { applyPlaylistChanges } from '@renderer/utils/platformPlaylistChanges'
 
 interface AccountGroup {
   account: LX.Account.PlatformAccount
@@ -289,7 +290,7 @@ const loadAllPlaylists = async() => {
   if (!selectedKey.value) void restoreRememberedSelection(selectedAccountId.value, sequence)
 }
 
-const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
+const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[], readRevision?: number) => {
   const normalizeTrackId = (value: unknown) => String(value ?? '').trim().toLowerCase()
   const trackMap = new Map<string, string | undefined>()
   for (const track of tracks ?? []) {
@@ -304,7 +305,7 @@ const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
       if (key) trackMap.set(key, track.removeId)
     }
   }
-  songs.value = markRawList(list.filter(Boolean).map(item => {
+  const loadedSongs = list.filter(Boolean).map(item => {
     const musicInfo = toNewMusicInfo(item) as LX.Music.MusicInfoOnline
     const meta = musicInfo.meta as any
     const trackId = musicInfo.source == 'kg'
@@ -312,7 +313,10 @@ const setSongs = (list: any[], tracks?: LX.Account.PlaylistTrackInfo[]) => {
       : String(meta.songId ?? meta.strMediaMid ?? '')
     meta.accountTrackId = trackMap.get(trackId)
     return musicInfo
-  }))
+  })
+  songs.value = markRawList(selectedDestination.value
+    ? applyPlaylistChanges(selectedDestination.value, loadedSongs, readRevision)
+    : loadedSongs)
   setTimeout(() => listRef.value?.scrollToTop())
 }
 
@@ -434,6 +438,7 @@ const selectDaily = async(account: LX.Account.PlatformAccount) => {
 
 const selectPlaylist = async(account: LX.Account.PlatformAccount, playlist: LX.Account.PlaylistInfo) => {
   const key = `${account.id}:${playlist.id}`
+  const readRevision = platformPlaylistRevision.value
   rememberPlatformSelection(account.id, key)
   const preserveSongs = selectedKey.value === key
   const requestSequence = ++selectionLoadSequence
@@ -447,7 +452,9 @@ const selectPlaylist = async(account: LX.Account.PlatformAccount, playlist: LX.A
   try {
     const tracks = await getAccountPlaylistTrackIds(account.id, playlist.id, playlist.dirId)
     if (!isMounted || requestSequence !== selectionLoadSequence || selectedKey.value !== key) return
-    setSongs(await loadPlaylistDetails(account.source, tracks), tracks)
+    const details = await loadPlaylistDetails(account.source, tracks)
+    if (!isMounted || requestSequence !== selectionLoadSequence || selectedKey.value !== key) return
+    setSongs(details, tracks, readRevision)
   } catch (err: any) {
     if (isMounted && requestSequence === selectionLoadSequence && selectedKey.value === key) {
       error.value = err?.message ?? window.i18n.t('list__load_failed')
@@ -536,6 +543,9 @@ onMounted(() => {
   isMounted = true
   window.key_event.on('key_mod+f_down', handleShowLocator)
   stopPlaylistRevisionWatch = watch(platformPlaylistRevision, () => {
+    if (selectedDestination.value) {
+      songs.value = markRawList(applyPlaylistChanges(selectedDestination.value, songs.value))
+    }
     void Promise.allSettled([refreshSelectedPlaylist(), loadAllPlaylists()])
     // 酷狗写入接口会先提交变更，歌单读取接口可能在短时间内继续返回旧缓存。
     // 写入调用本身立即结束，稍后补读一次让列表最终收敛到云端结果。
