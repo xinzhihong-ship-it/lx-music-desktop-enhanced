@@ -90,7 +90,7 @@ import {
 } from '@renderer/store/account'
 import { getAccountDailyTrackIds, getAccountPlaylists, getAccountPlaylistTrackIds } from '@renderer/utils/ipc'
 import { toNewMusicInfo } from '@renderer/utils'
-import { getMusicInfos as getKgMusicInfos } from '@renderer/utils/musicSdk/kg/musicInfo'
+import { getMusicInfos as getKgMusicInfos, getPlaylistMusicInfos as getKgPlaylistMusicInfos } from '@renderer/utils/musicSdk/kg/musicInfo'
 import { getMusicInfos as getBiliMusicInfos } from '@renderer/utils/musicSdk/bili/musicInfo'
 import txMusicInfo from '@renderer/utils/musicSdk/tx/musicInfo'
 import wyMusicDetail from '@renderer/utils/musicSdk/wy/musicDetail'
@@ -389,7 +389,9 @@ const loadPlaylistDetails = async(
   })
 
   if (missing.length) {
-    const loaded = await loadDailyDetails(source, missing.map(item => item.id))
+    const loaded = source === 'kg'
+      ? await getKgPlaylistMusicInfos(missing.map(item => ({ hash: item.id })))
+      : await loadDailyDetails(source, missing.map(item => item.id))
     // 详情接口可能过滤下架歌曲，不能按数组下标回填，否则一首缺失会让后续歌曲错位。
     const loadedById = new Map<string, any>()
     for (const detail of loaded) {

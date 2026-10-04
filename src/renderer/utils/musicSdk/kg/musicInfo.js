@@ -1,7 +1,7 @@
 import { decodeName, formatPlayTime, sizeFormate } from '../../index'
 import { createHttpFetch } from './util'
 
-const createGetMusicInfosTask = (hashs) => {
+const createGetMusicInfosTask = (hashs, preserveRequestHash = false) => {
   let data = {
     area_code: '1',
     show_privilege: 1,
@@ -34,7 +34,9 @@ const createGetMusicInfosTask = (hashs) => {
       'User-Agent': 'Android712-AndroidPhone-11451-376-0-FeeCacheUpdate-wifi',
       'x-router': 'kmr.service.kugou.com',
     },
-  }).then(data => data.map(s => s[0])))
+  }).then(data => data.map((s, index) => preserveRequestHash
+    ? { hash: task.data[index].hash, info: s?.[0] }
+    : s[0])))
 }
 
 export const filterMusicInfoList = (rawList) => {
@@ -101,6 +103,17 @@ export const filterMusicInfoList = (rawList) => {
 
 export const getMusicInfos = async(hashs) => {
   return filterMusicInfoList(await Promise.all(createGetMusicInfosTask(hashs)).then(data => data.flat()))
+}
+
+// 此接口按请求逐项返回候选详情（每项是数组，查不到时为空数组）。
+// 在线歌单保留请求 hash 和顺序，避免默认音质 hash 不同或 audio_id 相同导致漏歌。
+export const getPlaylistMusicInfos = async(hashs) => {
+  const rows = (await Promise.all(createGetMusicInfosTask(hashs, true))).flat()
+  return rows.flatMap(({ hash, info }) => {
+    if (!info?.audio_info) return []
+    const [detail] = filterMusicInfoList([info])
+    return [{ ...detail, hash, songmid: detail.songmid || hash }]
+  })
 }
 
 export const getMusicInfoRaw = async(hash) => {
