@@ -411,6 +411,8 @@ export const getPlaylistTrackIds = async(
   let page = 1
   let pageCount = 0
   let rowOrder = 0
+  let expectedTotal: number | undefined
+  const seenTrackIds = new Set<string>()
   const listId = Number(dirId)
   const useOwnListEndpoint = Boolean(
     dirId && Number.isSafeInteger(listId) && listId > 0,
@@ -505,16 +507,19 @@ export const getPlaylistTrackIds = async(
       sort?: number
       order: number
     }>
-    const previousCount = trackRows.length
+    const previousCount = seenTrackIds.size
     trackRows.push(...pageRows)
+    for (const { track } of pageRows) seenTrackIds.add(normalizeKgTrackId(track.id))
     pageCount++
     const total = getKgPlaylistTotal(response.body)
-    const uniqueCount = new Set(trackRows.map(({ track }) => normalizeKgTrackId(track.id))).size
-    const noProgress = !songs.length || pageRows.length === 0 || uniqueCount <= previousCount
-    const reachedTotal = total != null && total > 0 && uniqueCount >= total
+    if (total != null && total > 0) expectedTotal = Math.max(expectedTotal ?? 0, total)
+    const noProgress = seenTrackIds.size === previousCount
+    const reachedTotal = expectedTotal != null && seenTrackIds.size >= expectedTotal
+    // 服务端可能限制实际页大小；已知还有歌曲时，短页也必须继续读取。
+    const reachedLastPage = expectedTotal == null && songs.length < pageSize
     if (
       noProgress ||
-      songs.length < pageSize ||
+      reachedLastPage ||
       reachedTotal ||
       pageCount >= 200
     ) { break }

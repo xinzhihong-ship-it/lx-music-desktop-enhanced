@@ -695,6 +695,7 @@ export const getPlaylistTrackIds = async(
   const tracks: LX.Account.PlaylistTrackInfo[] = []
   let songBegin = 0
   let pageCount = 0
+  const seenIds = new Set<string>()
 
   while (true) {
     const data = await requestMusicU(session, 'music.srfDissInfo.DissInfo', 'CgiGetDiss', {
@@ -718,27 +719,24 @@ export const getPlaylistTrackIds = async(
         detail: txPlaylistSongToDetail(rawSong),
       }
     }).filter((track: LX.Account.PlaylistTrackInfo) => track.id)
+    const previousCount = seenIds.size
     tracks.push(...pageTracks)
+    for (const track of pageTracks) seenIds.add(track.id)
     pageCount++
 
-    // 服务端偶尔不返回 total_song_num/hasmore。只有明确为 0，或已经拿到短页时
-    // 才停止；满页且没有标记时继续请求下一页，并用页数上限及重复页保护循环。
+    // 明确还有歌曲时短页也继续读取；缺少分页标记时用满页判断，重复页停止。
     const total = Number(data.total_song_num)
     const hasMoreFlag = data.hasmore == null ? null : Number(data.hasmore)
     const hasExplicitNoMore = hasMoreFlag === 0
     const hasMore = !hasExplicitNoMore && (
       hasMoreFlag === 1 ||
-      (hasMoreFlag == null && Number.isFinite(total) && total > 0 && tracks.length < total) ||
+      (hasMoreFlag == null && Number.isFinite(total) && total > 0 && seenIds.size < total) ||
       (hasMoreFlag == null && (!Number.isFinite(total) || total <= 0) && songs.length === pageSize)
     )
     const nextBegin = songBegin + songs.length
-    const noProgress = !songs.length || nextBegin <= songBegin || pageCount >= 200
-    const reachedTotal = Number.isFinite(total) && total > 0 && tracks.length >= total
-    if (noProgress || songs.length < pageSize || reachedTotal || !hasMore) break
-    if (pageTracks.length) {
-      const previousIds = new Set(tracks.slice(0, -pageTracks.length).map(track => track.id))
-      if (pageTracks.every((track: LX.Account.PlaylistTrackInfo) => previousIds.has(track.id))) break
-    }
+    const noProgress = seenIds.size === previousCount || nextBegin <= songBegin || pageCount >= 200
+    const reachedTotal = Number.isFinite(total) && total > 0 && seenIds.size >= total
+    if (noProgress || reachedTotal || !hasMore) break
     songBegin = nextBegin
   }
 

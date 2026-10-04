@@ -11,7 +11,7 @@ export default {
     })
     return arr.join('、')
   },
-  filterList({ songs, privileges }) {
+  filterList({ songs, privileges = [] }) {
     // console.log(songs, privileges)
     const list = []
     songs.forEach((item, index) => {
@@ -20,8 +20,9 @@ export default {
       const _types = {}
       let size
       let privilege = privileges[index]
-      if (privilege.id !== item.id) privilege = privileges.find(p => p.id === item.id)
-      if (!privilege) return
+      if (privilege?.id !== item.id) privilege = privileges.find(p => p?.id === item.id)
+      // 权限信息可能缺失；保留歌曲元数据，缺失的权限不推断可用音质。
+      privilege ??= {}
 
       if (privilege.maxBrLevel == 'hires') {
         size = item.hr ? sizeFormate(item.hr.size) : null

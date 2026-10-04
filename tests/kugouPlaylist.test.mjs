@@ -5,6 +5,7 @@ import { registerHooks } from 'node:module'
 const state = globalThis.__kugouPlaylist = {
   requests: [],
   pages: null,
+  total: undefined,
   songs: [],
   mutationResult: { status: 1 },
   mutateBeforeThrow: false,
@@ -17,12 +18,16 @@ const virtualModules = new Map([
     export const httpFetch = async (url, options = {}) => {
       const entry = { url: String(url), options }
       globalThis.__kugouPlaylist.requests.push(entry)
-      if (entry.url.includes('get_list_all_file')) {
+      if (entry.url.includes('get_list_all_file') || entry.url.includes('get_other_list_file_nofilt')) {
         const body = JSON.parse(options.text || '{}')
         entry.body = body
+        const offset = Number(new URL(entry.url).searchParams.get('begin_idx') || 0)
         const page = Number(body.page || 1)
         let rows = globalThis.__kugouPlaylist.pages
-          ? (globalThis.__kugouPlaylist.pages[page - 1] || [])
+          ? (entry.url.includes('get_list_all_file')
+            ? (globalThis.__kugouPlaylist.pages[page - 1] || [])
+            : (globalThis.__kugouPlaylist.pages.find((_, index, pages) =>
+              pages.slice(0, index).reduce((sum, rows) => sum + rows.length, 0) === offset) || []))
           : globalThis.__kugouPlaylist.songs
         if (globalThis.__kugouPlaylist.delayedDeleteReads > 0) {
           rows = [...rows, ...globalThis.__kugouPlaylist.delayedDeleteSongs]
@@ -30,7 +35,7 @@ const virtualModules = new Map([
         }
         return {
           statusCode: 200,
-          body: { status: 1, data: { songs: rows, ...(globalThis.__kugouPlaylist.pages ? {} : { count: rows.length }) } },
+          body: { status: 1, data: { songs: rows, ...(globalThis.__kugouPlaylist.pages ? {} : { count: rows.length }), ...(globalThis.__kugouPlaylist.total == null ? {} : { count: globalThis.__kugouPlaylist.total }) } },
         }
       }
       if (entry.url.includes('add_song')) {
@@ -91,6 +96,7 @@ const session = {
 const reset = () => {
   state.requests.length = 0
   state.pages = null
+  state.total = undefined
   state.songs = []
   state.mutationResult = { status: 1 }
   state.mutateBeforeThrow = false
@@ -142,6 +148,44 @@ test('酷狗歌单分页在缺少总数和重复页时仍保留顺序并停止',
   assert.equal(tracks[0].id, 'hash-0')
   assert.equal(tracks.at(-1).removeId, '600')
   assert.equal(state.requests.filter(item => item.url.includes('get_list_all_file')).length, 3)
+})
+
+for (const dirId of ['88', undefined]) {
+  test(`酷狗${dirId ? '自建' : '收藏'}歌单总数 267 时继续读取 167 首短页`, async() => {
+    reset()
+    state.total = 267
+    state.pages = [
+      Array.from({ length: 167 }, (_, index) => ({ hash: `hash-${index}`, fileid: index + 1 })),
+      Array.from({ length: 100 }, (_, index) => ({ hash: `hash-${index + 167}`, fileid: index + 168 })),
+    ]
+    const tracks = await getPlaylistTrackIds(session, 'collection_1', dirId)
+    assert.equal(tracks.length, 267)
+    assert.equal(tracks.at(-1).id, 'hash-266')
+    assert.equal(tracks.at(-1).removeId, '267')
+    assert.equal(state.requests.length, 2)
+    if (dirId) assert.equal(state.requests[1].body.page, 2)
+    else assert.equal(new URL(state.requests[1].url).searchParams.get('begin_idx'), '167')
+  })
+}
+
+test('酷狗跨页重叠后仍读取新的歌曲，重复短页则停止', async() => {
+  reset()
+  state.total = 1000
+  const rows = (start, length) => Array.from({ length }, (_, index) => ({ hash: `hash-${start + index}` }))
+  state.pages = [rows(0, 300), rows(200, 300), rows(450, 100), rows(550, 50), rows(550, 50)]
+  const tracks = await getPlaylistTrackIds(session, 'collection_1', '88')
+  assert.equal(tracks.length, 600)
+  assert.equal(tracks.at(-1).id, 'hash-599')
+  assert.equal(state.requests.length, 5)
+})
+
+test('酷狗总数大于实际歌曲时遇空页停止', async() => {
+  reset()
+  state.total = 267
+  state.pages = [[{ hash: 'available', fileid: 1 }], []]
+  const tracks = await getPlaylistTrackIds(session, 'collection_1', '88')
+  assert.equal(tracks.length, 1)
+  assert.equal(state.requests.length, 2)
 })
 
 test('酷狗添加歌曲必须有明确成功状态，并回读确认云端结果', async() => {
