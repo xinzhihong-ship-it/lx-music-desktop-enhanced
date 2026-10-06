@@ -4,7 +4,7 @@
 
 <script>
 import { computed } from '@common/utils/vueTools'
-import { playQuality, playQualityActual, musicInfo, playMusicInfo } from '@renderer/store/player/state'
+import { playQuality, playQualityActual, playSource, musicInfo, playMusicInfo } from '@renderer/store/player/state'
 import { appSetting } from '@renderer/store/setting'
 import { useI18n } from '@renderer/plugins/i18n'
 import { platformQualityBySoftware } from '@common/quality/platformQualitys'
@@ -18,7 +18,7 @@ export default {
     const currentQuality = computed(() => playQualityActual.value || playQuality.value)
 
     // 正在播放的歌曲来源平台。musicInfo（播放栏状态）里没有 source，要从播放歌曲本身取。
-    const currentSource = computed(() => playMusicInfo.musicInfo?.source ?? null)
+    const currentSource = computed(() => playSource.value ?? playMusicInfo.musicInfo?.source ?? null)
 
     // 平台自己的档位名。同一个软件档位在不同平台叫法不同（同为 24bit 无损，酷狗叫
     // Hi-Res、网易叫高清臻音），所以这里按当前播放平台反查，而不是显示软件档位名。

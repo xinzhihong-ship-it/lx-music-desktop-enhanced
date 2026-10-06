@@ -9,6 +9,7 @@ import {
 import {
   buildLyricInfo,
   getPlayQuality,
+  getExactPlayQuality,
   handleGetOnlineLyricInfo,
   handleGetOnlineMusicUrl,
   handleGetOnlinePicUrl,
@@ -31,8 +32,7 @@ const hasPreferredQuality = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Qu
   return !!musicInfo.meta._qualitys[quality]
 }
 
-const loadDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline) => {
-  const preferredQuality = appSetting['player.playQuality']
+export const loadDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline, preferredQuality: LX.Quality = appSetting['player.playQuality']) => {
   if (!detailQualitys.has(preferredQuality) || hasPreferredQuality(musicInfo, preferredQuality)) return
   const getMusicQualityInfo = (musicSdk[musicInfo.source] as any)?.getMusicQualityInfo
   if (typeof getMusicQualityInfo != 'function') return
@@ -40,7 +40,7 @@ const loadDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline) => {
   const requestKey = `${musicInfo.source}:${musicInfo.id}`
   let request = qualityDetailRequests.get(requestKey)
   if (!request) {
-    request = Promise.resolve(getMusicQualityInfo(toOldMusicInfo(musicInfo)).promise).then(({ types, _types }) => {
+    request = Promise.resolve().then(async() => getMusicQualityInfo(toOldMusicInfo(musicInfo)).promise).then(({ types, _types }) => {
       return types?.length ? { types, _types } : null
     }).catch(err => {
       console.warn('[music quality] detailed quality request failed:', err)
@@ -58,16 +58,21 @@ const loadDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline) => {
   musicInfo.meta._qualitys = { ...musicInfo.meta._qualitys, ...detail._types }
 }
 
-export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, forceToggleSource = false, onToggleSource = () => {}, onResolvedQuality = () => {} }: {
+export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, forceToggleSource = false, strictQuality = false, onToggleSource = () => {}, onResolvedQuality = () => {} }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
   allowToggleSource?: boolean
   forceToggleSource?: boolean
+  strictQuality?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   onResolvedQuality?: (quality: LX.Quality) => void
 }): Promise<string> => {
-  if (!quality) await loadDetailedQuality(musicInfo)
+  if (!quality || strictQuality) await loadDetailedQuality(musicInfo, quality)
+  if (strictQuality) {
+    quality = getExactPlayQuality(quality ?? appSetting['player.playQuality'], musicInfo) ?? undefined
+    if (!quality) throw new Error('Requested playback quality is unavailable')
+  }
   if (forceToggleSource) {
     const otherSource = await getOtherSource(musicInfo, true)
     const result = await getOnlineOtherSourceMusicUrl({

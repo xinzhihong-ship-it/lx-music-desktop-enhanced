@@ -11,7 +11,7 @@ const deferred = () => {
   const promise = new Promise(done => { resolve = done })
   return { promise, resolve }
 }
-const drain = async() => { for (let i = 0; i < 20; i++) await Promise.resolve() }
+const drain = async() => { await new Promise(resolve => setImmediate(resolve)) }
 
 function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = Promise.resolve(), filterWait } = {}) {
   const hub = new EventEmitter()
@@ -50,15 +50,18 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     '@renderer/plugins/i18n': { useI18n: () => key => key },
     '@renderer/store/player/state': playerState,
     '@renderer/plugins/player': plugin,
-    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlayQualityActual: noop, setPlay: value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
+    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlayQualityActual: noop, setPlaySource: noop, setPlay:value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
     '@renderer/store/setting': { appSetting: { 'player.playEngine': 'electron', 'common.apiSource': 'a', 'player.togglePlayMethod': 'listLoop' } },
     '@renderer/core/player/errorStrategy': strategy, './errorStrategy': strategy,
-    '@renderer/core/music/utils': { QUALITY_RANK: [], getLowerPlayQuality: () => null },
+    './playbackAttempt': load('src/renderer/core/player/playbackAttempt.ts', {}),
+    '@common/utils/playbackRecovery': load('src/common/utils/playbackRecovery.ts', {}),
+    '@renderer/core/music/online': { loadDetailedQuality: async() => {} },
+    '@renderer/core/music/utils': { getExactPlayQuality: () => '128k', getOtherSource: async() => [] },
     '../music/utils': { getPlayQuality: () => '128k' },
     '@renderer/store/player/biliVideo': { isBiliVideoActive: () => false, biliPlaybackMode: { value: 'audio' } },
     '@common/utils/playErrorStrategy': { getNextApiSourceId: (_id, tried) => tried.has('b') ? undefined : 'b' },
     '@renderer/store': { userApi: { list: [{ id: 'a' }, { id: 'b' }] } },
-    '@renderer/core/apiSource': { setUserApi: () => apiWait },
+    '@renderer/core/apiSource': { setUserApi: async id => { await apiWait; deps['@renderer/store/setting'].appSetting['common.apiSource'] = id } },
     './playbackIntent': intent, '@renderer/core/player/playbackIntent': intent,
     './utils': { filterList: () => filterWait?.promise, setPowerSaveBlocker: noop },
     '@renderer/utils': { setTitle: noop },
@@ -66,6 +69,7 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     '@renderer/utils/message': { requestMsg: { cancelRequest: 'cancel', tooManyRequests: 'rate-limit' } },
     '@common/hotKey': { HOTKEY_PLAYER: new Proxy({}, { get: (_target, key) => ({ action: key }) }) },
   }
+  deps['@renderer/core/player/playbackAttempt'] = deps['./playbackAttempt']
   const urlWait = deferred()
   deps['../music/index'] = { getMusicUrl: () => urlWait.promise, getPicPath: async() => '', getLyricInfo: async() => { throw new Error('no lyrics in test') } }
   const action = load('src/renderer/core/player/action.ts', deps)

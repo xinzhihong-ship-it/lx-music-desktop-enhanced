@@ -275,6 +275,12 @@ const resolveQuality = (musicInfo: LX.Music.MusicInfoOnline, sourceQualitys: LX.
 
 const getQualityLevelIndex = (quality: LX.Quality) => QUALITY_LEVELS.findIndex(level => level.includes(quality))
 
+export const getExactPlayQuality = (quality: LX.Quality, musicInfo: LX.Music.MusicInfoOnline): LX.Quality | null => {
+  const index = getQualityLevelIndex(quality)
+  if (index < 0) return null
+  return resolveQuality(musicInfo, qualityList.value[musicInfo.source], QUALITY_LEVELS[index])
+}
+
 export const getPlayQuality = (highQuality: LX.Quality, musicInfo: LX.Music.MusicInfoOnline): LX.Quality => {
   const sourceQualitys = qualityList.value[musicInfo.source]
   const startIndex = getQualityLevelIndex(highQuality)
