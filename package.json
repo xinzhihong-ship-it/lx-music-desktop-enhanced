@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "3.2.6-beta.1",
+  "version": "3.2.6-beta.2",
   "description": "LX Music 桌面版增强版本，支持多平台音乐、哔哩哔哩地址播放、听歌识曲与高音质稳定播放",
   "main": "./dist/main.js",
   "scripts": {
@@ -72,7 +72,7 @@
     "test:issue6": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue6.test.mjs",
     "test:issue16": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue16.test.mjs",
     "test:issue19": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue19.test.mjs",
-    "test:playback-recovery": "node --test tests/playbackRecovery.test.cjs tests/playbackIntent.test.cjs tests/issue19.test.mjs tests/actualQuality.test.cjs tests/qualityLabels.test.cjs tests/platformQualityDescribe.test.cjs tests/platformQualitys.test.cjs tests/sourcePlatformQualitys.test.cjs",
+    "test:playback-recovery": "node --test tests/playbackRecovery.test.cjs tests/playbackIntent.test.cjs tests/issue19.test.mjs tests/actualQuality.test.cjs tests/qualityLabels.test.cjs tests/platformQualityDescribe.test.cjs tests/platformQualitys.test.cjs tests/sourcePlatformQualitys.test.cjs tests/musicQualityPersistence.test.cjs",
     "test:issue21": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue21.test.mjs",
     "test:issue22": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue22.test.mjs tests/kugouPlaylist.test.mjs tests/issue21.test.mjs tests/neteasePlaylistDetails.test.mjs tests/platformPlaylistChanges.test.mjs tests/biliPlaylistPagination.test.mjs",
     "test:webdav": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/webdavSync.test.mjs",

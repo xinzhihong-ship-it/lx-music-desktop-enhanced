@@ -1,4 +1,5 @@
-import { updateListMusics } from '@renderer/store/list/action'
+import { updateListMusics, updateMusicQuality } from '@renderer/store/list/action'
+import { mergeMusicQuality } from '@common/utils/musicQuality'
 import { appSetting } from '@renderer/store/setting'
 import { qualityList } from '@renderer/store'
 import {
@@ -26,6 +27,24 @@ interface QualityDetail {
   _types: LX.Music.MusicInfoOnline['meta']['_qualitys']
 }
 const qualityDetailRequests = new Map<string, Promise<QualityDetail | null>>()
+const unsavedQualitys = new WeakMap<LX.Music.MusicInfoOnline, LX.List.ListActionMusicQualityUpdate>()
+const qualitySaveRequests = new WeakMap<LX.Music.MusicInfoOnline, Promise<void>>()
+
+const persistDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline) => {
+  while (qualitySaveRequests.has(musicInfo)) await qualitySaveRequests.get(musicInfo)
+  const qualityInfo = unsavedQualitys.get(musicInfo)
+  if (!qualityInfo) return
+  const request = Promise.resolve().then(async() => updateMusicQuality(qualityInfo)).then(() => {
+    if (unsavedQualitys.get(musicInfo) == qualityInfo) unsavedQualitys.delete(musicInfo)
+  }).catch(err => {
+    // Keep the in-memory quality available for playback and retry saving later.
+    console.warn('[music quality] save detailed quality failed:', err)
+  }).finally(() => {
+    qualitySaveRequests.delete(musicInfo)
+  })
+  qualitySaveRequests.set(musicInfo, request)
+  await request
+}
 
 const hasPreferredQuality = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality) => {
   if (quality == 'hires') return !!(musicInfo.meta._qualitys.hires ?? musicInfo.meta._qualitys.flac24bit)
@@ -33,8 +52,13 @@ const hasPreferredQuality = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Qu
 }
 
 export const loadDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline, preferredQuality: LX.Quality = appSetting['player.playQuality']) => {
-  if (!detailQualitys.has(preferredQuality) || hasPreferredQuality(musicInfo, preferredQuality)) return
-  const getMusicQualityInfo = (musicSdk[musicInfo.source] as any)?.getMusicQualityInfo
+  if (!detailQualitys.has(preferredQuality) || hasPreferredQuality(musicInfo, preferredQuality)) {
+    await persistDetailedQuality(musicInfo)
+    return
+  }
+  const source = musicInfo.source
+  const musicInfoId = musicInfo.id
+  const getMusicQualityInfo = (musicSdk[source] as any)?.getMusicQualityInfo
   if (typeof getMusicQualityInfo != 'function') return
 
   const requestKey = `${musicInfo.source}:${musicInfo.id}`
@@ -51,11 +75,12 @@ export const loadDetailedQuality = async(musicInfo: LX.Music.MusicInfoOnline, pr
     qualityDetailRequests.set(requestKey, request)
   }
   const detail = await request
-  if (!detail) return
-  const qualitys = new Map(musicInfo.meta.qualitys.map(item => [item.type, item]))
-  for (const item of detail.types) qualitys.set(item.type, item)
-  musicInfo.meta.qualitys = [...qualitys.values()]
-  musicInfo.meta._qualitys = { ...musicInfo.meta._qualitys, ...detail._types }
+  if (!detail || musicInfo.source != source || musicInfo.id != musicInfoId) return
+  const quality = mergeMusicQuality(musicInfo.meta, { qualitys: detail.types, _qualitys: detail._types })
+  Object.assign(musicInfo.meta, quality)
+  const qualityInfo = { musicInfoId, source, ...quality }
+  if (JSON.stringify(unsavedQualitys.get(musicInfo)) != JSON.stringify(qualityInfo)) unsavedQualitys.set(musicInfo, qualityInfo)
+  await persistDetailedQuality(musicInfo)
 }
 
 export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, forceToggleSource = false, strictQuality = false, onToggleSource = () => {}, onResolvedQuality = () => {} }: {

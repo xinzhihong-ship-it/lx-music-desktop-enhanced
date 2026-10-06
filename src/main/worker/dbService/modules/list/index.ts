@@ -1,4 +1,5 @@
 import { LIST_IDS } from '@common/constants'
+import { mergeMusicQuality } from '@common/utils/musicQuality'
 import { arrPush, arrPushByPosition, arrUnshift } from '@common/utils/common'
 import {
   deleteUserLists,
@@ -178,13 +179,23 @@ export const getListMusics = (listId: string): LX.Music.MusicInfo[] => {
  * @param listId 列表id
  * @param musicInfos 歌曲列表
  */
-export const musicOverwrite = (listId: string, musicInfos: LX.Music.MusicInfo[]) => {
-  let targetList = getListMusics(listId)
+export const musicOverwrite = (listId: string, musicInfos: LX.Music.MusicInfo[], preserveQuality: boolean = false) => {
+  const targetList = getListMusics(listId)
+  if (preserveQuality) {
+    const knownMusics = new Map(targetList.map(info => [info.id, info]))
+    musicInfos = musicInfos.map(info => {
+      const known = knownMusics.get(info.id)
+      if (!known || info.source == 'local' || known.source == 'local' || info.source != known.source) return info
+      const updated = { ...info, meta: { ...info.meta, ...mergeMusicQuality(known.meta, info.meta) } }
+      return updated as LX.Music.MusicInfoOnline
+    })
+  }
   overwriteMusicInfo(listId, toDBMusicInfo(musicInfos, listId))
   if (targetList) {
     targetList.splice(0, targetList.length)
     arrPush(targetList, musicInfos)
   }
+  return musicInfos
 }
 
 /**
@@ -291,6 +302,23 @@ export const musicsUpdate = (musicInfos: LX.List.ListActionMusicUpdate) => {
     targetMusic.interval = musicInfo.interval
     targetMusic.meta = musicInfo.meta
   }
+}
+
+// Read current stored records in the worker so late quality lookups cannot
+// overwrite names, covers, platform identifiers or a manual source change.
+export const musicsUpdateQuality = (qualityInfo: LX.List.ListActionMusicQualityUpdate): LX.List.ListActionMusicUpdate => {
+  const updates: LX.List.ListActionMusicUpdate = []
+  for (const record of queryMusicInfoByMusicInfoId(qualityInfo.musicInfoId)) {
+    if (record.source != qualityInfo.source) continue
+    const meta = JSON.parse(record.meta) as LX.Music.MusicInfoOnline['meta']
+    const quality = mergeMusicQuality(meta, qualityInfo)
+    if (JSON.stringify(meta.qualitys) == JSON.stringify(quality.qualitys) && JSON.stringify(meta._qualitys) == JSON.stringify(quality._qualitys)) continue
+    const { listId, order, ...storedMusicInfo } = record
+    const musicInfo = { ...storedMusicInfo, meta: { ...meta, ...quality } }
+    updates.push({ id: listId, musicInfo: musicInfo as LX.Music.MusicInfoOnline })
+  }
+  if (updates.length) musicsUpdate(updates)
+  return updates
 }
 
 /**

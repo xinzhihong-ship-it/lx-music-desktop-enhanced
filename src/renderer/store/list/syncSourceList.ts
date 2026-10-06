@@ -24,7 +24,7 @@ export default async(targetListInfo: LX.List.UserListInfo) => {
   if (!targetListInfo.source || !targetListInfo.sourceListId) return
   const list = await fetchList(targetListInfo.id, targetListInfo.source, targetListInfo.sourceListId)
   // console.log(list)
-  void overwriteListMusics({ listId: targetListInfo.id, musicInfos: list })
+  await overwriteListMusics({ listId: targetListInfo.id, musicInfos: list, preserveQuality: true })
   const now = Date.now()
   void setListUpdateTime(targetListInfo.id, now)
   setUpdateTime(targetListInfo.id, dateFormat(now))

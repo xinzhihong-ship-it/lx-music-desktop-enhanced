@@ -107,6 +107,13 @@ declare namespace LX {
       musicInfo: LX.Music.MusicInfo
     }>
 
+    interface ListActionMusicQualityUpdate {
+      musicInfoId: string
+      source: LX.OnlineSource
+      qualitys: LX.Music.MusicInfoOnline['meta']['qualitys']
+      _qualitys: LX.Music.MusicInfoOnline['meta']['_qualitys']
+    }
+
     interface ListActionMusicUpdatePosition {
       listId: string
       position: number
@@ -116,6 +123,7 @@ declare namespace LX {
     interface ListActionMusicOverwrite {
       listId: string
       musicInfos: LX.Music.MusicInfo[]
+      preserveQuality?: boolean
     }
 
     type ListActionMusicClear = string[]
