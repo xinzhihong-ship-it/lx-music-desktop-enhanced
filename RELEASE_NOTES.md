@@ -1,3 +1,22 @@
+# LX Music 增强版 3.2.6
+
+本正式版整合 3.2.6 测试版的播放恢复、音质信息保存修复，并改善 Linux AppImage 的启动兼容性。
+
+## 更新
+
+- **Linux AppImage 启动兼容性**：改用静态 AppImage 运行时，解决部分发行版没有预装 `libfuse2` 时无法启动的问题。
+- **Windows 安装器**：更新 NSIS 打包工具，沿用现有安装流程与包类型。
+- **播放失败自动恢复**：按设置的顺序遍历平台、音源与音质组合，支持全部六种排序；地址加载失败或明确返回较低音质时继续尝试，暂停、切歌时取消旧的恢复请求。
+- **音质信息重启后保留**：将查询到的完整平台音质保存到本地歌单；自动刷新时保留已确认的 Master、Hi-Res 等档位，并保留歌曲名称、顺序与平台条目标识。
+- 保留 3.2.5 的在线歌单分页、漏歌及增删后即时更新修复。
+
+## 说明
+
+- 音质信息需要在本版或 3.2.6-beta.2 中查询或播放后才能保存；第三方音源的实际可用音质仍以播放栏为准。
+- 感谢 @laishulu 提交 [PR #26](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/pull/26)，改进 AppImage 与 Windows 安装器打包配置。
+
+---
+
 # LX Music 增强版 3.2.6-beta.2
 
 本测试版继续修复 [#24](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/issues/24) 新补充的现象：同平台歌曲播放后歌单标签从 SQ 变为 Master，重启后又回到 SQ。保留 beta.1 的播放恢复修复与 3.2.5 的歌单修复。

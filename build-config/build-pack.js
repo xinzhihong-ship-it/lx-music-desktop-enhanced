@@ -27,6 +27,10 @@ const options = {
 		buildResources: "./resources",
 		output: "./build",
 	},
+  "toolsets": {
+    "appimage": "1.0.3",
+    "nsis": "1.2.1",
+  },
 	files: [
 		"!node_modules/**/*",
 		"!**/electron-debug/**/*",
