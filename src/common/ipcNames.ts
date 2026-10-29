@@ -29,6 +29,7 @@ const modules = {
     list_music_move: 'player_list_music_move',
     list_music_remove: 'player_list_music_remove',
     list_music_update: 'player_list_music_update',
+    list_music_update_quality: 'player_list_music_update_quality',
     list_music_update_position: 'player_list_music_update_position',
     list_music_overwrite: 'player_list_music_overwrite',
     list_music_clear: 'player_list_music_clear',

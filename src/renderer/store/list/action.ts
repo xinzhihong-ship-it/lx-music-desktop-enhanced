@@ -97,6 +97,7 @@ export {
   getListMusics,
   removeListMusics,
   updateListMusics,
+  updateMusicQuality,
   updateListMusicsPosition,
   overwriteListMusics,
   clearListMusics,

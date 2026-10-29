@@ -40,7 +40,8 @@ const virtualModules = new Map([
   ['@renderer/core/player', 'export const getShouldPlayAfterLoad = (...args) => globalThis.__issue19Mocks.getShouldPlayAfterLoad(...args); export const playNext = (...args) => globalThis.__issue19Mocks.playNext(...args); export const setMusicUrl = (...args) => globalThis.__issue19Mocks.setMusicUrl(...args); export const setShouldPlayAfterLoad = (...args) => globalThis.__issue19Mocks.setShouldPlayAfterLoad(...args)'],
   ['@renderer/store/player/action', 'export const setAllStatus = (...args) => globalThis.__issue19Mocks.setAllStatus(...args)'],
   ['@renderer/core/player/errorStrategy', 'export const getPlayErrorActions = (...args) => globalThis.__issue19Mocks.getPlayErrorActions(...args); export const getPlayErrorApiSourceCount = (...args) => globalThis.__issue19Mocks.getPlayErrorApiSourceCount(...args); export const getPlayErrorRetryCount = (...args) => globalThis.__issue19Mocks.getPlayErrorRetryCount(...args); export const isPlayErrorHandlingEnabled = (...args) => globalThis.__issue19Mocks.isPlayErrorHandlingEnabled(...args)'],
-  ['@renderer/core/music/utils', 'export const QUALITY_RANK = globalThis.__issue19Mocks.QUALITY_RANK; export const getLowerPlayQuality = (...args) => globalThis.__issue19Mocks.getLowerPlayQuality(...args); export const getPlayQuality = (...args) => globalThis.__issue19Mocks.getPlayQuality(...args)'],
+  ['@renderer/core/music/online', 'export const loadDetailedQuality = async() => {}'],
+  ['@renderer/core/music/utils', 'export const getExactPlayQuality = (quality) => quality; export const getOtherSource = async() => []'],
   ['@renderer/store/player/biliVideo', 'export const isBiliVideoActive = (...args) => globalThis.__issue19Mocks.isBiliVideoActive(...args)'],
   ['@renderer/core/apiSource', 'export const setUserApi = (...args) => globalThis.__issue19Mocks.setUserApi(...args)'],
 ])
@@ -49,6 +50,12 @@ registerHooks({
   resolve(specifier, context, nextResolve) {
     const source = virtualModules.get(specifier)
     if (source != null) return { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true }
+    if (specifier == '@common/utils/playbackRecovery') {
+      return { url: new URL('../src/common/utils/playbackRecovery.ts', import.meta.url).href, shortCircuit: true }
+    }
+    if (specifier == '@renderer/core/player/playbackAttempt') {
+      return { url: new URL('../src/renderer/core/player/playbackAttempt.ts', import.meta.url).href, shortCircuit: true }
+    }
     if (specifier == '@common/utils/playErrorStrategy') {
       return { url: new URL('../src/common/utils/playErrorStrategy.ts', import.meta.url).href, shortCircuit: true }
     }

@@ -6,9 +6,11 @@ import { playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/pl
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { getPlayErrorActions, getPlayErrorApiSourceCount, getPlayErrorRetryCount, isPlayErrorHandlingEnabled } from '@renderer/core/player/errorStrategy'
-import { getLowerPlayQuality, getPlayQuality, QUALITY_RANK } from '@renderer/core/music/utils'
+import { getExactPlayQuality, getOtherSource } from '@renderer/core/music/utils'
+import { loadDetailedQuality } from '@renderer/core/music/online'
+import { createPlaybackRecoveryPlan, getRecoveryApiIds, type RecoveryCombination } from '@common/utils/playbackRecovery'
+import { getCurrentPlaybackAttempt, playbackAttemptKey } from '@renderer/core/player/playbackAttempt'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
-import { getNextApiSourceId } from '@common/utils/playErrorStrategy'
 import { userApi } from '@renderer/store'
 import { setUserApi } from '@renderer/core/apiSource'
 import { getPlaybackIntent, getPlaybackIntentRevision, onPlaybackIntentChange } from '@renderer/core/player/playbackIntent'
@@ -16,12 +18,30 @@ import { getPlaybackIntent, getPlaybackIntentRevision, onPlaybackIntentChange } 
 export default () => {
   const t = useI18n()
   let retryNum = 0
-  let actionIndex = 0
-  let apiSourceAttempts = 0
-  let triedApiSourceIds = new Set<string>()
+  let recoveryPlan: AsyncGenerator<RecoveryCombination<LX.Music.MusicInfoOnline>> | null = null
+  let failedCombinations = new Set<string>()
+  let failedApis = new Set<string>()
+  let pendingError = false
+  let recoveryFinished = false
+  let recoveringRequestId: number | undefined
+  let planActions: ReturnType<typeof getPlayErrorActions> = []
   let recoverPromise: Promise<void> | null = null
   let recoveryGeneration = 0
   let recoveryIntentRevision = 0
+  const cancelRecoveryWaits = new Set<() => void>()
+  const waitForRecovery = async<T>(task: () => Promise<T>): Promise<T> => {
+    let timer: NodeJS.Timeout
+    let cancel: () => void
+    return new Promise<T>((resolve, reject) => {
+      cancel = () => { reject(new Error('playback recovery cancelled')) }
+      cancelRecoveryWaits.add(cancel)
+      timer = setTimeout(() => { reject(new Error('playback recovery timeout')) }, 25000)
+      Promise.resolve().then(task).then(resolve, reject)
+    }).finally(() => {
+      clearTimeout(timer)
+      cancelRecoveryWaits.delete(cancel)
+    })
+  }
 
   let loadingTimeout: NodeJS.Timeout | null = null
   let delayNextTimeout: NodeJS.Timeout | null = null
@@ -119,82 +139,109 @@ export default () => {
       ? currentMusicInfo
       : null
 
-    // “直接下一曲”保持原行为；其他策略先按用户设置刷新当前链接。
-    if (actions[0] != 'next' && allowRefresh && errCode !== 1 && retryNum < getPlayErrorRetryCount()) {
+    if (actions[0] == 'next') {
+      recoveryFinished = true
+      playNextAfterFailure(generation)
+      return
+    }
+    const attempt = getCurrentPlaybackAttempt()
+    const currentAttempt = attempt?.ownerId == currentMusicInfo.id ? attempt : null
+    // Retry the actual failed platform/quality, not the original playlist item.
+    if (allowRefresh && errCode !== 1 && retryNum < getPlayErrorRetryCount()) {
       retryNum++
       if (!isRecoveryCurrent(generation)) return
       if (shouldResume) setShouldPlayAfterLoad(true)
-      setMusicUrl(currentMusicInfo, true)
+      setMusicUrl(currentMusicInfo, true, currentAttempt ? { sourceMusicInfo: currentAttempt.musicInfo, quality: currentAttempt.quality } : {})
       setAllStatus(t('player__refresh_url'))
       return
     }
 
-    while (actionIndex < actions.length) {
+    if (!onlineMusicInfo || isBiliVideoActive()) {
+      recoveryFinished = true
+      if (actions.includes('next')) playNextAfterFailure(generation)
+      else setAllStatus(t('player__error_stopped'))
+      return
+    }
+    if (!recoveryPlan) {
+      planActions = [...actions]
+      const original = currentAttempt?.musicInfo ?? onlineMusicInfo
+      const apiId = currentAttempt?.apiId ?? appSetting['common.apiSource']
+      const quality = currentAttempt?.quality ?? appSetting['player.playQuality'] ?? playQuality.value as LX.Quality
+      failedCombinations.add(playbackAttemptKey({ ownerId: currentMusicInfo.id, apiId, musicInfo: original, quality }))
+      recoveryPlan = createPlaybackRecoveryPlan({
+        actions: planActions,
+        apiIds: getRecoveryApiIds(apiId, userApi.list.map(api => api.id), getPlayErrorApiSourceCount()),
+        quality,
+        original,
+        async getPlatforms() {
+          try {
+            const alternatives = await getOtherSource(onlineMusicInfo, true)
+            const candidates = original.id == onlineMusicInfo.id && original.source == onlineMusicInfo.source ? alternatives : [onlineMusicInfo, ...alternatives]
+            const seen = new Set([JSON.stringify([original.source, original.id])])
+            return candidates.filter(info => {
+              const key = JSON.stringify([info.source, info.id])
+              if (seen.has(key)) return false
+              seen.add(key)
+              return true
+            })
+          } catch (err) {
+            console.warn('find playback platforms failed', err)
+            return original.id == onlineMusicInfo.id && original.source == onlineMusicInfo.source ? [] : [onlineMusicInfo]
+          }
+        },
+      })
+    }
+    if (currentAttempt) failedCombinations.add(playbackAttemptKey(currentAttempt))
+
+    while (isRecoveryCurrent(generation)) {
+      const plan = recoveryPlan
+      if (!plan) return
+      const next = await plan.next()
       if (!isRecoveryCurrent(generation)) return
-      switch (actions[actionIndex]) {
-        case 'apiSource': {
-          if (!onlineMusicInfo) {
-            actionIndex++
+      if (next.done) {
+        recoveryFinished = true
+        if (planActions.includes('next')) playNextAfterFailure(generation)
+        else setAllStatus(t('player__error_stopped'))
+        return
+      }
+      const combination = { ...next.value, ownerId: currentMusicInfo.id }
+      const key = playbackAttemptKey(combination)
+      if (failedCombinations.has(key) || failedApis.has(combination.apiId)) continue
+      failedCombinations.add(key)
+      if (combination.apiId != appSetting['common.apiSource']) {
+        const api = userApi.list.find(api => api.id == combination.apiId)
+        setAllStatus(t('player__switch_api_source', { name: api?.name ?? combination.apiId }))
+        try {
+          const initialized = await waitForRecovery(async() => {
+            await setUserApi(combination.apiId)
+            if (!isRecoveryCurrent(generation)) return false
+            return window.lx.apiInitPromise[0]
+          })
+          if (!isRecoveryCurrent(generation)) return
+          if (!initialized || appSetting['common.apiSource'] != combination.apiId) {
+            failedApis.add(combination.apiId)
             continue
           }
-          triedApiSourceIds.add(appSetting['common.apiSource'])
-          while (apiSourceAttempts < getPlayErrorApiSourceCount()) {
-            const nextId = getNextApiSourceId(
-              appSetting['common.apiSource'],
-              triedApiSourceIds,
-              userApi.list.map(api => api.id),
-            )
-            if (!nextId) break
-            const api = userApi.list.find(api => api.id == nextId)
-            triedApiSourceIds.add(nextId)
-            apiSourceAttempts++
-            if (!isRecoveryCurrent(generation)) return
-            setAllStatus(t('player__switch_api_source', { name: api?.name ?? nextId }))
-            let initialized = false
-            try {
-              if (!isRecoveryCurrent(generation)) return
-              await setUserApi(nextId)
-              if (!isRecoveryCurrent(generation)) return
-              initialized = await window.lx.apiInitPromise[0]
-            } catch (err) {
-              console.warn('switch api source failed', err)
-            }
-            if (!isRecoveryCurrent(generation)) return
-            if (!initialized) continue
-            if (shouldResume) setShouldPlayAfterLoad(true)
-            setMusicUrl(currentMusicInfo, true)
-            return
-          }
-          actionIndex++
+        } catch (err) {
+          console.warn('switch playback api failed', err)
+          failedApis.add(combination.apiId)
           continue
         }
-        case 'platform':
-          actionIndex++
-          if (!onlineMusicInfo) continue
-          if (!isRecoveryCurrent(generation)) return
-          if (shouldResume) setShouldPlayAfterLoad(true)
-          setMusicUrl(currentMusicInfo, true, { forceToggleSource: true })
-          setAllStatus(t('toggle_source_try'))
-          return
-        case 'quality': {
-          actionIndex++
-          if (!onlineMusicInfo) continue
-          const currentQuality = QUALITY_RANK.includes(playQuality.value as LX.Quality)
-            ? playQuality.value as LX.Quality
-            : getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo)
-          const lowerQuality = getLowerPlayQuality(currentQuality, onlineMusicInfo)
-          if (!lowerQuality) continue
-          if (!isRecoveryCurrent(generation)) return
-          if (shouldResume) setShouldPlayAfterLoad(true)
-          setMusicUrl(currentMusicInfo, true, { quality: lowerQuality })
-          setAllStatus(t('player__lower_quality', { quality: lowerQuality }))
-          return
-        }
-        case 'next':
-          actionIndex = actions.length
-          playNextAfterFailure(generation)
-          return
       }
+      if (!isRecoveryCurrent(generation)) return
+      try {
+        await waitForRecovery(async() => loadDetailedQuality(combination.musicInfo, combination.quality))
+      } catch (err) {
+        console.warn('playback quality lookup failed', err)
+      }
+      if (!isRecoveryCurrent(generation)) return
+      const quality = getExactPlayQuality(combination.quality, combination.musicInfo)
+      if (!quality) continue
+      if (shouldResume) setShouldPlayAfterLoad(true)
+      setMusicUrl(currentMusicInfo, true, { sourceMusicInfo: combination.musicInfo, quality, strictQuality: true })
+      if (quality != currentAttempt?.quality) setAllStatus(t('player__lower_quality', { quality }))
+      else if (combination.musicInfo.source != currentAttempt?.musicInfo.source) setAllStatus(t('toggle_source_try'))
+      return
     }
 
     setAllStatus(t('player__error_stopped'))
@@ -203,10 +250,18 @@ export default () => {
   const handleError = (errCode?: number) => {
     if (!musicInfo.id) return
     clearLoadingTimeout()
-    if (window.lx.isPlayedStop || !getPlaybackIntent() || recoverPromise) return
+    if (window.lx.isPlayedStop || !getPlaybackIntent() || recoveryFinished) return
+    if (recoverPromise) {
+      // Multiple engine/probe errors for the request already being recovered
+      // must not consume the next candidate. Only queue a newly loaded failure.
+      if (getCurrentPlaybackAttempt()?.requestId == recoveringRequestId) return
+      pendingError = true
+      return
+    }
     // 首次点击播放时，MPV 可能还没发出 playing；此时仍要保留用户的播放意图，
     // 否则首个 CDN 失败后切换备用地址会停在暂停状态，必须再次点击播放。
     const shouldResume = getPlaybackIntent()
+    recoveringRequestId = getCurrentPlaybackAttempt()?.requestId
     recoveryIntentRevision = getPlaybackIntentRevision()
     const currentMusicId = musicInfo.id
     const generation = ++recoveryGeneration
@@ -218,16 +273,28 @@ export default () => {
     })
     recoverPromise = recovery
     void recovery.catch(err => { console.warn('recover playback failed', err) }).finally(() => {
-      if (recoverPromise === recovery) recoverPromise = null
+      if (recoverPromise === recovery) {
+        recoverPromise = null
+        if (pendingError && isRecoveryCurrent(generation)) {
+          pendingError = false
+          handleError()
+        }
+      }
     })
   }
 
   const handleSetPlayInfo = () => {
     recoveryGeneration++
+    for (const cancel of cancelRecoveryWaits) cancel()
+    cancelRecoveryWaits.clear()
     retryNum = 0
-    actionIndex = 0
-    apiSourceAttempts = 0
-    triedApiSourceIds = new Set([appSetting['common.apiSource']])
+    recoveryPlan = null
+    failedCombinations = new Set()
+    failedApis = new Set()
+    planActions = []
+    pendingError = false
+    recoveryFinished = false
+    recoveringRequestId = undefined
     recoverPromise = null
     clearDelayNextTimeout()
     clearLoadingTimeout()

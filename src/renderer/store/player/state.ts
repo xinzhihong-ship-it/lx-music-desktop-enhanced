@@ -40,12 +40,15 @@ export const isShowPlayComment = ref(false)
 
 export const isShowLrcSelectContent = ref(false)
 
-// 当前实际播放音质（如 128k / 320k / flac / 本地 / 下载）
+// 当前请求的播放音质（如 128k / 320k / flac / 本地 / 下载）
 export const playQuality = ref('')
 
-// 探测到的实际播放档位。仅用于播放栏显示，为空时回退到播放音质本身，
-// 这样换源、降质等逻辑仍然只依赖 playQuality。
+// 探测到的实际播放档位，为空时显示请求档位。实测不改写请求档位，
+// 确认降质时由播放器触发恢复，继续尝试原目标音质的其他组合。
 export const playQualityActual = ref('')
+
+// Temporary playback source, independent of the song stored in the playlist.
+export const playSource = ref<LX.Source | null>(null)
 
 export const playMusicInfo = shallowReactive<{
   /**

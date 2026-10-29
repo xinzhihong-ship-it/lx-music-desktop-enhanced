@@ -14,6 +14,7 @@ import {
   tempPlayList,
   playQuality,
   playQualityActual,
+  playSource,
 } from './state'
 import { getListMusicsFromCache } from '@renderer/store/list/action'
 import { downloadList } from '@renderer/store/download/state'
@@ -61,6 +62,8 @@ export const setAllStatus = (val: string) => {
 export const setPlayQuality = (val: string) => {
   playQuality.value = val
 }
+
+export const setPlaySource = (source: LX.Source | null) => { playSource.value = source }
 
 export const setPlayQualityActual = (val: string) => {
   playQualityActual.value = val

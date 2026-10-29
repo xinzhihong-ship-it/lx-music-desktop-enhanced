@@ -96,9 +96,9 @@ export class Event extends EventEmitter {
    * @param musicInfos 音乐信息
    * @param isRemote 是否属于远程操作
    */
-  async list_music_overwrite(listId: string, musicInfos: LX.Music.MusicInfo[], isRemote: boolean = false) {
-    await global.lx.worker.dbService.musicOverwrite(listId, musicInfos)
-    this.emit('list_music_overwrite', listId, musicInfos, isRemote)
+  async list_music_overwrite(listId: string, musicInfos: LX.Music.MusicInfo[], isRemote: boolean = false, preserveQuality: boolean = false) {
+    const savedMusicInfos = await global.lx.worker.dbService.musicOverwrite(listId, musicInfos, preserveQuality)
+    this.emit('list_music_overwrite', listId, savedMusicInfos, isRemote)
     this.list_changed()
   }
 
@@ -150,6 +150,13 @@ export class Event extends EventEmitter {
   async list_music_update(musicInfos: LX.List.ListActionMusicUpdate, isRemote: boolean = false) {
     await global.lx.worker.dbService.musicsUpdate(musicInfos)
     this.emit('list_music_update', musicInfos, isRemote)
+    this.list_changed()
+  }
+
+  async list_music_update_quality(qualityInfo: LX.List.ListActionMusicQualityUpdate) {
+    const musicInfos = await global.lx.worker.dbService.musicsUpdateQuality(qualityInfo)
+    if (!musicInfos.length) return
+    this.emit('list_music_update', musicInfos, false)
     this.list_changed()
   }
 

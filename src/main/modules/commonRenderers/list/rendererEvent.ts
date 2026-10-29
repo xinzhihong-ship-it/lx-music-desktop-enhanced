@@ -36,11 +36,14 @@ export default () => {
   mainHandle<LX.List.ListActionMusicUpdate>(PLAYER_EVENT_NAME.list_music_update, async({ params: musicInfos }) => {
     await global.lx.event_list.list_music_update(musicInfos, false)
   })
+  mainHandle<LX.List.ListActionMusicQualityUpdate>(PLAYER_EVENT_NAME.list_music_update_quality, async({ params: qualityInfo }) => {
+    await global.lx.event_list.list_music_update_quality(qualityInfo)
+  })
   mainHandle<LX.List.ListActionMusicUpdatePosition>(PLAYER_EVENT_NAME.list_music_update_position, async({ params: { listId, position, ids } }) => {
     await global.lx.event_list.list_music_update_position(listId, position, ids, false)
   })
-  mainHandle<LX.List.ListActionMusicOverwrite>(PLAYER_EVENT_NAME.list_music_overwrite, async({ params: { listId, musicInfos } }) => {
-    await global.lx.event_list.list_music_overwrite(listId, musicInfos, false)
+  mainHandle<LX.List.ListActionMusicOverwrite>(PLAYER_EVENT_NAME.list_music_overwrite, async({ params: { listId, musicInfos, preserveQuality } }) => {
+    await global.lx.event_list.list_music_overwrite(listId, musicInfos, false, preserveQuality)
   })
   mainHandle<LX.List.ListActionMusicClear>(PLAYER_EVENT_NAME.list_music_clear, async({ params: listId }) => {
     await global.lx.event_list.list_music_clear(listId, false)

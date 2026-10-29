@@ -113,6 +113,10 @@ export const updateListMusics = async(data: LX.List.ListActionMusicUpdate) => {
   await rendererInvoke<LX.List.ListActionMusicUpdate>(PLAYER_EVENT_NAME.list_music_update, data)
 }
 
+export const updateMusicQuality = async(data: LX.List.ListActionMusicQualityUpdate) => {
+  await rendererInvoke<LX.List.ListActionMusicQualityUpdate>(PLAYER_EVENT_NAME.list_music_update_quality, data)
+}
+
 /**
  * 批量移动列表内歌曲的位置
  * @param data
