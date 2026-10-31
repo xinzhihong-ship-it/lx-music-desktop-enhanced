@@ -301,6 +301,13 @@ jobs:
       - name: Build Package dmg
         run: npm run ${{ matrix.package }}
 
+      - name: Verify mounted disk image signature
+        shell: bash
+        run: |
+          for image in build/*.dmg; do
+            bash build-config/verify-mac-dmg.sh "$image"
+          done
+
       - name: Upload Artifact dmg
         uses: actions/upload-artifact@v7
         with:

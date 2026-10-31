@@ -5,6 +5,7 @@ const { promisify } = require('util')
 const { Arch } = require('electron-builder')
 const { validateMacMpvRuntimes } = require('./mpv-runtime')
 const { getVst3HostPlan, validateVst3HostBinary } = require('./build-vst3-host')
+const { removeAppleDoubleFiles } = require('./mac-bundle-metadata')
 
 const execFileAsync = promisify(execFile)
 
@@ -37,6 +38,8 @@ const signMpvNativeFiles = async(appPath) => {
 }
 
 const signMacAppForLocalUse = async(appPath, vst3HostPath = null) => {
+  const removed = await removeAppleDoubleFiles(appPath)
+  if (removed) console.log(`[mac] removed ${removed} AppleDouble sidecars before signing`)
   const entitlements = path.resolve(__dirname, '../resources/entitlements.mac.plist')
   const audioTeePath = path.join(appPath, 'Contents/Resources/bin/music-recognition/audiotee')
   const signBinary = async(filePath) => {
@@ -62,6 +65,7 @@ const signMacAppForLocalUse = async(appPath, vst3HostPath = null) => {
   if (vst3HostPath) {
     await execFileAsync('codesign', ['--verify', '--strict', vst3HostPath])
   }
+  await execFileAsync('codesign', ['--verify', '--deep', '--strict', appPath])
 }
 
 // https://github.com/electron-userland/electron-builder/issues/4630
