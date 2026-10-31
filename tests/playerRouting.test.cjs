@@ -125,6 +125,12 @@ function loadPlayer() {
   const noopPlayer = new Proxy({}, { get: (_, name) => name === 'isEmpty' ? () => true : async() => {} })
   const modules = {
     '@renderer/store/setting': { appSetting },
+    '@renderer/utils/compositions/useAudioDevices': {
+      ensureAudioDeviceForPlayback: async() => {
+        if (state.failDeviceResolution) throw new Error('selected output is unavailable')
+        return true
+      },
+    },
     './mpv': noopPlayer,
     './mpvVideo': noopPlayer,
     './audirvana': noopPlayer,
@@ -165,6 +171,19 @@ function loadPlayer() {
   })
   return { player: module.exports, appSetting, state, runtime: modules['./vst3'].vst3Runtime }
 }
+
+test('an unavailable output is rejected before a new media source is loaded', async() => {
+  const { player, state } = loadPlayer()
+  player.createAudio()
+  state.failDeviceResolution = true
+  await assert.rejects(player.setResource('track://unavailable-output'), /selected output is unavailable/)
+  assert.equal(state.audio[0].src, '')
+  state.failDeviceResolution = false
+  await player.setResource('track://available-output')
+  assert.equal(state.audio[0].src, 'track://available-output')
+  for (const request of state.metadataRequests) request.resolve(null)
+  await new Promise(resolve => setImmediate(resolve))
+})
 
 test('a VST routing failure does not poison subsequent resource loading', async() => {
   const { player, appSetting, state } = loadPlayer()

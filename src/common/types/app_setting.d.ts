@@ -177,6 +177,13 @@ declare global {
        */
       'player.mediaDeviceId': string
 
+      /** 同一输出设备在不同播放引擎中的名称与 ID */
+      'player.mediaDeviceLabel': string
+      'player.mediaDeviceLabel.electron': string
+      'player.mediaDeviceLabel.mpv': string
+      'player.mediaDeviceId.electron': string
+      'player.mediaDeviceId.mpv': string
+
       /**
        * 是否在音频输出设备更改时暂停播放
        */

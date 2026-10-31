@@ -1,6 +1,7 @@
 import { reactive, computed } from '@common/utils/vueTools'
 import defaultSetting from '@common/defaultSetting'
 import { updateSetting as saveSetting } from '@renderer/utils/ipc'
+import { getAudioDevicePreference, getAudioDevicePreferenceSetting, rememberAudioDevice } from '@common/utils/audioDeviceSelection'
 
 export const appSetting = window.lxData.appSetting = reactive<LX.AppSetting>({ ...defaultSetting })
 
@@ -49,8 +50,14 @@ export const saveAgreePact = (isAgreePact: boolean) => {
  * 保存音频输出id
  * @param id 媒体驱动id
  */
-export const saveMediaDeviceId = (id: string) => {
-  updateSetting({ 'player.mediaDeviceId': id })
+export const saveMediaDeviceId = (id: string, label = '') => {
+  const engine = appSetting['player.playEngine']
+  updateSetting({
+    'player.mediaDeviceId': id,
+    ...(engine === 'electron' || engine === 'mpv' ? getAudioDevicePreferenceSetting(
+      rememberAudioDevice(getAudioDevicePreference(appSetting), engine, id, label),
+    ) : {}),
+  })
 }
 
 /**

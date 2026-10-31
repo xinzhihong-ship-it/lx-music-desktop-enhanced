@@ -7,6 +7,7 @@ import { dialog } from '@renderer/plugins/Dialog'
 import { setMediaDeviceId } from '@renderer/plugins/player'
 import { isPlay } from '@renderer/store/player/state'
 import { appSetting, saveMediaDeviceId } from '@renderer/store/setting'
+import useAudioDevices from '@renderer/utils/compositions/useAudioDevices'
 
 const getDevices = async() => {
   const devices = await navigator.mediaDevices.enumerateDevices()
@@ -16,6 +17,7 @@ const getDevices = async() => {
 let isShowingTipAlert = false
 
 export default () => {
+  useAudioDevices()
   // 外部引擎使用自己的音频设备管理，Web Audio 设备列表里找不到对应 ID，
   // 强行匹配会把 player.mediaDeviceId 重置回 default。
   const isElectronEngine = () => appSetting['player.playEngine'] === 'electron'
@@ -62,7 +64,7 @@ export default () => {
       // 只保存最后一次仍然有效且成功绑定的设备，避免旧请求覆盖新选择。
       if (requestVersion !== deviceRequestVersion || appSetting['player.mediaDeviceId'] !== requestedDeviceId) return
       prevDeviceId = deviceId
-      saveMediaDeviceId(deviceId)
+      saveMediaDeviceId(deviceId, label)
     } catch (err: any) {
       console.error('set media device failed:', err?.message ?? err)
       // 路由重建期间的短暂失败不应把用户选择改写成 default；

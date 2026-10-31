@@ -138,6 +138,7 @@ module.exports = ({ app, output, profile, beforeVerify }) => {
     await until("getComputedStyle(document.documentElement).getPropertyValue('--color-main-background').trim() === '#ffffff'", 'Preview theme did not finish saving')
     win.setContentSize(1280, 830)
     checks.push(...await require('./verify-ui-feedback.cjs')({ win, output }))
+    checks.push(...await require('./verify-ui-audio-devices.cjs')({ win, output }))
     const configFile = path.join(profile, 'LxDatas', 'config_v2.json')
     const saved = JSON.parse(fs.readFileSync(configFile, 'utf8'))
     assert.equal(saved.setting['theme.id'], 'easy_light')

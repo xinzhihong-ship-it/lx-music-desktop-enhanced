@@ -722,6 +722,7 @@
   "setting__play_mediaDevice_remove_stop_play": "Pause playback when current audio output device is changed",
   "setting__play_mediaDevice_title": "Select a media device for audio output",
   "setting__play_mediaDevice_default": "Default Device",
+  "setting__play_mediaDevice_unavailable": "{name} (unavailable)",
   "setting__play_playQuality": "Prioritize Sound Quality for Playback If Available",
   "setting__play_quality_ape": "Lossless APE",
   "setting__play_quality_wav": "Lossless WAV",

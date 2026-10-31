@@ -18,11 +18,13 @@ function loadMediaDevice(mocks) {
     console,
     setTimeout,
     clearTimeout,
-    navigator: { mediaDevices: {
-      enumerateDevices: mocks.enumerateDevices,
-      addEventListener: (_event, callback) => { listenerAdds++; deviceChangeCallback = callback },
-      removeEventListener: () => { listenerRemoves++ },
-    } },
+    navigator: {
+      mediaDevices: {
+        enumerateDevices: mocks.enumerateDevices,
+        addEventListener: (_event, callback) => { listenerAdds++; deviceChangeCallback = callback },
+        removeEventListener: () => { listenerRemoves++ },
+      },
+    },
     window: {
       i18n: { t: value => value },
       app_event: { playerDeviceChanged: () => {} },
@@ -37,6 +39,7 @@ function loadMediaDevice(mocks) {
     '@renderer/core/player/action': { pause: () => {} },
     '@renderer/plugins/Dialog': { dialog: () => Promise.resolve() },
     '@renderer/plugins/player': { setMediaDeviceId: mocks.setMediaDeviceId },
+    '@renderer/utils/compositions/useAudioDevices': { default: () => {} },
     '@renderer/store/player/state': { isPlay: { value: false } },
     '@renderer/store/setting': {
       appSetting: mocks.appSetting,

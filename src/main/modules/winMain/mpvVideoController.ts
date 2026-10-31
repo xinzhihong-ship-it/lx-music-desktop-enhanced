@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { log } from '@common/utils'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
+import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
+import { resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
 import { sendEvent, getBrowserWindow } from './main'
 import { MpvController } from './mpvController'
 import * as accountSessions from '@main/modules/account/sessions'
@@ -49,7 +51,7 @@ type VideoEventName =
 const isBiliCdn = (url: string) =>
   /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
 const normalizeAudioDevice = (device: string | undefined) => {
-  const value = String(device ?? '').trim()
+  const value = getAudioDeviceForEngine(String(device ?? '').trim(), getAudioDevicePreference(global.lx.appSetting), 'mpv')
   return value && !['default', 'Default', 'communications'].includes(value)
     ? value
     : 'auto'
@@ -370,10 +372,11 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
   currentUrl = videoUrl
   try {
     player.setAudioDevice(
-      normalizeAudioDevice(global.lx.appSetting['player.mediaDeviceId']),
+      resolveMpvAudioDevice(normalizeAudioDevice(global.lx.appSetting['player.mediaDeviceId']), { isMacPlatform: true }),
     )
   } catch (error) {
     log.warn('[MpvVideoController] set audio device failed', error)
+    throw error
   }
   const cookie = isBiliCdn(videoUrl) ? getBiliCookie() : ''
   player.load({
@@ -404,7 +407,7 @@ export const setAudioDevice = (device: string) => {
     return
   }
   if (!native || !initialized) return
-  native.setAudioDevice(normalizedDevice)
+  native.setAudioDevice(resolveMpvAudioDevice(normalizedDevice, { isMacPlatform: true }))
 }
 
 export const play = () => {

@@ -7,6 +7,7 @@ import { watch } from '@common/utils/vueTools'
 import { createVst3Node, configureVst3Audio, closeVst3Audio, prepareVst3Audio, resetVst3Audio, vst3Runtime, cleanVst3Error, restoreVst3Node } from './vst3'
 import { applyOutputSink, createRoutingQueue } from './routingQueue'
 import { readSourceSampleRate } from './sourceSampleRate'
+import { ensureAudioDeviceForPlayback } from '@renderer/utils/compositions/useAudioDevices'
 
 let vst3Node: AudioWorkletNode | null = null
 let vst3Change = Promise.resolve()
@@ -626,6 +627,8 @@ export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, fi
   updateSourceSampleRate(videoAudioUrl ?? src)
   seekResume = false
   if (vst3Node) resetVst3Audio(false)
+  if (src && !await ensureAudioDeviceForPlayback(isBiliVideoActive() ? 'mpv' : undefined)) return
+  if (revision !== playbackRevision) return
   if (isBiliVideoActive()) {
     if (!src) return
     await stopSelectedAudioEngine()

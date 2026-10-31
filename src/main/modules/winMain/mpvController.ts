@@ -11,6 +11,7 @@ import * as accountSessions from '@main/modules/account/sessions'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { getBundledMacMpvAppNames } from '@common/utils/mpvCompatibility'
 import { isCoreAudioMappedDevice, resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
+import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
 
 export type MpvPathSource =
   | 'custom'
@@ -450,7 +451,7 @@ export class MpvController {
     }
 
     // 输出设备由 player.mediaDeviceId 单独控制，不污染 player.mpv.extraArgs
-    const mediaDeviceId = global.lx.appSetting['player.mediaDeviceId']
+    const mediaDeviceId = getAudioDeviceForEngine(global.lx.appSetting['player.mediaDeviceId'], getAudioDevicePreference(global.lx.appSetting), 'mpv')
     if (
       mediaDeviceId &&
       mediaDeviceId !== 'default' &&

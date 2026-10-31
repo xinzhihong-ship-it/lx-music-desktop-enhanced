@@ -142,7 +142,7 @@ dd(:aria-label="$t('setting__play_mediaDevice_title')")
 </template>
 
 <script>
-import { ref, onBeforeUnmount, onMounted, watch, computed } from '@common/utils/vueTools'
+import { ref, onMounted, watch, computed } from '@common/utils/vueTools'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
 import * as mpvVideoPlayer from '@renderer/plugins/player/mpvVideo'
 import { dialog } from '@renderer/plugins/Dialog'
@@ -156,6 +156,8 @@ import { platformQualityTip } from '@renderer/core/quality/labels'
 import { isMac, log } from '@common/utils'
 import useDrag from '@renderer/utils/compositions/useDrag'
 import SettingVst3 from './SettingVst3.vue'
+import useAudioDevices from '@renderer/utils/compositions/useAudioDevices'
+import { getAudioDevicePreference, getAudioDevicePreferenceSetting, rememberAudioDevice } from '@common/utils/audioDeviceSelection'
 import {
   movePlayErrorAction,
   normalizePlayErrorApiSourceCount,
@@ -224,7 +226,10 @@ export default {
       ...(isMac ? [{ id: 'audirvana', label: t('setting__play_engine_audirvana') }] : []),
     ]
     const playEngine = ref(appSetting['player.playEngine'])
+    const { mediaDevices, mediaDeviceId, prepareEngineChange } = useAudioDevices()
+    let engineChangeVersion = 0
     const handlePlayEngineChange = async() => {
+      const version = ++engineChangeVersion
       const newEngine = playEngine.value
       const oldEngine = appSetting['player.playEngine']
       if (newEngine == oldEngine) return
@@ -235,14 +240,21 @@ export default {
           cancelButtonText: t('cancel_button_text'),
           confirmButtonText: t('confirm_button_text'),
         })
+        if (version !== engineChangeVersion) return
         if (!confirm) {
           playEngine.value = oldEngine
           return
         }
-        window.app_event.stop()
       }
 
-      updateSetting({ 'player.playEngine': newEngine })
+      const deviceSetting = await prepareEngineChange(newEngine)
+      if (version !== engineChangeVersion || playEngine.value !== newEngine || appSetting['player.playEngine'] !== oldEngine) return
+      if (!deviceSetting) {
+        playEngine.value = appSetting['player.playEngine']
+        return
+      }
+      if (isPlay.value) window.app_event.stop()
+      updateSetting({ ...deviceSetting, 'player.playEngine': newEngine })
 
       // 切换到 Audirvana 无需重启应用：播放器事件订阅通过
       // watch(player.playEngine) 自动切换到 audirvana 实现（usePlayerEvent / usePlayProgress），
@@ -327,69 +339,10 @@ export default {
       updateSetting({ 'player.mpv.bitPerfectMode': val })
       void restartMpvForSettingChange()
     }
-    const mediaDevices = ref([])
-    const getMediaDevice = async() => {
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      let audioDevices = devices.filter(device => device.kind === 'audiooutput')
-      mediaDevices.value = audioDevices
-    }
-    void getMediaDevice()
-
-    navigator.mediaDevices.addEventListener('devicechange', getMediaDevice)
-    onBeforeUnmount(() => {
-      navigator.mediaDevices.removeEventListener('devicechange', getMediaDevice)
-    })
-
-    const mediaDeviceId = ref(appSetting['player.mediaDeviceId'])
     const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
-
-    // mpv 设备列表（从 main process 获取）
-    const mpvAudioDevices = ref([])
-    const loadMpvAudioDevices = async() => {
-      try {
-        log.info('[SettingPlay] loading mpv audio devices...')
-        const devices = await mpvPlayer.listAudioDevices()
-        log.info('[SettingPlay] mpv audio devices:', devices)
-        mpvAudioDevices.value = devices
-        // 如果当前保存的 ID 不在 MPV 设备列表里（比如旧配置残留），重置为默认
-        const ids = devices.map(d => d.id)
-        if (!ids.includes(mediaDeviceId.value)) {
-          mediaDeviceId.value = 'default'
-          updateSetting({ 'player.mediaDeviceId': 'default' })
-        }
-      } catch (err) {
-        log.error('[SettingPlay] load mpv audio devices failed:', err)
-      }
-    }
-
-    // 当前引擎对应的设备列表：MPV 模式用 mpv 自己的设备 ID，内置模式用 Web Audio 设备
-    const currentMediaDevices = computed(() => {
-      if (isMpvEngine()) {
-        // 保持 player.mediaDeviceId='default' 在下拉框中有对应项，避免切到 MPV 后显示为空
-        const list = [{ deviceId: 'default', label: t('setting__play_mediaDevice_default') ?? '默认设备' }]
-        for (const d of mpvAudioDevices.value) {
-          if (d.id !== 'auto') list.push({ deviceId: d.id, label: d.name })
-        }
-        return list
-      }
-      return mediaDevices.value
-    })
-
-    // 引擎切换时加载对应设备列表；切换到 MPV 时若当前 ID 不在 MPV 列表则重置为默认
-    watch(() => appSetting['player.playEngine'], async(val, oldVal) => {
-      if (val == 'mpv') {
-        await loadMpvAudioDevices()
-        const ids = mpvAudioDevices.value.map(d => d.id)
-        if (!ids.includes(mediaDeviceId.value)) {
-          mediaDeviceId.value = 'default'
-          updateSetting({ 'player.mediaDeviceId': 'default' })
-        }
-      }
-    })
     // 设置项可能在组件 setup 之后才合并完成，因此在挂载后统一加载一次。
     onMounted(() => {
       errorStrategyDrag.setDisabled(false)
-      if (isMpvEngine()) void loadMpvAudioDevices()
       // 清理旧配置里被错误拆分的 --audio-device 参数
       const cleaned = cleanExtraArgs(appSetting['player.mpv.extraArgs'].join(' '))
       if (cleaned.length !== appSetting['player.mpv.extraArgs'].length) {
@@ -401,7 +354,11 @@ export default {
       // mpv 模式：直接保存 mpv 设备 ID，由主进程在启动 mpv 时拼接 --audio-device，不再污染 extraArgs
       if (isMpvEngine()) {
         log.info('[SettingPlay] mediaDeviceId changed to:', mediaDeviceId.value, 'isPlay:', isPlay.value)
-        updateSetting({ 'player.mediaDeviceId': mediaDeviceId.value })
+        const label = mediaDevices.value.find(device => device.deviceId === mediaDeviceId.value)?.label ?? ''
+        updateSetting({
+          'player.mediaDeviceId': mediaDeviceId.value,
+          ...getAudioDevicePreferenceSetting(rememberAudioDevice(getAudioDevicePreference(appSetting), 'mpv', mediaDeviceId.value, label)),
+        })
         if (!mpvVideoPlayer.isEmpty()) {
           void mpvVideoPlayer.setAudioDevice(mediaDeviceId.value).catch(err => {
             log.error('[SettingPlay] video audio device update failed:', err)
@@ -422,10 +379,6 @@ export default {
       appSetting['player.mediaDeviceId'] = mediaDeviceId.value
     }
 
-    watch(() => appSetting['player.mediaDeviceId'], val => {
-      mediaDeviceId.value = val
-    })
-
     const handleUpdatePowerSaveBlocker = (enabled) => {
       if (enabled) {
         if (isPlay.value) setPowerSaveBlocker(true, true)
@@ -445,7 +398,7 @@ export default {
     return {
       appSetting,
       updateSetting,
-      mediaDevices: currentMediaDevices,
+      mediaDevices,
       mediaDeviceId,
       handleMediaDeviceIdChnage,
       handleUpdatePowerSaveBlocker,
