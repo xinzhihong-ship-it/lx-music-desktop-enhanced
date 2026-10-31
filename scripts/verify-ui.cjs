@@ -3,7 +3,7 @@ const path = require('node:path')
 const assert = require('node:assert/strict')
 
 // Exercise the built application, with real Vue, router, IPC and saved settings.
-module.exports = ({ app, output, profile }) => {
+module.exports = ({ app, output, profile, beforeVerify }) => {
   let started = false
   const timeout = setTimeout(() => { console.error('UI verification timed out'); app.exit(1) }, 90000)
   app.on('browser-window-created', (_event, win) => {
@@ -19,6 +19,7 @@ module.exports = ({ app, output, profile }) => {
   })
 
   async function verify(win) {
+    await beforeVerify?.(win)
     const checks = []
     const js = source => win.webContents.executeJavaScript(source, true)
     const until = async(source, message) => {

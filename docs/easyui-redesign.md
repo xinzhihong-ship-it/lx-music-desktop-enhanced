@@ -47,3 +47,15 @@ node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/syncCompatibili
 - 8 组真实 Electron 交互检查通过：启动与浅色主题、深色主题与 IPC 保存、键盘设置开关、真实数据库的 400 首歌列表及滚动到底、全部启用的主导航页面、标签箭头键与焦点、828px 窗口下三种进度条布局、既有主题兼容。
 
 当前验证证据与截图见工作区 `临时/easyui-*.log` 及本仓库 `build/ui-review/`。本分支的交互验证不代表已经在 Windows、Windows 7 与 Linux 真机完成验收。
+
+## macOS 覆盖安装测试包
+
+已生成 `3.3.0-beta.1` ARM64 DMG，位于工作区 `临时/新版UI-Mac安装包/`，同目录包含安装说明、SHA-256 和验证报告。
+
+生产包使用 `dist/main.js`，保留 `cn.toside.music.desktop` Bundle ID、`lx-music-desktop` 应用名称及 `lx-music-desktop-enhanced` 包名。运行时实测其默认资料目录为 `~/Library/Application Support/lx-music-desktop-enhanced`，与本机原安装一致。覆盖后保留原主题，Easy 配色可在设置中选择。
+
+主进程与三个前端目标均重新生产构建；Electron 40.10.5、第三方依赖及原生运行库沿用本机已安装的 `3.2.6-beta.2` ARM64 应用，重新生成 ASAR 完整性信息与本地签名。64 个原生绑定／库在签名前逐一比对内容，仓库的 MPV 与 VST3 打包检查通过。
+
+完整应用包在独立临时资料目录中完成 8 项界面验证，并验证旧格式配置保留、重启后音量设置与 400 首歌数据库重新加载。随包 MPV、FFmpeg、FFprobe 启动及本地 WAV 解码通过；实体声卡输出、第三方登录及 VST3 插件处理尚未完整验收。
+
+DMG 的文件系统校验及挂载后的应用签名严格检查通过。此包采用 ad-hoc 签名，未做苹果公证。当前发布页缺少 `latest-mac.yml`，应用内更新检查会失败，测试包使用手动覆盖安装。
