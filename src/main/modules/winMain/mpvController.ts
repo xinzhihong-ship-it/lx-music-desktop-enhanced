@@ -13,7 +13,7 @@ import { getBundledMacMpvAppNames } from '@common/utils/mpvCompatibility'
 import { isCoreAudioMappedDevice, resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
 import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
 import { createAudioDeviceCache } from '@main/utils/audioDeviceCache'
-import { parseMpvAudioDevices } from '@common/utils/mpvDeviceList'
+import { normalizeMpvAudioDevices, parseMpvAudioDevices } from '@common/utils/mpvDeviceList'
 
 export type MpvPathSource =
   | 'custom'
@@ -673,7 +673,7 @@ export class MpvController {
     }
   }
 
-  private async command<T = unknown>(command: unknown[]): Promise<T> {
+  private async command<T = unknown>(command: unknown[], timeoutMs = 5000): Promise<T> {
     if (!this.socket) { return Promise.reject(new Error('mpv IPC is not connected')) }
     const request_id = ++this.requestId
     const payload = JSON.stringify({ command, request_id }) + '\n'
@@ -681,7 +681,7 @@ export class MpvController {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(request_id)
         reject(new Error('mpv IPC request timeout'))
-      }, 5000)
+      }, timeoutMs)
       this.pendingRequests.set(request_id, {
         resolve: (data) => {
           resolve(data as T)
@@ -1236,8 +1236,23 @@ export class MpvController {
   /**
    * 运行 mpv --audio-device=help 获取可用设备列表
    */
+  async getLiveAudioDevices(expectedPath: string): Promise<Array<{ id: string, name: string }> | null> {
+    // Query the already-running player without spawning a second MPV per song.
+    // Only use it when its binary still matches the configured runtime.
+    if (!this.socket || !this.process || this.process.killed || this.cachedPathInfo?.path !== expectedPath) return null
+    try {
+      const rows = await this.command<unknown>(['get_property', 'audio-device-list'], 750)
+      return Array.isArray(rows) ? normalizeMpvAudioDevices(rows, isMac) : null
+    } catch (error) {
+      log.warn('[listAudioDevices] live query failed; falling back to probe', error)
+      return null
+    }
+  }
+
   static async listAudioDevices(options: { timeoutMs?: number, forceRefresh?: boolean } = {}): Promise<Array<{ id: string, name: string }>> {
     const mpvPath = resolveMpvPath()
+    const live = await getMpvController().getLiveAudioDevices(mpvPath.path)
+    if (live) return live
     const stat = (() => { try { return fs.statSync(mpvPath.path) } catch { return null } })()
     const key = `${mpvPath.path}:${stat?.mtimeMs ?? ''}:${stat?.size ?? ''}`
     return audioDeviceCache.get(key, options.forceRefresh === true, async() => MpvController.probeAudioDevices(mpvPath, options), devices => devices.length > 1)

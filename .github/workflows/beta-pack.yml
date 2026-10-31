@@ -35,6 +35,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libxcb1-dev libxcb-cursor-dev libxkbcommon-dev
       - name: Lint source
         run: npm run lint
+      - name: Audio device and routing regressions
+        run: npm run test:audio-devices
       - name: Build source
         run: npm run build
       - name: Run VST3 tests

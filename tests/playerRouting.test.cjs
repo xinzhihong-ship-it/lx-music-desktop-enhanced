@@ -172,6 +172,24 @@ function loadPlayer() {
   return { player: module.exports, appSetting, state, runtime: modules['./vst3'].vst3Runtime }
 }
 
+test('consecutive songs do not reopen an unchanged output sink', async() => {
+  const { player, appSetting, state } = loadPlayer()
+  player.createAudio()
+  await player.setMediaDeviceId('device-a')
+  const original = state.audio[0]
+  const firstCount = original.sinkCalls.length
+  await player.setMediaDeviceId('device-a')
+  await player.setMediaDeviceId('device-a')
+  assert.equal(original.sinkCalls.length, firstCount)
+  appSetting['player.audioVisualization'] = true
+  await player.applyAudioRoutingNow()
+  const output = state.audio.find(item => item.srcObject)
+  assert.ok(output.sinkCalls.includes('device-a'))
+  const rebuiltCount = output.sinkCalls.length
+  await player.setMediaDeviceId('device-a')
+  assert.equal(output.sinkCalls.length, rebuiltCount)
+})
+
 test('an effects rebuild cannot bind an unverified imported device ID', async() => {
   const { player, appSetting, state } = loadPlayer()
   appSetting['player.mediaDeviceId'] = 'unverified-imported-id'

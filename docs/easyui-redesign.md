@@ -57,13 +57,19 @@ Chromium 的 Web Audio 设备 ID 由原生标识结合来源与盐值生成，MP
 
 设备管理服务在应用启动时创建，设置界面、实际输出绑定和播放前检查共用该服务；原绑定器不再独立枚举或保存设备。先验证设备身份，成功绑定后保存配置。设备缺失、重名或已保存 ID 被其他硬件复用时保留原选择并显示暂不可用，不静默改成默认或其他设备。设置使用现有持久化层支持的字符串字段，重启后保留两端 ID 与两套引擎各自的设备描述。
 
-97 项设备与路由测试通过，覆盖跨电脑配置、ID 复用、设备索引重排、重名、不同音频后端、默认／通信角色、异步竞态、独立引擎名称、空名称、空目录重试、配置类型校验、两模块联合绑定、缓存／IPC、原生视频驱动及重启保存。`test:audio-devices` 已加入 PR 构建工作流。Mac 完整应用验证使用当前运行时设备列表的两项输出；内置和 MPV 均通过同一静音 WAV 的真实播放事件检查，另验证重启后设备、设置和 400 首歌数据库保留。Windows/Linux 的后端格式通过模拟目录测试，未声称完成跨系统真机测试。
+100 项设备与路由测试通过，覆盖跨电脑配置、ID 复用、设备索引重排、重名、不同音频后端、默认／通信角色、异步竞态、独立引擎名称、空名称、空目录重试、配置类型校验、两模块联合绑定、缓存／IPC、原生视频驱动及重启保存。`test:audio-devices` 已加入 PR 构建工作流。Mac 完整应用验证使用当前运行时设备列表的两项输出；内置和 MPV 均通过同一静音 WAV 的真实播放事件检查，另验证重启后设备、设置和 400 首歌数据库保留。Windows/Linux 的后端格式通过模拟目录测试，未声称完成跨系统真机测试。
 
-依据：[Chromium 设备 ID 源码](https://github.com/chromium/chromium/blob/main/content/public/browser/media_device_id.cc)、[MPV audio-device 文档](https://mpv.io/manual/master/#options-audio-device)、[Media Capture 设备标识规范](https://w3c.github.io/mediacapture-main/#dom-mediadeviceinfo-deviceid)。
+### 加载速度检查
+
+beta.5 的实际日志显示，MPV 获得播放地址到开始播放通常为数十到数百毫秒，但首次独立设备探测可能超过 10 秒。beta.6 在播放器已运行且路径一致时，通过 MPV 的 `audio-device-list` IPC 属性读取最新目录，避免切歌时再启动独立进程；IPC 失败或尚未启动时保留原探测回退。该属性来自 MPV 客户端 API 的公开设备目录，不读取上一次设备列表代替校验。内置引擎比较最终输出元素的真实 sinkId，未改变时跳过重复 setSinkId；效果链重建后的新输出仍会绑定。
+
+在线音源取址和首次系统校验仍可能耗时。性能测量分别记录本地静音曲目、已运行 MPV 的 IPC 和外部探测耗时，不把本地结果当作第三方音源速度保证。
+
+依据：[MPV audio-device-list](https://mpv.io/manual/master/#command-interface-audio-device-list)、[Chromium 设备 ID 源码](https://github.com/chromium/chromium/blob/main/content/public/browser/media_device_id.cc)、[MPV audio-device 文档](https://mpv.io/manual/master/#options-audio-device)、[Media Capture 设备标识规范](https://w3c.github.io/mediacapture-main/#dom-mediadeviceinfo-deviceid)。
 
 ## macOS 覆盖安装测试包
 
-当前测试包为 `3.3.0-beta.5` ARM64 DMG，位于工作区 `临时/新版UI-Mac安装包/3.3.0-beta.5/`，同目录包含安装说明、SHA-256 和验证报告。
+当前公开测试版为 `3.3.0-beta.6`，发布流程构建 Windows、Windows 7、macOS x64／ARM64 和 Linux 安装包。本地 Mac ARM64 验证产物位于工作区 `临时/新版UI-Mac安装包/3.3.0-beta.6/`，同目录包含安装说明、SHA-256 和验证报告。
 
 本版将内置与 MPV 音频输出统一为同一个 300px 下拉组件，移除 MPV 原生下拉框宽度被全局选择框样式覆盖的问题，窄窗口下不超过可用空间。继续保留此前「打开歌单」与平台选择框错位、详情顶部返回被详情保留状态跳回，以及歌名文字点击搜索阻断双击播放的修复。歌名区域统一沿用行级双击播放，歌手与专辑的搜索入口继续保留。
 

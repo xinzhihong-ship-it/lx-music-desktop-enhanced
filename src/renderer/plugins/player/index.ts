@@ -1273,7 +1273,10 @@ export const setMediaDeviceId = async(mediaDeviceId: string, isCurrent: () => bo
     // 设备变更必须等待正在进行的元素重建，再绑定到最终硬件出口。
     // 已被更新请求取代的任务不再触碰旧设备，避免 A→B 时短暂回到 A。
     if (requestVersion !== outputSinkRequestVersion || !isCurrent()) return
-    await applyCurrentOutputSink(requestedSinkId)
+    const target = elementCaptured ? outputPipe : audio
+    // setSinkId can reopen the audio backend even when nothing changed. Reuse
+    // the element's actual sink; a replaced output pipe still needs binding.
+    if (!target || normalizeOutputSinkId(target.sinkId) !== requestedSinkId) await applyCurrentOutputSink(requestedSinkId)
     if (requestVersion === outputSinkRequestVersion && isCurrent()) desiredOutputSinkId = requestedSinkId
   })
 }
