@@ -1,4 +1,13 @@
 {
+  "ui__brand_subtitle": "让音乐，陪你久一点",
+  "ui__navigation": "音乐导航",
+  "ui__switch_light": "切换到浅色主题",
+  "ui__switch_dark": "切换到深色主题",
+  "ui__search_placeholder": "搜索歌曲、歌手或哔哩哔哩链接",
+  "ui__welcome_title": "听见每一种喜欢。",
+  "ui__welcome_subtitle": "搜索一段旋律、一个名字，或粘贴哔哩哔哩链接。",
+  "theme_easy_light": "Easy · 晨光",
+  "theme_easy_dark": "Easy · 夜色",
   "setting__vst3_enable": "启用 VST3 音频处理",
   "setting__vst3_latency": "插件延迟",
   "setting__vst3_bridge": "桥接缓冲",

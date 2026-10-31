@@ -186,4 +186,7 @@ export default {
   // }
 }
 
+.lists { width: 160px; border-right: 1px solid var(--ui-border); background: var(--ui-canvas); }
+.header { box-sizing: border-box; padding: 12px; gap: 8px; }
+
 </style>

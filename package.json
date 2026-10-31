@@ -55,6 +55,8 @@
     "publish:linux:rpm": "node build-config/build-pack.js target=linux arch=x64 type=rpm publish=always",
     "publish:linux:pacman": "node build-config/build-pack.js target=linux arch=x64 type=pacman publish=always",
     "dev": "cross-env NODE_OPTIONS=--max-http-header-size=200000 node build-config/runner-dev.js",
+    "preview:ui": "electron scripts/preview-ui.cjs",
+    "test:ui": "cross-env LX_UI_VERIFY=1 electron scripts/preview-ui.cjs",
     "build:theme": "node src/common/theme/createThemes.js",
     "build": "node build-config/pack.js",
     "download:mpv": "node build-config/download-mpv.js",

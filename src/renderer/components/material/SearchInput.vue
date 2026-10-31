@@ -6,6 +6,7 @@
           ref="dom_input"
           v-model.trim="text"
           :placeholder="placeholder"
+          :aria-label="placeholder"
           @focus="handleFocus"
           @blur="handleBlur"
           @input="$emit('update:modelValue', text)"
@@ -210,127 +211,30 @@ export default {
 
 
 <style lang="less" module>
-@import '@renderer/assets/styles/layout.less';
-
-.container {
-  position: relative;
-  width: 35%;
-  height: @height-toolbar * 0.52;
-  -webkit-app-region: no-drag;
-}
-
+.container { position: relative; width: 35%; height: 38px; -webkit-app-region: no-drag; }
 .search {
-  position: absolute;
-  width: 100%;
-  border-radius: @form-radius;
-  transition: box-shadow .4s ease, background-color @transition-normal;
-  display: flex;
-  flex-flow: column nowrap;
-  background-color: var(--color-primary-light-300-alpha-700);
-
-  &.active {
-    background-color: var(--color-primary-light-600-alpha-100);
-    box-shadow: 0 1px 5px 0 rgba(0,0,0,.2);
-    .form {
-      input {
-        border-bottom-left-radius: 0;
-
-      }
-      button {
-        border-bottom-right-radius: 0;
-      }
+  position: absolute; width: 100%; border-radius: 20px; border: 1px solid var(--ui-border);
+  transition: box-shadow .25s ease, border-color .25s ease; display: flex; flex-direction: column;
+  background: var(--ui-surface); box-sizing: border-box;
+  &.active { border-color: var(--color-primary-alpha-600); box-shadow: 0 0 0 3px var(--ui-selected); }
+  .form { display: flex; height: 36px; position: relative;
+    input { flex: 1; min-width: 0; width: 0; border: 0; outline: none; border-radius: 20px; color: var(--ui-text); background: transparent; padding: 0 14px; font-size: 12px;
+      &::placeholder { color: var(--ui-muted); }
+    }
+    button { flex: none; display: flex; align-items: center; justify-content: center; width: 32px; border: 0; border-radius: 50%; background: transparent; color: var(--ui-muted); padding: 9px; cursor: pointer;
+      &:last-child { margin-right: 5px; }
+      &:hover { color: var(--color-primary-font); }
+      svg { width: 100%; height: 100%; }
     }
   }
-  .form {
-    display: flex;
-    height: @height-toolbar * 0.52;
-    position: relative;
-    input {
-      flex: auto;
-      // border: 1px solid;
-      border-top-left-radius: 3px;
-      border-bottom-left-radius: 3px;
-      background-color: transparent;
-      // border-bottom: 2px solid var(--color-primary);
-      // border-color: var(--color-primary);
-      border: none;
-      min-width: 0;
-
-      outline: none;
-      // height: @height-toolbar * .7;
-      padding: 0 5px;
-      overflow: hidden;
-      font-size: 13.5px;
-      line-height: @height-toolbar * 0.52 + 5px;
-      &::placeholder {
-        color: var(--color-button-font);
-        font-size: .98em;
-      }
-    }
-    button {
-      flex: none;
-      border: none;
-      // background-color: @color-search-form-background;
-      background-color: transparent;
-      outline: none;
-      cursor: pointer;
-      height: 100%;
-      padding: 6px 7px;
-      color: var(--color-button-font);
-      transition: background-color .2s ease;
-
-      &:last-child {
-        border-top-right-radius: 3px;
-        border-bottom-right-radius: 3px;
-      }
-
-      &:hover {
-        background-color: var(--color-button-background-hover);
-      }
-      &:active {
-        background-color: var(--color-button-background-active);
-      }
-    }
-  }
-  .list {
-    // background-color: @color-search-form-background;
-    font-size: 13px;
-    transition: .3s ease;
-    height: 0;
-    transition-property: height;
-    overflow: hidden;
-    li {
-      cursor: pointer;
-      padding: 8px 5px;
-      transition: background-color .2s ease;
-      line-height: 1.3;
-      span {
-        .mixin-ellipsis-2();
-      }
-
-      &.select {
-        background-color: var(--color-primary-dark-100-alpha-700);
-      }
-      &:last-child {
-        border-bottom-left-radius: 3px;
-        border-bottom-right-radius: 3px;
-      }
+  .list { font-size: 12px; transition: height .2s var(--ui-ease); height: 0; overflow: hidden;
+    ul { padding: 0 5px; }
+    li { cursor: pointer; padding: 9px 10px; border-radius: 8px; line-height: 1.4; margin-bottom: 3px;
+      span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      &.select, &:hover { background: var(--ui-selected); }
     }
   }
 }
-
-.big {
-  width: 100%;
-  // input {
-  //   line-height: 30px;
-  // }
-  .form {
-    height: 30px;
-    button {
-      padding: 6px 10px;
-    }
-  }
-}
-
-
+.big { width: 100%; .form { height: 42px; } }
+.small { .form { height: 30px; } }
 </style>

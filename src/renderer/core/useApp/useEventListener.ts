@@ -118,7 +118,7 @@ export default () => {
       if (themeId.value != 'auto') return
     }
     getThemes(({ dataPath }) => {
-      applyTheme('auto', appSetting['theme.lightId'], appSetting['theme.darkId'], dataPath)
+      applyTheme(themeId.value, appSetting['theme.lightId'], appSetting['theme.darkId'], dataPath)
     })
   })
 

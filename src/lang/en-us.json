@@ -1,4 +1,13 @@
 {
+  "ui__brand_subtitle": "More than a melody",
+  "ui__navigation": "Music navigation",
+  "ui__switch_light": "Switch to light theme",
+  "ui__switch_dark": "Switch to dark theme",
+  "ui__search_placeholder": "Songs, artists or a Bilibili link",
+  "ui__welcome_title": "Find your next favorite.",
+  "ui__welcome_subtitle": "Search for a melody, an artist, or paste a Bilibili link.",
+  "theme_easy_light": "Easy · Morning",
+  "theme_easy_dark": "Easy · Night",
   "setting__vst3_enable": "Enable VST3 audio processing",
   "setting__vst3_latency": "Plugin latency",
   "setting__vst3_bridge": "Bridge buffer",

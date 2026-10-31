@@ -23,26 +23,26 @@
       <span>{{ maxPlayTimeStr }}</span>
     </div>
     <!-- <play-progress /> -->
-    <control-btns />
+    <control-btns :class="$style.secondaryControls" />
     <div :class="$style.playBtnContent">
-      <div :class="$style.playBtn" :aria-label="$t('player__prev')" @click="playPrev()">
+      <button type="button" :class="$style.playBtn" :aria-label="$t('player__prev')" @click="playPrev()">
         <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 1024 1024" space="preserve">
           <use xlink:href="#icon-prevMusic" />
         </svg>
-      </div>
-      <div :class="$style.playBtn" :aria-label="isPlay ? $t('player__pause') : $t('player__play')" @click="togglePlay">
+      </button>
+      <button type="button" :class="$style.playBtn" :aria-label="isPlay ? $t('player__pause') : $t('player__play')" @click="togglePlay">
         <svg v-if="isPlay" version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 1024 1024" space="preserve">
           <use xlink:href="#icon-pause" />
         </svg>
         <svg v-else version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 1024 1024" space="preserve">
           <use xlink:href="#icon-play" />
         </svg>
-      </div>
-      <div :class="$style.playBtn" :aria-label="$t('player__next')" @click="playNext()">
+      </button>
+      <button type="button" :class="$style.playBtn" :aria-label="$t('player__next')" @click="playNext()">
         <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 1024 1024" space="preserve">
           <use xlink:href="#icon-nextMusic" />
         </svg>
-      </div>
+      </button>
       <stop-btn />
     </div>
   </div>
@@ -159,186 +159,30 @@ export default {
 <style lang="less" module>
 @import '@renderer/assets/styles/layout.less';
 
-.player {
-  position: relative;
-  height: @height-player;
-  border-top: 1px solid var(--color-primary-alpha-900);
-  box-sizing: border-box;
-  display: flex;
-  flex-flow: row nowrap;
-  align-items: center;
-  contain: strict;
-  padding: 6px;
-  z-index: 2;
-  // box-shadow: 0px 0px 4px rgba(0, 0, 0, 0.1);
-  * {
-    box-sizing: border-box;
-  }
-
-  &:before {
-    .mixin-after();
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: var(--color-main-background);
-    opacity: .9;
-    z-index: -1;
-  }
+.player { position: relative; height: @height-player; box-sizing: border-box; display: grid;
+  grid-template-columns: 48px minmax(100px, 1fr) minmax(150px, 1.4fr) minmax(150px, 1.15fr);
+  grid-template-rows: 30px 22px; align-content: center; align-items: center; column-gap: 14px;
+  padding: 12px 24px; z-index: 2; border-top: 1px solid var(--ui-border); background: var(--ui-surface);
+  * { box-sizing: border-box; }
 }
-
-.picContent {
-  height: 100%;
-  aspect-ratio: 1 / 1;
-
-  // color: var(--color-primary);
-  // transition: @transition-normal;
-  // transition-property: color;
-  flex: none;
-  opacity: 1;
-  transition: opacity @transition-fast;
-  // transition-property: opacity;
-  display: flex;
-  justify-content: center;
-  // align-items: center;
-  cursor: pointer;
-
-  &:hover {
-    opacity: .8;
-  }
-
-  // svg {
-  //   fill: currentColor;
-  // }
-  img {
-    box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
-    max-width: 100%;
-    max-height: 100%;
-    transition: @transition-normal;
-    transition-property: border-color;
-    // border-radius: 50%;
-    border-radius: @radius-border;
-    // border: 2px solid @color-theme_2-background_1;
-  }
-
-  .emptyPic {
-    background-color: var(--color-primary-light-900-alpha-200);
-    border-radius: @radius-border;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-primary-light-400-alpha-200);
-    user-select: none;
-    font-size: 20px;
-    font-family: Consolas, "Courier New", monospace;
-
-    span {
-      padding-left: 3px;
-    }
-  }
+.picContent { grid-column: 1; grid-row: 1 / 3; width: 48px; height: 48px; border: 0; padding: 0; display: flex; cursor: pointer; border-radius: 12px; overflow: hidden; background: var(--ui-selected);
+  img { width: 100%; height: 100%; object-fit: cover; }
+  &:hover { opacity: .8; }
 }
-
-.infoContent {
-  padding: 0 10px;
-  flex: auto;
-  display: flex;
-  flex-flow: column nowrap;
-  justify-content: center;
-  align-items: flex-start;
-  font-size: 13px;
-  color: var(--color-font);
-  min-width: 0;
-  line-height: 1.5;
+.emptyPic { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; letter-spacing: -1px; color: var(--color-primary-font); span { padding-left: 1px; } }
+.infoContent { grid-column: 2; grid-row: 1 / 3; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.titleRow { display: flex; align-items: center; min-width: 0; max-width: 100%; }
+.title { flex: 0 1 auto; min-width: 0; font-size: 12px; font-weight: 600; color: var(--ui-text); .mixin-ellipsis-1(); }
+.status { font-size: 10px; color: var(--ui-muted); min-height: 15px; max-width: 100%; .mixin-ellipsis-1(); }
+.timeContent { grid-column: 3; grid-row: 2; width: 100%; min-width: 0; color: var(--ui-muted); font-size: 9px; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: center; }
+.playBtnContent { grid-column: 3; grid-row: 1; display: flex; align-items: center; justify-content: center; gap: 16px; height: 30px; }
+.playBtn { flex: none; width: 23px; height: 23px; padding: 3px; border: 0; display: flex; align-items: center; justify-content: center; background: transparent; color: var(--ui-muted); border-radius: 50%; cursor: pointer;
+  svg { width: 100%; height: 100%; fill: currentColor; }
+  &:hover { color: var(--color-primary-font); background: var(--ui-selected); }
+  &:nth-child(2) { width: 30px; height: 30px; padding: 7px; color: var(--ui-surface); background: var(--color-font); }
 }
-
-.titleRow {
-  display: flex;
-  flex-flow: row nowrap;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-}
-.title {
-  flex: auto;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--color-font-label);
-  .mixin-ellipsis-1();
-}
-.status {
-  padding-top: 3px;
-  height: 23px;
-  .mixin-ellipsis-1();
-  max-width: 100%;
-}
-
-.timeContent {
-  width: 30%;
-  // position: relative;
-  flex: none;
-  color: var(--color-550);
-  font-size: 13px;
-  // padding-left: 10px;
-  display: flex;
-  flex-flow: row nowrap;
-  align-items: center;
-}
-.progress {
-  // position: absolute;
-  // top: 0;
-  // left: 0;
-  // width: 100%;
-  flex: auto;
-  // width: 160px;
-  position: relative;
-  // padding-bottom: 6px;
-  margin: 0 8px;
-  padding: 8px 0;
-  // height: 15px;
-  // .progressBar {
-  //   height: 4px;
-  //   // border-radius: 0;
-  // }
-}
-.time {
-  display: flex;
-  flex-flow: row nowrap;
-  justify-content: space-between;
-}
-
-.playBtnContent {
-  height: 100%;
-  flex: none;
-  display: flex;
-  flex-flow: row nowrap;
-  align-items: center;
-  padding-left: 10px;
-  padding-right: 15px;
-  gap: 18px;
-}
-
-.playBtn {
-  flex: none;
-  height: 52%;
-  // margin-top: -2px;
-  transition: @transition-fast;
-  transition-property: color, opacity;
-  color: var(--color-button-font);
-  opacity: 1;
-  cursor: pointer;
-
-  svg {
-    fill: currentColor;
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.2));
-  }
-  &:hover {
-    opacity: 0.8;
-  }
-  &:active {
-    opacity: 0.6;
-  }
-}
-
+.secondaryControls { grid-column: 4; grid-row: 1 / 3; justify-self: end; }
+.miniProgress { grid-column: 3; grid-row: 2; justify-self: center; }
+@media (max-width: 980px) { .player { padding: 12px 14px; column-gap: 10px; } .playBtnContent { gap: 10px; } }
+.progress { flex: 1; min-width: 0; position: relative; padding: 8px 0; margin: 0 9px; .progressBar { height: 3px; border-radius: 4px; } }
 </style>

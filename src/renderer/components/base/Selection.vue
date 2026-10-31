@@ -1,6 +1,6 @@
 <template>
   <div class="content" :class="[$style.select, show ? $style.active : '']">
-    <div ref="dom_btn" class="label-content" :class="$style.label" @click="handleShow">
+    <div ref="dom_btn" class="label-content" :class="$style.label" role="button" tabindex="0" :aria-expanded="show" @click="handleShow" @keydown.enter.space.prevent="handleShow" @keydown.esc.stop="handleHide()">
       <span class="label">{{ label }}</span>
       <div class="icon" :class="$style.icon">
         <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 451.847 451.847" space="preserve">
@@ -114,7 +114,7 @@ export default {
 <style lang="less" module>
 @import '@renderer/assets/styles/layout.less';
 
-@selection-height: 28px;
+@selection-height: 32px;
 
 .select {
   display: inline-block;
@@ -138,8 +138,9 @@ export default {
 }
 
 .label {
-  background-color: var(--color-button-background);
-  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  background-color: var(--ui-canvas);
+  padding: 0 11px;
   transition: background-color @transition-normal;
   height: @selection-height;
   // line-height: 27px;
@@ -187,7 +188,10 @@ export default {
   transition-property: transform, opacity;
   z-index: 10;
   border-radius: @form-radius;
-  box-shadow: 0 0 4px rgba(0, 0, 0, .15);
+  border: 1px solid var(--ui-border);
+  padding: 4px;
+  box-sizing: border-box;
+  box-shadow: var(--ui-shadow);
   overflow: auto;
   max-height: 200px;
 }

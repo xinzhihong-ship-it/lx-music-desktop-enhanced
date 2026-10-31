@@ -385,4 +385,10 @@ export default {
 }
 
 
+.container { background-color: var(--ui-surface); }
+.main { margin: 10px 38px 20px; gap: 22px; }
+.img { border-radius: 20px; box-shadow: var(--ui-shadow); opacity: 1; }
+.description { margin-top: 22px; p { line-height: 1.8; } }
+.modeButton, .qualitySelect { border-radius: 14px; }
+
 </style>

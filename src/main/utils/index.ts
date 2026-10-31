@@ -253,7 +253,7 @@ export const getTheme = () => {
   // themeId = 'naruto'
   // themeId = 'pink'
   // themeId = 'black'
-  let theme = themes.find(theme => theme.id == themeId)
+  let theme: LX.Theme | undefined = themes.find(theme => theme.id == themeId)
   if (!theme) {
     userThemes = getStore(STORE_NAMES.THEME).get('themes') as LX.Theme[] | null ?? []
     theme = userThemes.find(theme => theme.id == themeId)

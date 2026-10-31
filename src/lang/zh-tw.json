@@ -1,4 +1,13 @@
 {
+  "ui__brand_subtitle": "讓音樂，陪你久一點",
+  "ui__navigation": "音樂導覽",
+  "ui__switch_light": "切換至淺色主題",
+  "ui__switch_dark": "切換至深色主題",
+  "ui__search_placeholder": "搜尋歌曲、歌手或嗶哩嗶哩連結",
+  "ui__welcome_title": "聽見每一種喜歡。",
+  "ui__welcome_subtitle": "搜尋一段旋律、一個名字，或貼上嗶哩嗶哩連結。",
+  "theme_easy_light": "Easy · 晨光",
+  "theme_easy_dark": "Easy · 夜色",
   "setting__vst3_enable": "啟用 VST3 音訊處理",
   "setting__vst3_latency": "外掛延遲",
   "setting__vst3_bridge": "橋接緩衝",

@@ -4,8 +4,8 @@
     <div id="right">
       <layout-toolbar id="toolbar" />
       <layout-view id="view" />
-      <layout-play-bar id="player" />
     </div>
+    <layout-play-bar id="player" />
     <layout-icons />
     <layout-change-log-modal />
     <layout-update-modal />
@@ -44,6 +44,7 @@ onMounted(() => {
 <style lang="less">
 @import './assets/styles/index.less';
 @import './assets/styles/layout.less';
+@import './assets/styles/ui-tokens.less';
 
 html {
   height: 100vh;
@@ -123,35 +124,47 @@ body {
 
 #container {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--ui-sidebar-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
-  background-color: var(--color-app-background);
+  background-color: var(--ui-canvas);
 }
 
 #left {
-  flex: none;
-  width: @width-app-left;
+  min-height: 0;
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid var(--ui-border);
+  background: var(--ui-surface);
 }
 #right {
-  flex: auto;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-flow: column nowrap;
-  transition: background-color @transition-normal;
-  background-color: var(--color-main-background);
-
-  border-top-left-radius: @radius-border;
-  border-bottom-left-radius: @radius-border;
   overflow: hidden;
-  box-shadow: 0px 0px 4px rgba(0, 0, 0, 0.1);
 }
-#toolbar, #player {
+#toolbar {
   flex: none;
+}
+#player {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 #view {
   position: relative;
   flex: auto;
-  // display: flex;
   min-height: 0;
+  margin: 0 18px 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+
+@media (max-width: 980px) {
+  #view { margin: 0 10px 10px; }
 }
 
 .view-container {

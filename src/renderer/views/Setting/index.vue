@@ -1,9 +1,10 @@
 <template>
   <div :class="$style.main">
     <div class="scroll" :class="$style.toc">
-      <ul :class="$style.tocList" role="toolbar">
+      <ul :class="$style.tocList" role="tablist">
         <li v-for="h2 in tocList" :key="h2.id" :class="$style.tocListItem" role="presentation">
-          <h2
+          <button
+type="button"
             :class="[$style.tocH2, {[$style.active]: avtiveComponentName == h2.id }]"
             role="tab" :aria-selected="avtiveComponentName == h2.id"
             :aria-label="h2.title" ignore-tip @click="toggleTab(h2.id)"
@@ -12,7 +13,7 @@
               <svg-icon v-if="avtiveComponentName == h2.id" name="angle-right-solid" :class="$style.activeIcon" />
             </transition>
             {{ h2.title }}
-          </h2>
+          </button>
           <!-- <ul v-if="h2.children.length" :class="$style.tocList">
             <li v-for="h3 in h2.children" :key="h3.id" :class="$style.tocSubListItem">
               <h3 :class="[$style.tocH3, toc.activeId == h3.id ? $style.active : null]" :aria-label="h3.title">
@@ -177,139 +178,23 @@ export default {
 
 <style lang="less" module>
 @import '@renderer/assets/styles/layout.less';
-
-.main {
-  display: flex;
-  flex-flow: row nowrap;
-  height: 100%;
-  border-top: var(--color-list-header-border-bottom);
+.main { display: flex; height: 100%; box-sizing: border-box; gap: 18px; background: var(--ui-canvas); padding: 16px; }
+.toc { flex: 0 0 140px; min-height: 0; overflow-y: auto; }
+.tocList { display: flex; flex-direction: column; gap: 5px; }
+.tocH2 { width: 100%; display: block; border: 0; border-radius: 10px; text-align: left; background: transparent; padding: 10px 12px; line-height: 1.5; .mixin-ellipsis-1(); font-size: 12px; color: var(--ui-muted); cursor: pointer;
+  &:hover { background: var(--ui-hover); color: var(--ui-text); }
+  &.active { color: var(--color-primary-font); background: var(--ui-surface); font-weight: 600; }
 }
-
-.toc {
-  flex: 0 0 16%;
-  overflow-y: scroll;
-}
-.tocH2 {
-  line-height: 1.5;
-  .mixin-ellipsis-1();
-  font-size: 13px;
-  color: var(--color-font);
-  padding: 8px 10px;
-  transition: @transition-fast;
-  transition-property: background-color, color;
-
-  &:not(.active) {
-    cursor: pointer;
-    &:hover {
-      background-color: var(--color-button-background-hover);
-    }
-  }
-  &.active {
-    color: var(--color-primary);
-  }
-}
-.activeIcon {
-  height: .9em;
-  width: .9em;
-  margin-left: -0.45em;
-  vertical-align: -0.05em;
-}
-// .tocH3 {
-//   font-size: 13px;
-//   opacity: .8;
-// }
-
-// .tocList {
-//   .tocList {
-//     // padding-left: 15px;
-//   }
-// }
-// .tocSubListItem {
-//   padding-top: 10px;
-// }
-
-.setting {
-  padding: 0 15px 15px;
-  font-size: 14px;
-  box-sizing: border-box;
-  overflow-y: auto;
-  height: 100%;
-  position: relative;
-  width: 100%;
-
+.activeIcon { display: none; }
+.setting { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 25px; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: 16px; background: var(--ui-surface); font-size: 13px; position: relative;
   :global {
-    dt {
-      border-left: 5px solid var(--color-primary-alpha-700);
-      padding: 3px 7px;
-      margin: 15px 0;
-
-      + dd h3 {
-        margin-top: 0;
-      }
-    }
-
-    dd {
-      // margin-left: 15px;
-      // font-size: 13px;
-      > div {
-        padding: 0 15px;
-      }
-
-    }
-    h3 {
-      font-size: 12px;
-      margin: 25px 0 15px;
-    }
-    .p {
-      padding: 3px 0;
-      line-height: 1.3;
-      .btn {
-        + .btn {
-          margin-left: 10px;
-        }
-      }
-    }
-
-    .help-btn {
-      padding: 0;
-      margin: 0 0.4em;
-      border: none;
-      background: none;
-      color: var(--color-button-font);
-      cursor: pointer;
-      transition: opacity 0.2s ease;
-      &:hover {
-        opacity: 0.7;
-      }
-    }
-    .help-icon {
-      margin: 0 0.4em;
-    }
+    dt { font-size: 21px; font-weight: 600; padding: 0 0 17px; margin: 0 0 20px; border-bottom: 1px solid var(--ui-border); + dd h3 { margin-top: 0; } }
+    dd { > div { padding: 0; } + dt { margin-top: 28px; } }
+    h3 { font-size: 12px; font-weight: 600; margin: 25px 0 14px; }
+    .p { padding: 6px 0; line-height: 1.6; .btn + .btn { margin-left: 8px; } }
+    .help-btn { padding: 0; margin: 0 .4em; border: 0; background: none; color: var(--ui-muted); cursor: pointer; &:hover { color: var(--color-primary-font); } }
+    .help-icon { margin: 0 .4em; }
   }
 }
-
-// .btn-content {
-//   display: inline-block;
-//   transition: @transition-theme;
-//   transition-property: opacity, transform;
-//   opacity: 1;
-//   transform: scale(1);
-
-//   &.hide {
-//     opacity: 0;
-//     transform: scale(0);
-//   }
-// }
-
-
-// :global(dt):target, :global(h3):target {
-//   animation: highlight 1s ease;
-// }
-
-// @keyframes highlight {
-//   from { background: yellow; }
-//   to { background: transparent; }
-// }
-
+@media (max-width: 980px) { .main { gap: 12px; padding: 12px; } .toc { flex-basis: 125px; } .setting { padding: 20px; } }
 </style>
-

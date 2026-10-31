@@ -1,32 +1,31 @@
 <template>
-  <div ref="dom_menu" :class="$style.menu">
-    <ul :class="$style.list" role="toolbar">
-      <li v-for="item in menus" :key="item.to" :class="$style.navItem" role="presentation">
-        <router-link :class="[$style.link, {[$style.active]: $route.meta.name == item.name}]" role="tab" :aria-selected="$route.meta.name == item.name" :to="item.to" :aria-label="item.tips">
+  <nav :class="$style.menu" :aria-label="$t('ui__navigation')">
+    <ul :class="$style.list">
+      <li v-for="item in menus" :key="item.to" :class="[$style.navItem, { [$style.library]: item.name === 'List', [$style.settings]: item.name === 'Setting' }]">
+        <router-link :class="[$style.link, {[$style.active]: $route.meta.name == item.name}]" :aria-current="$route.meta.name == item.name ? 'page' : undefined" :to="item.to" :aria-label="item.tips">
           <svg fill="currentColor" version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" :viewBox="item.iconSize" :height="item.size" :width="item.size" space="preserve">
             <use :xlink:href="item.icon" />
           </svg>
+          <span>{{ item.tips }}</span>
         </router-link>
       </li>
     </ul>
-  </div>
+  </nav>
 </template>
 
 <script lang="ts">
 import { appSetting } from '@renderer/store/setting'
 import { useI18n } from '@root/lang'
-import { ref, computed } from '@common/utils/vueTools'
-import { useIconSize } from '@renderer/utils/compositions/useIconSize'
+import { computed } from '@common/utils/vueTools'
 
 export default {
   name: 'NavBar',
   setup() {
     const t = useI18n()
-    const dom_menu = ref<HTMLElement>()
-    const iconSize = useIconSize(dom_menu, 0.32)
+
 
     const menus = computed(() => {
-      const size = iconSize.value
+      const size = 19
       return [
         {
           to: '/search',
@@ -105,126 +104,32 @@ export default {
     return {
       appSetting,
       menus,
-      dom_menu,
     }
   },
 }
 </script>
 
 <style lang="less" module>
-@import '@renderer/assets/styles/layout.less';
-
-.menu {
-  flex: auto;
-  // &.controlBtnLeft {
-  //   display: flex;
-  //   flex-flow: column nowrap;
-  //   justify-content: center;
-  //   padding-bottom: @control-btn-height;
-  // }
-  // padding: 5px;
-}
-.list {
-  -webkit-app-region: no-drag;
-  // margin-bottom: 15px;
-  &:last-child {
-    margin-bottom: 0;
-  }
-  // background-color: pink;
-  // dt {
-  //   padding-left: 5px;
-  //   font-size: 11px;
-  //   transition: @transition-normal;
-  //   transition-property: color;
-  //   color: @color-theme-font-label;
-  //   .mixin-ellipsis-1();
-  // }
-}
-.navItem {
-  position: relative;
-  &:before {
-    content: '';
-    display: block;
-    width: 100%;
-    padding-bottom: 84%;
-  }
-}
+.menu { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 14px; -webkit-app-region: no-drag; }
+.list { display: flex; flex-direction: column; min-height: 100%; gap: 5px; }
+.navItem { flex: none; }
+.library { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--ui-border); }
+.settings { margin-top: auto; padding-top: 22px; }
 .link {
-  position: absolute;
-  left: 0%;
-  top: 0%;
-  width: 100%;
-  height: 100%;
-  // left: 15%;
-  // top: 15%;
-  // width: 70%;
-  // height: 70%;
-  // display: block;
-  box-sizing: border-box;
-  // text-decoration: none;
-  // border-radius: 20%;
-
-  // padding: 18px 3px;
-  // margin: 5px 0;
-  // border-left: 5px solid transparent;
-  transition: @transition-fast;
-  transition-property: background-color, opacity;
-  color: var(--color-nav-font);
-  cursor: pointer;
-  // font-size: 11.5px;
-  text-align: center;
-  outline: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  // border-radius: @radius-border;
-  .mixin-ellipsis-1();
-  &:before {
-    .mixin-after();
-    left: 0;
-    top: 0;
-    width: 3px;
-    height: 100%;
-    background-color: var(--color-primary-dark-200-alpha-700);
-    border-radius: 4px;
-    transform: translateX(-100%);
-    transition: transform @transition-fast;
-  }
-
-  &.active {
-    // border-left-color: @color-theme-active;
-    background-color: var(--color-primary-light-300-alpha-700);
-
-    &:before {
-      transform: translateX(0);
-    }
-
-    &:hover {
-      background-color: var(--color-primary-light-300-alpha-800);
-    }
-  }
-
-
-  &:hover {
-    color: var(--color-nav-font);
-
-    &:not(.active) {
-      opacity: .8;
-      background-color: var(--color-primary-light-400-alpha-700);
-    }
-  }
-  &:active:not(.active) {
-    opacity: .6;
-    background-color: var(--color-primary-light-300-alpha-600);
-  }
+  display: flex; align-items: center; gap: 12px; position: relative;
+  min-height: 43px; box-sizing: border-box; padding: 10px 13px; border-radius: 12px;
+  color: var(--ui-muted); text-decoration: none; font-size: 12px; line-height: 1.4;
+  transition: background-color .2s ease, color .2s ease;
+  svg { flex: none; fill: currentColor; }
+  span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  &:hover { color: var(--ui-text); background: var(--ui-hover); }
+  &.active { color: var(--color-primary-font); background: var(--ui-selected); font-weight: 600; }
+  &.active:after { content: ''; width: 4px; height: 4px; border-radius: 50%; background: currentColor; margin-left: auto; flex: none; }
 }
-
-// .icon {
-//   // margin-bottom: 5px;
-//   &> svg {
-//     width: 32%;
-//   }
-// }
-
+@media (max-width: 980px) {
+  .menu { padding: 0 7px 12px; }
+  .link { justify-content: center; padding: 12px 0; min-height: 44px; span { display: none; } &.active:after { display: none; } }
+  .library { margin-top: 9px; padding-top: 9px; }
+  .settings { padding-top: 12px; }
+}
 </style>

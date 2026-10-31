@@ -716,4 +716,12 @@ onBeforeUnmount(() => {
   flex: auto;
   min-height: 0;
 }
+.lists { width: 190px; min-width: 140px; background: var(--ui-canvas); border-right: 1px solid var(--ui-border); }
+.header { height: 51px; padding: 0 7px; border-bottom: 1px solid var(--ui-border); }
+.account { padding: 14px 14px 9px; img { border-radius: 50%; } }
+.item { width: calc(100% - 16px); margin: 2px 8px; padding: 0 12px; height: 35px; border-radius: 9px; font-size: 11px; &.active { background: var(--ui-selected); } }
+.listHeader { min-height: 68px; height: auto; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--ui-border); h3 { font-size: 17px; font-weight: 600; } }
+.filterInput { border-radius: 18px; border-color: var(--ui-border); background: var(--ui-canvas); font-size: 11px; }
+@media (max-width: 1100px) { .lists { width: 155px; } }
+
 </style>

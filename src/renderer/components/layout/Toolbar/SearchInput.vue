@@ -10,7 +10,7 @@
         <use xlink:href="#icon-right" />
       </svg>
     </button>
-    <material-search-input v-model="searchText" :class="$style.search" :list="tipList" :visible-list="visibleList" @event="handleEvent" />
+    <material-search-input v-model="searchText" :placeholder="$t('ui__search_placeholder')" :class="$style.search" :list="tipList" :visible-list="visibleList" @event="handleEvent" />
   </div>
 </template>
 
@@ -157,44 +157,11 @@ export default {
 </script>
 
 <style lang="less" module>
-@import '@renderer/assets/styles/layout.less';
-
-.container {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: calc(35% + 56px);
-  height: @height-toolbar * 0.52;
-  -webkit-app-region: no-drag;
+.container { display: flex; align-items: center; gap: 7px; width: min(500px, 78%); min-width: 0; height: 38px; -webkit-app-region: no-drag; }
+.navBtn { flex: 0 0 27px; width: 27px; height: 27px; padding: 7px; border: 0; border-radius: 50%; background: transparent; color: var(--ui-muted); cursor: pointer;
+  &:hover:not(:disabled) { color: var(--ui-text); background: var(--ui-hover); }
+  &:disabled { opacity: .25; cursor: default; }
+  svg { width: 100%; height: 100%; }
 }
-
-.navBtn {
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  padding: 5px;
-  border: 0;
-  background: none;
-  color: var(--color-font-label);
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    color: var(--color-primary-font-hover);
-  }
-
-  &:disabled {
-    opacity: .35;
-    cursor: default;
-  }
-
-  svg {
-    width: 100%;
-    height: 100%;
-  }
-}
-
-.search {
-  flex: 1;
-  width: auto;
-}
+.search { flex: 1; width: auto; min-width: 0; margin-left: 5px; }
 </style>
