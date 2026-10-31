@@ -12,6 +12,8 @@ import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { getBundledMacMpvAppNames } from '@common/utils/mpvCompatibility'
 import { isCoreAudioMappedDevice, resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
 import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
+import { createAudioDeviceCache } from '@main/utils/audioDeviceCache'
+import { parseMpvAudioDevices } from '@common/utils/mpvDeviceList'
 
 export type MpvPathSource =
   | 'custom'
@@ -67,8 +69,7 @@ const FIRST_RUN_DEVICE_TIMEOUT_MS = 60_000
 const DEVICE_LIST_TIMEOUT_MS = 10_000
 // 进程级预热标记：一旦 mpv 成功产出过输出，后续改用较短的超时。
 let mpvSpawnWarmedUp = false
-// 设备列表缓存，避免频繁 spawn；预热完成后基本不再触发冷启动。
-let cachedAudioDevices: Array<{ id: string, name: string }> | null = null
+const audioDeviceCache = createAudioDeviceCache<{ id: string, name: string }>()
 
 const sanitizeUrl = (url: string) => {
   try {
@@ -1235,15 +1236,14 @@ export class MpvController {
   /**
    * 运行 mpv --audio-device=help 获取可用设备列表
    */
-  static async listAudioDevices(options: { timeoutMs?: number } = {}): Promise<
-  Array<{ id: string, name: string }>
-  > {
+  static async listAudioDevices(options: { timeoutMs?: number, forceRefresh?: boolean } = {}): Promise<Array<{ id: string, name: string }>> {
     const mpvPath = resolveMpvPath()
-    // 已成功枚举过则直接回缓存，避免重复 spawn 再次触发冷启动。
-    if (cachedAudioDevices != null && options.timeoutMs == null) {
-      log.info('[listAudioDevices] using cached devices')
-      return cachedAudioDevices
-    }
+    const stat = (() => { try { return fs.statSync(mpvPath.path) } catch { return null } })()
+    const key = `${mpvPath.path}:${stat?.mtimeMs ?? ''}:${stat?.size ?? ''}`
+    return audioDeviceCache.get(key, options.forceRefresh === true, async() => MpvController.probeAudioDevices(mpvPath, options), devices => devices.length > 1)
+  }
+
+  private static async probeAudioDevices(mpvPath: MpvPathInfo, options: { timeoutMs?: number }): Promise<Array<{ id: string, name: string }>> {
     log.info(
       `[listAudioDevices] mpv path: ${mpvPath.path} source: ${mpvPath.source}`,
     )
@@ -1282,9 +1282,6 @@ export class MpvController {
         if (devices.length > 1 || output.length > 0) {
           mpvSpawnWarmedUp = true
         }
-        // 只有拿到真实设备（多于仅默认项）才写缓存，失败结果不缓存，
-        // 让下次调用仍能用宽松超时重试。
-        if (devices.length > 1) cachedAudioDevices = devices
         resolve(devices)
       }
       proc.stdout?.on('data', (data) => {
@@ -1298,31 +1295,7 @@ export class MpvController {
         log.info(
           `[listAudioDevices] mpv exited code=${code ?? 'null'} output length=${output.length}`,
         )
-        const devices: Array<{ id: string, name: string }> = [
-          { id: 'auto', name: '默认设备' },
-        ]
-        // macOS 上 mpv 会同时列出 coreaudio 与 avfoundation 两套驱动，
-        // 造成同一物理设备重复出现；按名称去重，并优先保留 avfoundation（mpv 默认驱动）
-        const deviceMap = new Map<string, string>()
-        for (const line of output.split('\n')) {
-          const match = line.match(/^\s*'([^']+)'\s*\(([^)]+)\)/)
-          if (!match || match[1] === 'auto') continue
-          const id = match[1]
-          const name = match[2]
-          const existingId = deviceMap.get(name)
-          if (!existingId) {
-            deviceMap.set(name, id)
-          } else if (
-            isMac &&
-            id.startsWith('avfoundation/') &&
-            !existingId.startsWith('avfoundation/')
-          ) {
-            deviceMap.set(name, id)
-          }
-        }
-        for (const [name, id] of deviceMap) {
-          devices.push({ id, name })
-        }
+        const devices = parseMpvAudioDevices(output, isMac)
         log.info(
           `[listAudioDevices] parsed devices: ${JSON.stringify(devices)}`,
         )

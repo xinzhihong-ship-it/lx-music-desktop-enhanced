@@ -151,7 +151,6 @@ import { isMac, log } from '@common/utils'
 import useDrag from '@renderer/utils/compositions/useDrag'
 import SettingVst3 from './SettingVst3.vue'
 import useAudioDevices from '@renderer/utils/compositions/useAudioDevices'
-import { getAudioDevicePreference, getAudioDevicePreferenceSetting, rememberAudioDevice } from '@common/utils/audioDeviceSelection'
 import {
   movePlayErrorAction,
   normalizePlayErrorApiSourceCount,
@@ -220,7 +219,7 @@ export default {
       ...(isMac ? [{ id: 'audirvana', label: t('setting__play_engine_audirvana') }] : []),
     ]
     const playEngine = ref(appSetting['player.playEngine'])
-    const { mediaDevices, mediaDeviceId, prepareEngineChange } = useAudioDevices()
+    const { mediaDevices, mediaDeviceId, prepareEngineChange, selectMediaDevice } = useAudioDevices()
     let engineChangeVersion = 0
     const handlePlayEngineChange = async() => {
       const version = ++engineChangeVersion
@@ -345,14 +344,17 @@ export default {
     })
 
     const handleMediaDeviceIdChnage = async() => {
+      try {
+        await selectMediaDevice(mediaDeviceId.value)
+      } catch (err) {
+        mediaDeviceId.value = appSetting['player.mediaDeviceId']
+        log.error('[SettingPlay] output selection failed:', err)
+        showTip({ message: err?.message ?? String(err), position: { top: 80, left: window.innerWidth / 2 }, autoCloseTime: 3000 }, { beforeClose: () => {} })
+        return
+      }
       // mpv 模式：直接保存 mpv 设备 ID，由主进程在启动 mpv 时拼接 --audio-device，不再污染 extraArgs
       if (isMpvEngine()) {
         log.info('[SettingPlay] mediaDeviceId changed to:', mediaDeviceId.value, 'isPlay:', isPlay.value)
-        const label = mediaDevices.value.find(device => device.deviceId === mediaDeviceId.value)?.label ?? ''
-        updateSetting({
-          'player.mediaDeviceId': mediaDeviceId.value,
-          ...getAudioDevicePreferenceSetting(rememberAudioDevice(getAudioDevicePreference(appSetting), 'mpv', mediaDeviceId.value, label)),
-        })
         if (!mpvVideoPlayer.isEmpty()) {
           void mpvVideoPlayer.setAudioDevice(mediaDeviceId.value).catch(err => {
             log.error('[SettingPlay] video audio device update failed:', err)
@@ -366,11 +368,8 @@ export default {
             log.error('[SettingPlay] mpv restart failed:', err)
           })
         }
-        return
       }
-      // Electron 模式：AudioContext 与 <audio> 一起重定向到所选设备（Chromium 110+），
-      // 高级音频功能激活时不再锁定默认设备。
-      appSetting['player.mediaDeviceId'] = mediaDeviceId.value
+      // Electron output binding and persistence were completed by selectMediaDevice.
     }
 
     const handleUpdatePowerSaveBlocker = (enabled) => {

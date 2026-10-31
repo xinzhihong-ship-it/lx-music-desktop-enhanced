@@ -172,6 +172,19 @@ function loadPlayer() {
   return { player: module.exports, appSetting, state, runtime: modules['./vst3'].vst3Runtime }
 }
 
+test('an effects rebuild cannot bind an unverified imported device ID', async() => {
+  const { player, appSetting, state } = loadPlayer()
+  appSetting['player.mediaDeviceId'] = 'unverified-imported-id'
+  player.createAudio()
+  appSetting['player.audioVisualization'] = true
+  await player.applyAudioRoutingNow()
+  assert.ok(state.audio.every(item => !item.sinkCalls.includes('unverified-imported-id')))
+  await player.setMediaDeviceId('validated-output', () => true)
+  assert.ok(state.audio.some(item => item.sinkCalls.includes('validated-output')))
+  await player.setMediaDeviceId('rejected-stale-output', () => false)
+  assert.ok(state.audio.every(item => !item.sinkCalls.includes('rejected-stale-output')))
+})
+
 test('an unavailable output is rejected before a new media source is loaded', async() => {
   const { player, state } = loadPlayer()
   player.createAudio()
@@ -305,6 +318,7 @@ test('a replacement play failure rolls back to the old audio element', async() =
 test('visualization switches to outputPipe and disabling it switches back to audio', async() => {
   const { player, appSetting, state } = loadPlayer()
   player.createAudio()
+  await player.setMediaDeviceId('device-a')
   const oldAudio = state.audio[0]
   oldAudio.src = 'track://current'
   await oldAudio.play()

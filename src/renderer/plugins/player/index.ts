@@ -105,8 +105,10 @@ let mediaStreamDest: MediaStreamAudioDestinationNode | null = null
 let unsubAudioMediaListChangeEvent: (() => void) | null = null
 
 const normalizeOutputSinkId = (deviceId: string) => deviceId || 'default'
-let desiredOutputSinkId = normalizeOutputSinkId(appSetting['player.mediaDeviceId'])
-const getDesiredOutputSinkId = () => desiredOutputSinkId || normalizeOutputSinkId(appSetting['player.mediaDeviceId'])
+// Only a validated, successful sink transaction may change this value. Raw
+// imported settings must never be rebound by an unrelated effects rebuild.
+let desiredOutputSinkId = 'default'
+const getDesiredOutputSinkId = () => desiredOutputSinkId
 
 const applyCurrentOutputSink = async(deviceId: string) => {
   await applyOutputSink({
@@ -122,7 +124,7 @@ const enqueueLatestRoutingChange = async(key: string, task: () => Promise<void>)
 }
 
 const scheduleCurrentOutputSink = async() => {
-  await enqueueLatestRoutingChange('output-sink', async() => {
+  await enqueueLatestRoutingChange('restore-output-sink', async() => {
     await applyCurrentOutputSink(getDesiredOutputSinkId())
   }).catch((err: Error) => {
     console.error('apply output sink failed:', err?.message ?? err)
@@ -627,7 +629,7 @@ export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, fi
   updateSourceSampleRate(videoAudioUrl ?? src)
   seekResume = false
   if (vst3Node) resetVst3Audio(false)
-  if (src && !await ensureAudioDeviceForPlayback(isBiliVideoActive() ? 'mpv' : undefined)) return
+  if (src) await ensureAudioDeviceForPlayback(isBiliVideoActive() ? 'mpv' : undefined)
   if (revision !== playbackRevision) return
   if (isBiliVideoActive()) {
     if (!src) return
@@ -1262,17 +1264,17 @@ export const applyAudioRoutingNow = async() => applyAudioRouting()
 
 let outputSinkRequestVersion = 0
 
-export const setMediaDeviceId = async(mediaDeviceId: string): Promise<void> => {
-  if (isBiliVideoActive()) return
-  if (isAudirvanaEngine()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
-  desiredOutputSinkId = normalizeOutputSinkId(mediaDeviceId)
+export const setMediaDeviceId = async(mediaDeviceId: string, isCurrent: () => boolean = () => true): Promise<void> => {
+  if (!isCurrent()) return
+  if (isAudirvanaEngine() && !isBiliVideoActive()) return audirvanaPlayer.setMediaDeviceId(mediaDeviceId)
   const requestVersion = ++outputSinkRequestVersion
-  const requestedSinkId = desiredOutputSinkId
+  const requestedSinkId = normalizeOutputSinkId(mediaDeviceId)
   await enqueueLatestRoutingChange('output-sink', async() => {
     // 设备变更必须等待正在进行的元素重建，再绑定到最终硬件出口。
     // 已被更新请求取代的任务不再触碰旧设备，避免 A→B 时短暂回到 A。
-    if (requestVersion !== outputSinkRequestVersion) return
+    if (requestVersion !== outputSinkRequestVersion || !isCurrent()) return
     await applyCurrentOutputSink(requestedSinkId)
+    if (requestVersion === outputSinkRequestVersion && isCurrent()) desiredOutputSinkId = requestedSinkId
   })
 }
 

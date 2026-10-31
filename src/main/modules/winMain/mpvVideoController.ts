@@ -4,7 +4,6 @@ import path from 'node:path'
 import { log } from '@common/utils'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
-import { resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
 import { sendEvent, getBrowserWindow } from './main'
 import { MpvController } from './mpvController'
 import * as accountSessions from '@main/modules/account/sessions'
@@ -372,7 +371,7 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
   currentUrl = videoUrl
   try {
     player.setAudioDevice(
-      resolveMpvAudioDevice(normalizeAudioDevice(global.lx.appSetting['player.mediaDeviceId']), { isMacPlatform: true }),
+      normalizeAudioDevice(global.lx.appSetting['player.mediaDeviceId']),
     )
   } catch (error) {
     log.warn('[MpvVideoController] set audio device failed', error)
@@ -407,7 +406,8 @@ export const setAudioDevice = (device: string) => {
     return
   }
   if (!native || !initialized) return
-  native.setAudioDevice(resolveMpvAudioDevice(normalizedDevice, { isMacPlatform: true }))
+  // Native video has no audio-driver failure recovery; keep the verified AO.
+  native.setAudioDevice(normalizedDevice)
 }
 
 export const play = () => {

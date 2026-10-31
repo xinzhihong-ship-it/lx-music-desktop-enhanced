@@ -7,21 +7,23 @@ const ts = require('typescript')
 
 const noop = () => {}
 const deferred = () => {
-  let resolve
-  const promise = new Promise(done => { resolve = done })
-  return { promise, resolve }
+  let complete
+  const promise = new Promise(resolve => { complete = resolve })
+  return { promise, resolve: complete }
 }
 const drain = async() => { await new Promise(resolve => setImmediate(resolve)) }
 
 function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = Promise.resolve(), filterWait } = {}) {
   const hub = new EventEmitter()
   const timers = new Map()
-  const state = { plays: 0, stops: 0, loads: 0, skips: 0, empty: false, resources: [], unmount: [] }
+  const state = { plays: 0, stops: 0, loads: 0, skips: 0, empty: false, resources: [], unmount: [], resourceError: null }
   let timerId = 0
   const window = { lx: { isPlayedStop: false, apiInitPromise: [Promise.resolve(true)] }, app_event: hub, key_event: new EventEmitter(), i18n: { t: key => key } }
   for (const event of ['playerError', 'pause', 'stop', 'error', 'playerEmptied']) hub[event] = () => hub.emit(event)
   const globals = {
-    window, document: { hidden }, console: { log: noop, warn: noop, error: noop },
+    window,
+    document: { hidden },
+    console: { log: noop, warn: noop, error: noop },
     setTimeout: (fn, ms = 0) => { const id = ++timerId; timers.set(id, { fn, ms }); return id },
     clearTimeout: id => timers.delete(id),
   }
@@ -40,9 +42,12 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     isEmpty: () => state.empty,
     setPause: () => { playerState.isPlay.value = false; hub.pause() },
     setStop: async() => { state.stops++; playerState.isPlay.value = false; hub.pause(); hub.playerEmptied() },
-    setPlay: () => { state.plays++ }, getCurrentTime: () => 12, setCurrentTime: noop,
-    setResource: async(src) => { state.resources.push(src) },
-    createAudio: noop, applyAudioRoutingNow: async() => {},
+    setPlay: () => { state.plays++ },
+    getCurrentTime: () => 12,
+    setCurrentTime: noop,
+    setResource: async(src) => { if (state.resourceError) { const error = state.resourceError; state.resourceError = null; throw error } state.resources.push(src) },
+    createAudio: noop,
+    applyAudioRoutingNow: async() => {},
   }
   const strategy = { getPlayErrorActions: () => actions, getPlayErrorApiSourceCount: () => 2, getPlayErrorRetryCount: () => retryCount, isPlayErrorHandlingEnabled: () => true }
   const deps = {
@@ -50,9 +55,10 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     '@renderer/plugins/i18n': { useI18n: () => key => key },
     '@renderer/store/player/state': playerState,
     '@renderer/plugins/player': plugin,
-    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlayQualityActual: noop, setPlaySource: noop, setPlay:value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
+    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlayQualityActual: noop, setPlaySource: noop, setPlay: value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
     '@renderer/store/setting': { appSetting: { 'player.playEngine': 'electron', 'common.apiSource': 'a', 'player.togglePlayMethod': 'listLoop' } },
-    '@renderer/core/player/errorStrategy': strategy, './errorStrategy': strategy,
+    '@renderer/core/player/errorStrategy': strategy,
+    './errorStrategy': strategy,
     './playbackAttempt': load('src/renderer/core/player/playbackAttempt.ts', {}),
     '@common/utils/playbackRecovery': load('src/common/utils/playbackRecovery.ts', {}),
     '@renderer/core/music/online': { loadDetailedQuality: async() => {} },
@@ -62,7 +68,8 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     '@common/utils/playErrorStrategy': { getNextApiSourceId: (_id, tried) => tried.has('b') ? undefined : 'b' },
     '@renderer/store': { userApi: { list: [{ id: 'a' }, { id: 'b' }] } },
     '@renderer/core/apiSource': { setUserApi: async id => { await apiWait; deps['@renderer/store/setting'].appSetting['common.apiSource'] = id } },
-    './playbackIntent': intent, '@renderer/core/player/playbackIntent': intent,
+    './playbackIntent': intent,
+    '@renderer/core/player/playbackIntent': intent,
     './utils': { filterList: () => filterWait?.promise, setPowerSaveBlocker: noop },
     '@renderer/utils': { setTitle: noop },
     '@renderer/core/player/utils': { setPowerSaveBlocker: noop },
@@ -82,7 +89,13 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
   for (const name of ['useMediaSessionInfo', 'usePlayProgress', 'usePlayEvent', 'useLyric', 'useVolume', 'useWatchList', 'usePlaybackRate', 'useSoundEffect', 'useMaxOutputChannelCount', 'usePreloadNextMusic']) deps[`./${name}`] = { default: noop }
   load('src/renderer/core/useApp/usePlayer/usePlayer.ts', deps).default()
   return {
-    state, hub, action, intent, urlWait, timers, playerState,
+    state,
+    hub,
+    action,
+    intent,
+    urlWait,
+    timers,
+    playerState,
     fire(ms) {
       const entry = [...timers].find(([, item]) => item.ms === ms)
       if (!entry) return false
@@ -90,6 +103,29 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     },
   }
 }
+
+test('device unavailability stops the current attempt without switching API, quality or track', async() => {
+  const h = harness()
+  h.state.empty = true
+  h.state.resourceError = Object.assign(new Error('output unavailable'), { code: 'AUDIO_DEVICE_UNAVAILABLE' })
+  h.action.play(); await drain()
+  h.urlWait.resolve('https://example.invalid/song.mp3'); await drain(); await drain()
+  assert.equal(h.state.skips, 0)
+  assert.equal(h.state.loads, 0)
+  assert.equal(h.playerState.playMusicInfo.musicInfo.id, 'song')
+  assert.deepEqual(h.state.resources, [])
+})
+
+test('a selection change during resource validation retries the same track explicitly', async() => {
+  const h = harness()
+  h.state.empty = true
+  h.state.resourceError = Object.assign(new Error('output changed'), { code: 'AUDIO_DEVICE_SELECTION_CHANGED' })
+  h.action.play(); await drain()
+  h.urlWait.resolve('https://example.invalid/song.mp3'); await drain(); await drain()
+  assert.equal(h.state.resources.length, 1)
+  assert.equal(h.state.skips, 0)
+  assert.equal(h.playerState.playMusicInfo.musicInfo.id, 'song')
+})
 
 test('paused background errors cannot start recovery or skip a track', async() => {
   const h = harness()

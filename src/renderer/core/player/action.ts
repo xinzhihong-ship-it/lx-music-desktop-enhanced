@@ -305,8 +305,13 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     console.log(err)
     const message = err?.message ?? String(err)
+    if (err?.code === 'AUDIO_DEVICE_SELECTION_CHANGED') {
+      setMusicUrl(musicInfo, true, options)
+      return
+    }
     setAllStatus(message)
     window.app_event.error()
+    if (err?.code === 'AUDIO_DEVICE_UNAVAILABLE') return
     if (isPlayErrorHandlingEnabled()) window.app_event.playerError()
   }).finally(() => {
     if (musicInfo === playMusicInfo.musicInfo && requestId === activeUrlRequest) {

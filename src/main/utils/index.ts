@@ -8,6 +8,7 @@ import { migrateDataJson, migrateHotKey, migrateUserApi, parseDataFile } from '.
 import { nativeTheme, powerSaveBlocker } from 'electron'
 import { joinPath } from '@common/utils/nodejs'
 import themes from '@common/theme/index.json'
+import { sanitizeAudioDeviceSettings } from '@common/utils/audioDeviceSelection'
 
 export const parseEnvParams = (argv = process.argv): { cmdParams: LX.CmdParams, deeplink: string | null } => {
   const cmdParams: LX.CmdParams = {}
@@ -66,6 +67,7 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
   const updatedSetting: Partial<LX.AppSetting> = {}
 
   if (targetSetting) {
+    targetSetting = sanitizeAudioDeviceSettings(targetSetting, originSetting)
     const originSettingKeys = Object.keys(originSettingCopy)
     const targetSettingKeys = Object.keys(targetSetting)
 

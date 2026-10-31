@@ -1,6 +1,6 @@
 <template>
   <div class="content" :class="[$style.select, show ? $style.active : '']">
-    <div ref="dom_btn" class="label-content" :class="$style.label" role="button" tabindex="0" :aria-expanded="show" @click="handleShow" @keydown.enter.space.prevent="handleShow" @keydown.esc.stop="handleHide()">
+    <div ref="dom_btn" class="label-content" :class="$style.label" role="combobox" aria-haspopup="listbox" tabindex="0" :aria-label="$attrs['aria-label']" :aria-expanded="show" :aria-controls="`${listId}-list`" :aria-activedescendant="show && highlightedIndex >= 0 ? `${listId}-${highlightedIndex}` : undefined" @click="handleShow" @keydown="handleKeydown" @blur="handleHide()">
       <span class="label">{{ label }}</span>
       <div class="icon" :class="$style.icon">
         <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 451.847 451.847" space="preserve">
@@ -8,10 +8,10 @@
         </svg>
       </div>
     </div>
-    <ul v-if="show" ref="dom_list" class="selection-list scroll" :class="$style.list" :style="listStyles">
+    <ul v-if="show" :id="`${listId}-list`" ref="dom_list" role="listbox" class="selection-list scroll" :class="$style.list" :style="listStyles">
       <li
-        v-for="(item, index) in list" :key="index" :class="[$style.listItem, (itemKey ? item[itemKey] : item) == modelValue ? $style.active : null]"
-        :aria-label="itemName ? item[itemName] : item" @click="handleClick(item)"
+        v-for="(item, index) in list" :id="`${listId}-${index}`" :key="index" role="option" :aria-selected="(itemKey ? item[itemKey] : item) == modelValue" :class="[$style.listItem, (itemKey ? item[itemKey] : item) == modelValue ? $style.active : null, index === highlightedIndex ? $style.highlighted : null]"
+        :aria-label="itemName ? item[itemName] : item" @mousedown.prevent @mousemove="highlightedIndex = index" @click="handleClick(item)"
       >
         {{ itemName ? item[itemName] : item }}
       </li>
@@ -20,6 +20,7 @@
 </template>
 
 <script>
+let nextSelectionId = 0
 
 export default {
   props: {
@@ -46,6 +47,8 @@ export default {
   data() {
     return {
       show: false,
+      highlightedIndex: -1,
+      listId: `lx-selection-${++nextSelectionId}`,
       listStyles: {
         transform: 'scaleY(0) translateY(0)',
       },
@@ -59,7 +62,7 @@ export default {
     },
     label() {
       if (this.modelValue == null) return ''
-      if (this.itemName == null) return this.modelValue
+      if (!this.itemName) return this.modelValue
       const item = this.list[this.activeIndex]
       if (!item) return ''
       return item[this.itemName]
@@ -74,22 +77,40 @@ export default {
   methods: {
     handleHide(e) {
       if (!this.show) return
-      // if (e && e.target.parentNode != this.$refs.dom_list && this.show) return this.show = false
-      if (e && (e.target == this.$refs.dom_btn || this.$refs.dom_btn.contains(e.target))) return
+      if (e && (this.$refs.dom_btn.contains(e.target) || this.$refs.dom_list?.contains(e.target))) return
+      this.show = false
       this.listStyles.transform = 'scaleY(0) translateY(0)'
-      setTimeout(() => {
-        this.show = false
-      }, 50)
     },
     handleClick(item) {
-      // console.log(this.modelValue)
-      if (item === this.modelValue) return
-      this.$emit('update:modelValue', this.itemKey ? item[this.itemKey] : item)
+      const value = this.itemKey ? item[this.itemKey] : item
+      this.handleHide()
+      if (value === this.modelValue) return
+      this.$emit('update:modelValue', value)
       this.$emit('change', item)
+    },
+    handleKeydown(event) {
+      const { key } = event
+      if (key === 'Tab') { this.handleHide(); return }
+      if (key === 'Escape') { event.stopPropagation(); this.handleHide(); return }
+      if (!['Enter', ' ', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(key)) return
+      event.preventDefault()
+      if (key === 'Enter' || key === ' ') {
+        if (this.show && this.highlightedIndex >= 0) this.handleClick(this.list[this.highlightedIndex])
+        else this.handleShow()
+        return
+      }
+      const wasOpen = this.show
+      if (!wasOpen) this.handleShow()
+      if (key === 'Home') this.highlightedIndex = 0
+      else if (key === 'End') this.highlightedIndex = this.list.length - 1
+      else if (wasOpen) this.highlightedIndex = Math.max(0, Math.min(this.list.length - 1, this.highlightedIndex + (key === 'ArrowDown' ? 1 : -1)))
+      this.$nextTick(() => this.$refs.dom_list?.children[this.highlightedIndex]?.scrollIntoView({ block: 'nearest' }))
     },
     handleShow() {
       this.show = true
+      this.highlightedIndex = this.activeIndex >= 0 ? this.activeIndex : this.list.length ? 0 : -1
       this.$nextTick(() => {
+        if (!this.show || !this.$refs.dom_list) return
         this.listStyles.transform = `scaleY(1) translateY(${this.handleGetOffset()}px)`
 
         const activeItem = this.$refs.dom_list.children[this.activeIndex]
@@ -206,7 +227,7 @@ export default {
   box-sizing: border-box;
   .mixin-ellipsis-1();
 
-  &:hover {
+  &:hover, &.highlighted {
     background-color: var(--color-button-background-hover);
   }
   &:active {

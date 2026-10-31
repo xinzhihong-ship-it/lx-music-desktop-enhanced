@@ -55,8 +55,8 @@ export default () => {
     const { restartMpvController } = await import('../mpvController')
     return restartMpvController(state ?? {})
   })
-  mainHandle(WIN_MAIN_RENDERER_EVENT_NAME.mpv_listAudioDevices, async() => {
+  mainHandle<{ forceRefresh?: boolean }, Array<{ id: string, name: string }>>(WIN_MAIN_RENDERER_EVENT_NAME.mpv_listAudioDevices, async({ params }) => {
     log.info('[listAudioDevices] IPC invoked')
-    return MpvController.listAudioDevices()
+    return MpvController.listAudioDevices({ forceRefresh: params?.forceRefresh === true })
   })
 }

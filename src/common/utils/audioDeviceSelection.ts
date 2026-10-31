@@ -12,12 +12,29 @@ export interface AudioDevicePreference {
   mpvLabel?: string
 }
 
+const validDeviceString = (value: unknown, limit: number): value is string => typeof value === 'string' && value.length <= limit && !Array.from(value).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+export const normalizeAudioDeviceId = (value: unknown, fallback = 'default') => validDeviceString(value, 4096) ? value || fallback : fallback
+export const normalizeAudioDeviceLabel = (value: unknown, fallback = '') => validDeviceString(value, 1024) ? value : fallback
+const deviceSettingKeys = ['player.mediaDeviceId', 'player.mediaDeviceId.electron', 'player.mediaDeviceId.mpv', 'player.mediaDeviceLabel', 'player.mediaDeviceLabel.electron', 'player.mediaDeviceLabel.mpv'] as const
+export const sanitizeAudioDeviceSettings = (setting: Partial<LX.AppSetting>, current: Partial<LX.AppSetting> = {}): Partial<LX.AppSetting> => {
+  const result = { ...setting }
+  for (const key of deviceSettingKeys) {
+    if (!Object.prototype.hasOwnProperty.call(setting, key)) continue
+    const id = key.startsWith('player.mediaDeviceId')
+    const fallback = key === 'player.mediaDeviceId' ? 'default' : ''
+    result[key] = id
+      ? normalizeAudioDeviceId(setting[key], normalizeAudioDeviceId(current[key], fallback))
+      : normalizeAudioDeviceLabel(setting[key], normalizeAudioDeviceLabel(current[key]))
+  }
+  return result
+}
+
 export const getAudioDevicePreference = (setting: Partial<LX.AppSetting>): AudioDevicePreference => ({
-  label: setting['player.mediaDeviceLabel'] ?? '',
-  electronLabel: setting['player.mediaDeviceLabel.electron'] ?? '',
-  mpvLabel: setting['player.mediaDeviceLabel.mpv'] ?? '',
-  electron: setting['player.mediaDeviceId.electron'] ?? '',
-  mpv: setting['player.mediaDeviceId.mpv'] ?? '',
+  label: normalizeAudioDeviceLabel(setting['player.mediaDeviceLabel']),
+  electronLabel: normalizeAudioDeviceLabel(setting['player.mediaDeviceLabel.electron']),
+  mpvLabel: normalizeAudioDeviceLabel(setting['player.mediaDeviceLabel.mpv']),
+  electron: normalizeAudioDeviceId(setting['player.mediaDeviceId.electron'], ''),
+  mpv: normalizeAudioDeviceId(setting['player.mediaDeviceId.mpv'], ''),
 })
 export const getAudioDevicePreferenceSetting = (preference: AudioDevicePreference) => ({
   'player.mediaDeviceLabel': preference.label,
@@ -27,13 +44,13 @@ export const getAudioDevicePreferenceSetting = (preference: AudioDevicePreferenc
   'player.mediaDeviceId.mpv': preference.mpv,
 })
 
-export const isDefaultAudioDevice = (id: string) => !id || ['default', 'Default', 'auto'].includes(id)
+export const isDefaultAudioDevice = (id: unknown) => ['default', 'Default', 'auto'].includes(normalizeAudioDeviceId(id))
 const normalizeLabel = (label: string, engine?: AudioDeviceEngine) => {
   // Chromium appends transport metadata on macOS; MPV returns the native name.
   const name = engine === 'electron' ? label.replace(/\s+\((?:[0-9a-f]{4}:[0-9a-f]{4}|virtual|built-in|aggregate|bluetooth|hdmi|displayport|airplay|thunderbolt|pci)\)\s*$/i, '') : label
   return name.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
 }
-const normalizeId = (id: string) => isDefaultAudioDevice(id) ? 'default' : id.replace(/^(avfoundation|coreaudio)\//, 'macos/')
+const normalizeId = (id: unknown) => isDefaultAudioDevice(id) ? 'default' : normalizeAudioDeviceId(id).replace(/^(avfoundation|coreaudio)\//, 'macos/')
 export const sameAudioDeviceId = (left: string, right: string) => normalizeId(left) === normalizeId(right)
 const emptyPreference = (): AudioDevicePreference => ({ label: '', electron: '', mpv: '' })
 
@@ -48,6 +65,8 @@ export const rememberAudioDevice = (
   id: string,
   label: string,
 ): AudioDevicePreference => {
+  id = normalizeAudioDeviceId(id)
+  label = normalizeAudioDeviceLabel(label)
   if (isDefaultAudioDevice(id)) return { label: '', electron: 'default', mpv: 'default' }
   const saved = previous ?? emptyPreference()
   // A different ID chosen within one engine invalidates the old cross-engine
@@ -61,7 +80,8 @@ export const rememberAudioDevice = (
   }
 }
 
-export const getRequestedAudioDevice = (id: string): { deviceId: string, engine?: AudioDeviceEngine } => {
+export const getRequestedAudioDevice = (value: unknown): { deviceId: string, engine?: AudioDeviceEngine } => {
+  const id = normalizeAudioDeviceId(value)
   if (id.startsWith('unavailable:electron:')) return { deviceId: id.slice('unavailable:electron:'.length), engine: 'electron' }
   if (id.startsWith('unavailable:mpv:')) return { deviceId: id.slice('unavailable:mpv:'.length), engine: 'mpv' }
   return { deviceId: id }
@@ -104,6 +124,7 @@ export const resolveAudioDeviceSelection = ({ sourceEngine, targetEngine, device
   const wantedLabel = deviceId === 'communications' ? source?.label ?? '' : hasMemory && rememberedLabel ? rememberedLabel : source?.label ?? ''
   // Device IDs can be reassigned or imported from another computer. An ID with
   // a different description is not proof that it is still the selected output.
+  if (source && !normalizeAudioDeviceLabel(source.label).trim()) source = undefined
   if (source && wantedLabel && !sameDeviceName(source.label, sourceEngine, wantedLabel, sourceEngine)) {
     const peer = targetDevices.find(device => preference?.[targetEngine] && sameAudioDeviceId(device.deviceId, preference[targetEngine]))
     if (sourceEngine === targetEngine || !peer || !sameDeviceName(source.label, sourceEngine, peer.label, targetEngine)) source = undefined
@@ -115,10 +136,13 @@ export const resolveAudioDeviceSelection = ({ sourceEngine, targetEngine, device
   const saved = source
     ? rememberAudioDevice(preference, sourceEngine, source.deviceId, source.label)
     : hasMemory && preference ? { ...preference } : rememberAudioDevice(undefined, sourceEngine, deviceId, '')
-  let target = targetDevices.find(device => saved[targetEngine] && sameAudioDeviceId(device.deviceId, saved[targetEngine]))
+  let target = targetDevices.find(device => saved[targetEngine] && normalizeAudioDeviceLabel(device.label).trim() && sameAudioDeviceId(device.deviceId, saved[targetEngine]))
   const label = source?.label ? source.label : saved.label
   if (target && ((!source && sourceDevices.length > 0) || !sameDeviceName(label, sourceEngine, target.label, targetEngine))) {
-    saved[targetEngine] = ''
+    // Keep the rejected source identity so the next retry can reject the same
+    // reused ID again. Clearing it would make the new hardware look like an
+    // unremembered, valid selection on the second pass.
+    if (targetEngine !== sourceEngine) saved[targetEngine] = ''
     target = undefined
   }
   if (target && source && sourceEngine !== targetEngine && (!hasStableDeviceId(sourceEngine, source.deviceId) || !hasStableDeviceId(targetEngine, target.deviceId))) {
