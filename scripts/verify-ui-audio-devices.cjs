@@ -42,7 +42,9 @@ module.exports = async({ win, output }) => {
     const id=state.mediaDeviceId
     const option=state.mediaDevices.find(item=>item.deviceId===id)
     const setting=window.lxData.appSetting
-    return {engine:setting['player.playEngine'],id,label:option?.label,preference:{label:setting['player.mediaDeviceLabel'],electronLabel:setting['player.mediaDeviceLabel.electron'],mpvLabel:setting['player.mediaDeviceLabel.mpv'],electron:setting['player.mediaDeviceId.electron'],mpv:setting['player.mediaDeviceId.mpv']}}
+    const label=document.querySelector('#play_mediaDevice').nextElementSibling.querySelector('.label-content .label')?.textContent.trim()
+    if(!label || label!==option?.label)throw Error('Rendered output label does not match the selected device')
+    return {engine:setting['player.playEngine'],id,label,preference:{label:setting['player.mediaDeviceLabel'],electronLabel:setting['player.mediaDeviceLabel.electron'],mpvLabel:setting['player.mediaDeviceLabel.mpv'],electron:setting['player.mediaDeviceId.electron'],mpv:setting['player.mediaDeviceId.mpv']}}
   })()`)
   const capture = async name => {
     await js("document.querySelector('#play_mediaDevice').scrollIntoView({block:'center'})")
@@ -52,21 +54,23 @@ module.exports = async({ win, output }) => {
   try {
     await js("window.lxData.updateSetting({'player.playEngine':'mpv','player.mediaDeviceId':'default','player.mediaDeviceLabel':'','player.mediaDeviceId.electron':'','player.mediaDeviceId.mpv':''})")
     await openPlayback()
-    await until("document.querySelector('#play_mediaDevice').nextElementSibling.querySelectorAll('select option').length>1", 'MPV output devices did not load')
+    await until('window.__audioDeviceTest.find().setupState.mediaDevices.length>1', 'MPV output devices did not load')
     const pairs = await js(`(async() => {
       const normalize=(label,chrome=false)=>(chrome?label.replace(/\\s+\\((?:[0-9a-f]{4}:[0-9a-f]{4}|virtual|built-in|aggregate|bluetooth|hdmi|displayport|airplay|thunderbolt|pci)\\)\\s*$/i,''):label).trim().replace(/\\s+/g,' ').toLowerCase()
       const chrome=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audiooutput'&&!['default','communications'].includes(d.deviceId)&&d.label)
-      const native=[...document.querySelector('#play_mediaDevice').nextElementSibling.querySelectorAll('select option')].map(e=>({id:e.value,label:e.textContent.trim()}))
+      const native=window.__audioDeviceTest.find().setupState.mediaDevices.map(e=>({id:e.deviceId,label:e.label}))
       window.__audioDeviceTest.catalog={chrome:chrome.map(d=>({id:d.deviceId,label:d.label})),native,allChrome:(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audiooutput').map(d=>({id:d.deviceId,label:d.label}))}
-      return [...document.querySelector('#play_mediaDevice').nextElementSibling.querySelectorAll('select option')].filter(e=>e.value!=='default').flatMap(option=>{
-        const matches=chrome.filter(d=>normalize(d.label,true)===normalize(option.textContent))
-        return matches.length===1?[{label:option.textContent.trim(),electronLabel:matches[0].label,mpv:option.value,electron:matches[0].deviceId}]:[]
+      return native.filter(e=>e.id!=='default').flatMap(option=>{
+        const matches=chrome.filter(d=>normalize(d.label,true)===normalize(option.label))
+        return matches.length===1?[{label:option.label,electronLabel:matches[0].label,mpv:option.id,electron:matches[0].deviceId}]:[]
       }).sort((a,b)=>a.label.localeCompare(b.label))
     })()`)
     fs.writeFileSync(path.join(output, 'audio-device-catalog.json'), JSON.stringify(await js('window.__audioDeviceTest.catalog'), null, 2))
     assert.ok(pairs.length > 0, 'No shared named output was available for real-device verification')
     const first = pairs[0]
-    await js(`(() => {const select=document.querySelector('#play_mediaDevice').nextElementSibling.querySelector('select');select.value=${JSON.stringify(first.mpv)};select.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+    await js("document.querySelector('#play_mediaDevice').nextElementSibling.querySelector('.label-content').click()")
+    await until("document.querySelector('#play_mediaDevice').nextElementSibling.querySelector('.selection-list') != null", 'MPV device menu did not open')
+    await js(`[...document.querySelector('#play_mediaDevice').nextElementSibling.querySelectorAll('li')].find(e=>e.textContent.trim()===${JSON.stringify(first.label)}).click()`)
     await until(`window.lxData.appSetting['player.mediaDeviceId']===${JSON.stringify(first.mpv)}`, 'Initial output selection did not save')
     // Simulate upgrading an old profile that only contains a native MPV ID.
     await js("window.lxData.updateSetting({'player.mediaDeviceLabel':'','player.mediaDeviceId.electron':'','player.mediaDeviceId.mpv':''});window.__audioDeviceTest.router.push('/search')")
@@ -103,9 +107,31 @@ module.exports = async({ win, output }) => {
     await until(`window.lxData.appSetting['player.mediaDeviceId']===${JSON.stringify(next.electron)}`, 'The newly selected output was lost on return to built-in playback')
     state = await selected()
     assert.equal(state.label, next.electronLabel)
-    const snapshot = { result: 'PASS', checks: [...checks], original: first, current: state, testedNewChoice: next.mpv !== first.mpv }
-    fs.writeFileSync(path.join(output, 'audio-device-persistence.json'), JSON.stringify(snapshot, null, 2))
     pass('Changing the real output updates both engine mappings and retains the new choice on return')
+    const dimensions = []
+    for (const width of [1280, 828]) {
+      win.setContentSize(width, width === 828 ? 610 : 830)
+      await until(`innerWidth===${width}`, 'Window did not resize')
+      const bounds = []
+      for (const engine of ['mpv', 'electron']) {
+        await switchEngine(engine)
+        await selected()
+        await js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+        const size = await js('(() => {const block=document.querySelector(\'#play_mediaDevice\').nextElementSibling;const e=block.querySelector(\'.label-content\');const r=e.getBoundingClientRect();const c=block.getBoundingClientRect();const style=getComputedStyle(e);return {width:r.width,height:r.height,parentWidth:c.width,background:style.backgroundColor,radius:style.borderRadius}})()')
+        assert.ok(size.width <= 300 && size.width <= size.parentWidth + 1, 'Output control exceeds its width limit')
+        bounds.push({ engine, ...size })
+      }
+      assert.equal(bounds[0].width, bounds[1].width, 'Output control width changes with the playback engine')
+      assert.equal(bounds[0].height, bounds[1].height, 'Output control height changes with the playback engine')
+      assert.equal(bounds[0].background, bounds[1].background)
+      assert.equal(bounds[0].radius, bounds[1].radius)
+      dimensions.push({ windowWidth: width, controls: bounds })
+    }
+    win.setContentSize(1280, 830)
+    fs.writeFileSync(path.join(output, 'audio-device-dimensions.json'), JSON.stringify(dimensions, null, 2))
+    pass('Both engines share the same 300px output control and styling at wide and compact window sizes')
+    const snapshot = { result: 'PASS', checks: [...checks], original: first, current: await selected(), testedNewChoice: next.mpv !== first.mpv }
+    fs.writeFileSync(path.join(output, 'audio-device-persistence.json'), JSON.stringify(snapshot, null, 2))
   } finally {
     await js('delete window.__audioDeviceTest')
   }

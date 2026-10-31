@@ -131,14 +131,8 @@ dd
 dd(:aria-label="$t('setting__play_mediaDevice_title')")
   h3#play_mediaDevice {{ $t('setting__play_mediaDevice') }}
   div
-    template(v-if="playEngine == 'mpv'")
-      // MPV 模式下 base-selection 下拉框有渲染问题，先用原生 select 保证功能可用
-      select(v-model="mediaDeviceId" :class="$style.mpvDeviceSelect" @change="handleMediaDeviceIdChnage")
-        option(v-for="item in mediaDevices" :key="item.deviceId" :value="item.deviceId") {{ item.label }}
-    template(v-else-if="playEngine == 'audirvana'")
-      p(:class="$style.audirvanaDeviceTip") {{ $t('setting__play_audirvana_device_tip') }}
-    template(v-else)
-      base-selection.gap-left(v-model="mediaDeviceId" :list="mediaDevices" item-key="deviceId" item-name="label" @change="handleMediaDeviceIdChnage")
+    p(v-if="playEngine == 'audirvana'" :class="$style.audirvanaDeviceTip") {{ $t('setting__play_audirvana_device_tip') }}
+    base-selection(v-else v-model="mediaDeviceId" :class="$style.deviceSelect" :list="mediaDevices" item-key="deviceId" item-name="label" :aria-label="$t('setting__play_mediaDevice')" @change="handleMediaDeviceIdChnage")
 </template>
 
 <script>
@@ -581,17 +575,8 @@ export default {
     grid-template-columns: repeat(2, minmax(135px, 1fr));
   }
 }
-.mpvDeviceSelect {
-  width: 100%;
-  max-width: 300px;
-  height: 28px;
-  padding: 0 8px;
-  font-size: 12px;
-  color: var(--color-button-font);
-  background-color: var(--color-button-background);
-  border: none;
-  border-radius: @form-radius;
-  outline: none;
-  cursor: pointer;
+.deviceSelect {
+  --selection-width: 300px;
+  max-width: 100%;
 }
 </style>
