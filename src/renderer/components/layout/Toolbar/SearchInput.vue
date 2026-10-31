@@ -1,6 +1,6 @@
 <template>
   <div :class="$style.container">
-    <button type="button" :class="$style.navBtn" :disabled="!canGoBack" :aria-label="$t('pagination__prev')" @click="router.back">
+    <button type="button" :class="$style.navBtn" :disabled="!canGoBack" :aria-label="$t('back')" @click="handleBack">
       <svg viewBox="0 0 451.846 451.847">
         <use xlink:href="#icon-left" />
       </svg>
@@ -35,6 +35,7 @@ import { addTempPlayList, setAllStatus } from '@renderer/store/player/action'
 import { playMusicInfo } from '@renderer/store/player/state'
 import { playNext } from '@renderer/core/player'
 import { LIST_IDS } from '@common/constants'
+import { setVisibleListDetail } from '@renderer/store/songList/action'
 
 export default {
   setup() {
@@ -46,6 +47,10 @@ export default {
 
     const route = useRoute()
     const router = useRouter()
+    const handleBack = () => {
+      if (route.name === 'SongListDetail') setVisibleListDetail(false)
+      router.back()
+    }
     const canGoBack = computed(() => Boolean(route.fullPath && router.options.history.state.back))
     const canGoForward = computed(() => Boolean(route.fullPath && router.options.history.state.forward))
 
@@ -148,6 +153,7 @@ export default {
       tipList,
       handleEvent,
       router,
+      handleBack,
       canGoBack,
       canGoForward,
     }
