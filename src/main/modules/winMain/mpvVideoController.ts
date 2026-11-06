@@ -5,7 +5,7 @@ import { log } from '@common/utils'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
 import { sendEvent, getBrowserWindow } from './main'
-import { MpvController } from './mpvController'
+import { MpvController, MpvLoadSupersededError } from './mpvController'
 import * as accountSessions from '@main/modules/account/sessions'
 
 declare const __non_webpack_require__: (id: string) => unknown
@@ -356,6 +356,10 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
       setExternalVideoVisible(externalVideoVisible)
       await player.loadUrl(videoUrl, { audioUrl })
     } catch (error) {
+      // 被更新的加载请求顶替（快速切换视频）：静默丢弃。新视频正在加载，不能清掉共享的 loading 状态，
+      // 也不能发 error 事件——否则 renderer 会进入错误恢复，停止刚选中的新视频甚至跳到下一首。
+      // 照常抛出，由 renderer 按请求序号忽略这个旧请求（与音频路径一致）。
+      if (error instanceof MpvLoadSupersededError) throw error
       loading = false
       sendVideoEvent('error', {
         message: error instanceof Error ? error.message : String(error),

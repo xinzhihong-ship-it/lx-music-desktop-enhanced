@@ -588,6 +588,12 @@ export class MpvController {
         if (this.isVideo && message.args?.includes('lx-video-double-click')) { this.sendEvent('doubleClick') }
         break
       case 'file-loaded':
+        // 已加载标记与当前加载 token 绑定：新加载尚未发出 loadfile 时到达的 file-loaded 只可能属于
+        // 被顶替的旧文件，结束旧等待即可，不能把新加载的已加载标记提前置真
+        if (this.isStaleLoadEvent()) {
+          this.currentLoad?.reject(new MpvLoadSupersededError())
+          break
+        }
         this.hasFileLoaded = true
         // loaded / duration 事件推迟到 loadUrl 完成所有初始化（pause、seek 0）后再发送，
         // 避免 renderer 在待恢复 seek 还没应用前就进入播放。
@@ -609,6 +615,12 @@ export class MpvController {
         }
         break
       case 'end-file':
+        // 同上：旧文件迟到的 end-file（如恰好播完的 eof、旧文件的错误）不能清掉新加载的状态，
+        // 也不能上报 ended / error（否则 renderer 会跳到下一首或进入错误恢复）
+        if (this.isStaleLoadEvent()) {
+          this.currentLoad?.reject(new MpvLoadSupersededError())
+          break
+        }
         if (this.isLoading && message.reason == 'replaced') break
         this.isLoading = false
         this.hasFileLoaded = false
@@ -715,6 +727,14 @@ export class MpvController {
   /** 最近一次 loadUrl 的序号；loadUrl 的各个异步步骤据此判断自己是否已被新加载顶替 */
   private loadToken = 0
 
+  /** 已注册 file-loaded 等待（即已发出 / 即将发出 loadfile）的加载 token */
+  private registeredToken = 0
+
+  /** 最新的加载尚未发出 loadfile：此时到达的加载事件都属于被顶替的旧文件 */
+  private isStaleLoadEvent() {
+    return this.isLoading && this.registeredToken !== this.loadToken
+  }
+
   private assertLoadCurrent(token: number) {
     if (token !== this.loadToken || this.isDestroyed) throw new MpvLoadSupersededError()
   }
@@ -740,9 +760,10 @@ export class MpvController {
   private async waitForFileLoaded(url: string, token: number): Promise<void> {
     // 新加载顶替旧加载：旧的等待立即结束，其后续步骤会在 assertLoadCurrent 处停下
     this.currentLoad?.reject(new MpvLoadSupersededError())
-    // 文件可能在注册等待前就已加载完成（file-loaded 与 loadfile 响应同块到达时被提前处理），
-    // 此时直接返回，避免重复等待。
-    if (this.hasFileLoaded) return
+    // 等待在发出 loadfile 之前注册，本次文件的 file-loaded 不可能早于此处到达；
+    // 已加载标记从本次加载重新开始，旧文件迟到的事件留下的 true 不能沿用
+    this.registeredToken = token
+    this.hasFileLoaded = false
     return new Promise<void>((resolve, reject) => {
       const timers: NodeJS.Timeout[] = []
       const settle = () => {
