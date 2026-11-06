@@ -809,6 +809,17 @@ export const play = () => {
   setPlay()
 }
 
+/**
+ * 作废当前所有进行中的取址请求：迟到的结果不会再被加载播放（按 requestId 丢弃），
+ * 同时取消限流延迟重试与取址超时。不改变播放意图，供错误恢复结束 / 放弃时调用。
+ */
+export const cancelPendingUrlRequests = () => {
+  cancelDelayRetry?.()
+  activeUrlRequest++
+  gettingUrlId = ''
+  clearLoadTimeout()
+}
+
 const cancelPendingPlayback = () => {
   setPlaybackIntent(false)
   clearShouldPlayAfterLoad()
