@@ -99,6 +99,8 @@ onBeforeUnmount(() => {
 @import '@lyric/assets/styles/layout.less';
 
 .root {
+  // contain: strict 含尺寸隔离：竖排时宽度是块方向，不写明会塌成 0
+  width: 100%;
   height: 100%;
   overflow: hidden;
   cursor: move;
