@@ -6,8 +6,7 @@
           <layout-control-bar />
         </div>
       </transition>
-      <layout-lyric-vertical v-if="setting['desktopLyric.direction'] == 'vertical'" />
-      <layout-lyric-horizontal v-else />
+      <layout-karaoke-lyric />
       <transition enter-active-class="animated-fast fadeIn" leave-active-class="animated-fast fadeOut">
         <common-audio-visualizer v-if="setting['desktopLyric.audioVisualization']" />
       </transition>

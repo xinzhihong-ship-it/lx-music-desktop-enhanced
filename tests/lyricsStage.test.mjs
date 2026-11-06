@@ -210,3 +210,51 @@ test('hsv round trip', () => {
     assert.deepEqual(L.hsvToRgb(h, s, v), c)
   }
 })
+
+// ---- 卡拉 OK 帧（桌面歌词 / 歌词岛） ----
+test('karaokeFrame: before the first line the main line is empty and the first line is previewed', () => {
+  const doc = L.buildLyricDoc({ lyric: '[00:02.00]第一句\n[00:04.00]第二句\n' })
+  assert.deepEqual(L.karaokeFrame(doc, 500), { index: -1, words: [], done: false, secondary: '第一句', secondaryKind: 'next' })
+  assert.deepEqual(L.karaokeFrame(L.buildLyricDoc({ lyric: '' }), 0).secondaryKind, 'none')
+})
+
+test('karaokeFrame: word-timed lines fill word by word; translation wins over the next-line preview', () => {
+  const doc = L.buildLyricDoc({
+    lyric: '[00:01.00]你好\n[00:03.00]世界\n',
+    lxlyric: '[00:01.00]<0,400>你<400,400>好\n[00:03.00]<0,500>世<500,500>界\n',
+    tlyric: '[00:01.00]Hello\n',
+  })
+  const a = L.karaokeFrame(doc, 1200)
+  assert.equal(a.index, 0)
+  assert.deepEqual(a.words.map(w => w.text), ['你', '好'])
+  assert.ok(Math.abs(a.words[0].progress - 0.5) < 1e-9)
+  assert.equal(a.words[1].progress, 0)
+  assert.equal(a.done, false)
+  assert.deepEqual([a.secondary, a.secondaryKind], ['Hello', 'extended'])
+  const b = L.karaokeFrame(doc, 1900)
+  assert.equal(b.done, true)
+  const c = L.karaokeFrame(doc, 3100)
+  assert.deepEqual([c.index, c.secondaryKind], [1, 'none'], 'last line, no translation, nothing after')
+})
+
+test('karaokeFrame: lines without word timing light up whole instead of a fake sweep', () => {
+  const doc = L.buildLyricDoc({ lyric: '[00:01.00]整行歌词\n[00:03.00]下一行\n' })
+  const f = L.karaokeFrame(doc, 1100)
+  assert.deepEqual(f.words, [{ text: '整行歌词', progress: 1 }])
+  assert.deepEqual([f.secondary, f.secondaryKind], ['下一行', 'next'])
+})
+
+test('karaokeFrame: during a long break the next line is shown early, unfilled', () => {
+  const doc = L.buildLyricDoc({ lyric: '[00:01.00]前一句\n[00:02.00]\n[00:20.00]后一句\n' })
+  assert.equal(L.karaokeFrame(doc, 2500).index, 0, 'right after the line: keep it')
+  const f = L.karaokeFrame(doc, 4000)
+  assert.equal(f.index, 1)
+  assert.equal(f.words[0].progress, 0)
+  assert.equal(f.done, false)
+})
+
+test('karaokeFrame: roma / translation order follows the swap setting', () => {
+  const doc = L.buildLyricDoc({ lyric: '[00:01.00]歌\n', tlyric: '[00:01.00]Song\n', rlyric: '[00:01.00]uta\n' })
+  assert.equal(L.karaokeFrame(doc, 1500).secondary, 'Song / uta')
+  assert.equal(L.karaokeFrame(doc, 1500, true).secondary, 'uta / Song')
+})
