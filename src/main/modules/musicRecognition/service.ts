@@ -27,8 +27,13 @@ const artistTokens = (value: string): string[] => value
   .map(name => name.replace(/[^\p{L}\p{N}]/gu, ''))
   .filter(Boolean)
 
+const isSameTitle = (a: string, b: string): boolean => {
+  const normalized = normalizeTitle(a)
+  return normalized !== '' && normalized === normalizeTitle(b)
+}
+
 const isSameTrack = (seed: LX.MusicRecognition.Result, candidate: LX.MusicRecognition.Result): boolean => {
-  if (normalizeTitle(seed.title) !== normalizeTitle(candidate.title)) return false
+  if (!isSameTitle(seed.title, candidate.title)) return false
   const seedArtists = artistTokens(seed.artist)
   const candidateArtists = new Set(artistTokens(candidate.artist))
   return seedArtists.length === 0 || candidateArtists.size === 0 || seedArtists.some(artist => candidateArtists.has(artist))
@@ -67,7 +72,7 @@ const selectMatch = (
     : undefined
   if (exactProviderTrack) return exactProviderTrack
 
-  const titleMatches = candidates.filter(candidate => normalizeTitle(candidate.title) === normalizeTitle(hint.title))
+  const titleMatches = candidates.filter(candidate => isSameTitle(candidate.title, hint.title))
   const metadataMatch = titleMatches.find(candidate => hasSameArtist(candidate.artist, hint.artist))
   if (metadataMatch) return metadataMatch
 
@@ -205,7 +210,7 @@ const runRecognition = async(
   ])
   const match = selectMatch(defaultMatch, candidates, hint)
   const hintSupportsMatch = !!hint &&
-    normalizeTitle(match.title) === normalizeTitle(hint.title) &&
+    isSameTitle(match.title, hint.title) &&
     hasSameArtist(match.artist, hint.artist)
   const matchedEngines = fulfilled
     .filter(({ output }) => output.match)
@@ -224,7 +229,7 @@ const runRecognition = async(
     resultKey,
     (selected, candidate) => {
       if (isSameTrack(selected, candidate)) return 0
-      if (normalizeTitle(selected.title) === normalizeTitle(candidate.title)) return 1
+      if (isSameTitle(selected.title, candidate.title)) return 1
       return 2
     },
     MAX_ALTERNATIVES,
