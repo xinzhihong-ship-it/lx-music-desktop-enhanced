@@ -265,6 +265,19 @@ const handleError = (downloadInfo: LX.Download.ListItem, message?: string) => {
   void checkStartTask()
 }
 
+/**
+ * 下载已完成、转换失败：把 isComplate 置为 true（该字段随任务持久化，表示「下载本身已完成」），
+ * 状态仍为 ERROR。重试时据此只重新转换、复用已下载的源文件，不再重复下载。
+ */
+const handleConvertError = (downloadInfo: LX.Download.ListItem, message?: string) => {
+  downloadInfo.isComplate = true
+  const failed = window.i18n.t('download_status_convert_failed')
+  handleError(downloadInfo, message && message != failed ? `${failed}：${message}` : failed)
+}
+
+/** 下载已完成但转换失败的任务（可仅重新转换） */
+export const isConvertFailedTask = (downloadInfo: LX.Download.ListItem) => downloadInfo.isComplate && downloadInfo.status != DOWNLOAD_STATUS.COMPLETED
+
 const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
   downloadInfo.progress = 100
   if (appSetting['download.autoConvert'] && !['128k', '192k', '320k'].includes(downloadInfo.metadata.quality)) {
@@ -284,7 +297,7 @@ const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
       downloadInfo.metadata.fileName = path.basename(task.outputPath)
       downloadInfo.metadata.ext = path.extname(task.outputPath).slice(1) as LX.Download.FileExt
     } catch (error: any) {
-      handleError(downloadInfo, error?.message || window.i18n.t('download_status_convert_failed'))
+      handleConvertError(downloadInfo, error?.message)
       return
     }
   }
@@ -368,10 +381,28 @@ const handleStartTask = async(downloadInfo: LX.Download.ListItem) => {
     }
   }), getProxy())
 }
+/**
+ * 仅重新转换：源文件仍在则直接进入转换（复用已下载文件）；源文件已被删除则回退为完整重新下载。
+ */
+const handleReconvertTask = async(downloadInfo: LX.Download.ListItem) => {
+  if (await window.lx.worker.download.fileExists(downloadInfo.metadata.filePath)) {
+    await handleCompletedTask(downloadInfo)
+    return
+  }
+  downloadInfo.isComplate = false
+  downloadInfo.progress = 0
+  downloadInfo.downloaded = 0
+  downloadInfo.total = 0
+  downloadInfo.metadata.url = null
+  await handleStartTask(downloadInfo)
+}
+
 const startTask = async(downloadInfo: LX.Download.ListItem) => {
   setStatus(downloadInfo, DOWNLOAD_STATUS.RUN)
   runingTask.set(downloadInfo.id, downloadInfo)
-  void handleStartTask(downloadInfo)
+  // startTask 只会针对 ERROR / PAUSE / WAITING 的任务调用，此时 isComplate 为 true 只可能是「转换失败」
+  if (downloadInfo.isComplate) void handleReconvertTask(downloadInfo)
+  else void handleStartTask(downloadInfo)
 }
 
 const getStartTask = (list: LX.Download.ListItem[]): LX.Download.ListItem | null => {

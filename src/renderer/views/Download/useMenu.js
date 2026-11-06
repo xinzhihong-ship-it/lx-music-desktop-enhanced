@@ -17,6 +17,7 @@ export default ({
   const itemMenuControl = reactive({
     play: true,
     start: true,
+    reconvert: false,
     pause: true,
     playLater: true,
     file: true,
@@ -40,6 +41,11 @@ export default ({
         name: t('list__start'),
         action: 'start',
         hide: !itemMenuControl.start,
+      },
+      {
+        name: t('download__reconvert'),
+        action: 'reconvert',
+        hide: !itemMenuControl.reconvert,
       },
       {
         name: t('list__pause'),
@@ -82,6 +88,8 @@ export default ({
   const showMenu = (event, taskInfo) => {
     itemMenuControl.sourceDetail = !!musicSdk[taskInfo.metadata.musicInfo.source]?.getMusicDetailPageUrl
 
+    // 下载已完成但转换失败（ERROR + isComplate）：可播放 / 打开源文件，并提供「仅重新转换」
+    itemMenuControl.reconvert = taskInfo.isComplate && taskInfo.status === DOWNLOAD_STATUS.ERROR
     if (taskInfo.isComplate) {
       itemMenuControl.play =
         itemMenuControl.playLater =
@@ -122,6 +130,8 @@ export default ({
     if (!action) return
     switch (action.action) {
       case 'start':
+      case 'reconvert':
+        // 转换失败的任务由 store 的 startTask 自动走「仅重新转换」
         handleStartTask(index)
         break
       case 'pause':
