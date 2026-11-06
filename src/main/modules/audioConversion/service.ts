@@ -51,6 +51,8 @@ class ConversionAbortedError extends Error {
 
 export class AudioConversionService {
   private tasks: LX.AudioConversion.Task[] = []
+  private isPersisting = false
+  private persistPending = false
   private running: ChildProcessWithoutNullStreams | null = null
   private runningId: string | null = null
   private readonly waiters = new Map<
@@ -187,9 +189,22 @@ export class AudioConversionService {
   }
 
   private persist() {
+    if (this.isPersisting) {
+      this.persistPending = true
+      return
+    }
+    this.isPersisting = true
+    this.persistPending = false
+    const filePath = taskFilePath()
+    const tempPath = `${filePath}.tmp`
     void fs
-      .writeFile(taskFilePath(), JSON.stringify(this.tasks), 'utf8')
+      .writeFile(tempPath, JSON.stringify(this.tasks), 'utf8')
+      .then(async() => fs.rename(tempPath, filePath))
       .catch(() => {})
+      .finally(() => {
+        this.isPersisting = false
+        if (this.persistPending) this.persist()
+      })
   }
 
   private finish(
@@ -329,7 +344,8 @@ export class AudioConversionService {
       await fs.rm(tempPath, { force: true })
       throwIfAborted()
       await new Promise<void>((resolve, reject) => {
-        let stderr = ''
+        const stderrLimit = 64 * 1024
+        let stderr = Buffer.alloc(0)
         const child = spawn(ffmpeg, [
           '-hide_banner',
           '-nostdin',
@@ -345,9 +361,10 @@ export class AudioConversionService {
           tempPath,
         ], { shell: false })
         this.running = child
-        child.stderr.on('data', (chunk) => {
+        child.stderr.on('data', (chunk: Buffer) => {
           const text = chunk.toString()
-          stderr += text
+          const output = Buffer.concat([stderr, chunk])
+          stderr = output.length > stderrLimit ? Buffer.from(output.subarray(-stderrLimit)) : output
           const elapsed = parseFfmpegTime(text)
           if (elapsed != null) {
             task.progress = Math.min(
@@ -363,7 +380,7 @@ export class AudioConversionService {
             return
           }
           reject(
-            new Error(stderr.trim().split('\n').at(-1) ?? 'FFmpeg 转换失败'),
+            new Error(stderr.toString().trim().split('\n').at(-1) ?? 'FFmpeg 转换失败'),
           )
         })
       })
