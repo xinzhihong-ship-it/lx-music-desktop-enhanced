@@ -8,6 +8,7 @@ import { vst3Runtime } from '@renderer/plugins/player/vst3'
 import { appSetting } from '@renderer/store/setting'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { onNewDesktopLyricProcess } from '@renderer/utils/ipc'
+import { createLyricDriftGuard } from './lyricDriftGuard'
 
 const getCurrentTime = () => {
   const delay = vst3Runtime.active && appSetting['player.playEngine'] === 'electron' && !isBiliVideoActive()
@@ -16,10 +17,48 @@ const getCurrentTime = () => {
 }
 
 let lrc: Lyric
+
+// 歌词时钟漂移防护：播放器卡住（MPV 不上报 waiting）时暂停歌词，恢复后按真实时间继续，偏差过大时重新对齐
+const driftGuard = createLyricDriftGuard()
+const DRIFT_CHECK_INTERVAL = 500
+let driftTimer: ReturnType<typeof setInterval> | null = null
+const stopDriftCheck = () => {
+  driftGuard.stop()
+  if (driftTimer) {
+    clearInterval(driftTimer)
+    driftTimer = null
+  }
+}
+const checkDrift = () => {
+  if (!lrc || !isPlay.value) {
+    stopDriftCheck()
+    return
+  }
+  const time = getCurrentTime()
+  switch (driftGuard.check(time, performance.now())) {
+    case 'stall':
+      lrc.pause()
+      sendDesktopLyricInfo({ action: 'set_pause' })
+      break
+    case 'resume':
+    case 'resync':
+      lrc.play(time)
+      sendDesktopLyricInfo({ action: 'set_play', data: time })
+      break
+    default:
+      break
+  }
+}
+/** 从 time 开始播放歌词，并以此为基准检查漂移 */
+const playLyricAt = (time: number) => {
+  lrc.play(time)
+  driftGuard.start(time, performance.now(), appSetting['player.playbackRate'])
+  driftTimer ??= setInterval(checkDrift, DRIFT_CHECK_INTERVAL)
+}
 watch(() => [vst3Runtime.active, vst3Runtime.latencyMs, vst3Runtime.bridgeMs], () => {
   if (!lrc || !isPlay.value) return
   const time = getCurrentTime()
-  lrc.play(time)
+  playLyricAt(time)
   sendDesktopLyricInfo({ action: 'set_play', data: time })
 })
 let desktopLyricPort: Electron.IpcRendererEvent['ports'][0] | null = null
@@ -150,7 +189,7 @@ export const setLyricOffset = (offset: number) => {
         action: 'set_play',
         data: time,
       })
-      lrc.play(time)
+      playLyricAt(time)
     })
   }
 }
@@ -161,7 +200,7 @@ export const setPlaybackRate = (rate: number) => {
   if (isPlay.value) {
     setTimeout(() => {
       const time = getCurrentTime()
-      lrc.play(time)
+      playLyricAt(time)
     })
   }
 }
@@ -193,7 +232,7 @@ export const setLyric = () => {
     setTimeout(() => {
       const time = getCurrentTime()
       sendDesktopLyricInfo({ action: 'set_play', data: time })
-      lrc.play(time)
+      playLyricAt(time)
     })
   }
 }
@@ -216,16 +255,18 @@ export const setDisableAutoPauseBySource = (disabled: boolean, source: string) =
 export const play = () => {
   // if (!musicInfo.lrc) return
   const currentTime = getCurrentTime()
-  lrc.play(currentTime)
+  playLyricAt(currentTime)
   sendDesktopLyricInfo({ action: 'set_play', data: currentTime })
 }
 
 export const pause = () => {
+  stopDriftCheck()
   lrc.pause()
   sendDesktopLyricInfo({ action: 'set_pause' })
 }
 
 export const stop = () => {
+  stopDriftCheck()
   lrc.setLyric('')
   sendDesktopLyricInfo({ action: 'set_stop' })
   // setLines([])
