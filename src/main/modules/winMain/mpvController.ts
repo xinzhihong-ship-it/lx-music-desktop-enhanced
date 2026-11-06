@@ -1008,6 +1008,23 @@ export class MpvController {
   }
 
   /**
+   * 无感重启交接期间静音旧实例，避免新旧实例同时出声。只调软件音量，不改 cachedMute，
+   * 也不使用 AO 级静音（可能作用于新实例共用的同一输出设备）。
+   */
+  async silenceForHandover(): Promise<void> {
+    if (!this.socket) return
+    await this.command(['set_property', 'volume', 0]).catch(() => {})
+  }
+
+  /**
+   * 交接失败、回退到本实例时撤销 silenceForHandover：按缓存的音量与静音状态重新写入，
+   * 否则旧实例会一直以音量 0 播放（有进度、没声音），直到下次调整音量或重启。
+   */
+  async restoreAfterHandover(): Promise<void> {
+    await this.setMute(this.cachedMute)
+  }
+
+  /**
    * 静音/取消静音。
    *
    * avfoundation AO 会把约 2 秒音频提前排进队列，而 mpv 的软件音量是在数据"入队之前"
@@ -1017,15 +1034,6 @@ export class MpvController {
    * （若把软件音量写成 0，取消静音又会因为队列而慢 2 秒 —— 这一点是实测踩过的坑）。
    * 驱动不支持（写失败）或不是 avfoundation 时，退回原来的软件音量方案。
    */
-  /**
-   * 无感重启交接期间静音旧实例，避免新旧实例同时出声。只调软件音量，不改 cachedMute，
-   * 也不使用 AO 级静音（可能作用于新实例共用的同一输出设备）。
-   */
-  async silenceForHandover(): Promise<void> {
-    if (!this.socket) return
-    await this.command(['set_property', 'volume', 0]).catch(() => {})
-  }
-
   async setMute(isMute: boolean): Promise<void> {
     this.cachedMute = isMute
     if (!this.socket) return
@@ -1490,6 +1498,8 @@ const doRestartMpvController = async(
 
   // 独占设备 / bit-perfect：旧进程不退出就不会释放设备，必须先彻底终止再启动新进程
   const stopFirst = requiresStopBeforeRestart(global.lx.appSetting)
+  // 旧实例是否已为交接静音：交接失败回退时必须恢复它的音量
+  let oldSilenced = false
   if (stopFirst) {
     log.info(`[restartMpvController] exclusive / bit-perfect output: stopping old controller ${oldController.instanceId} first`)
     await oldController.destroy({ waitForExit: true })
@@ -1519,7 +1529,10 @@ const doRestartMpvController = async(
       )
       if (state.playing) {
         // 无感切换：新实例开始出声前静音旧实例，避免短暂的双重出声
-        if (!stopFirst) await oldController.silenceForHandover()
+        if (!stopFirst) {
+          oldSilenced = true
+          await oldController.silenceForHandover()
+        }
         await newController.play()
         log.info(
           `[restartMpvController] new controller ${newController.instanceId} playing`,
@@ -1558,6 +1571,11 @@ const doRestartMpvController = async(
       log.info(
         `[restartMpvController] rolled back to old controller ${oldController.instanceId}`,
       )
+      if (oldSilenced) {
+        await oldController.restoreAfterHandover().catch((restoreErr: Error) => {
+          log.warn('[restartMpvController] restore old controller volume failed:', restoreErr)
+        })
+      }
     }
     throw err
   }

@@ -39,6 +39,7 @@ const mpv = await import('../src/main/modules/winMain/mpvController.ts')
 const { MpvController, getMpvController, restartMpvController, requiresStopBeforeRestart, waitForProcessExit } = mpv
 // 下方会替换原型方法记录重启时序，这里先保存真实的 destroy 供单独测试
 const realDestroy = MpvController.prototype.destroy
+const realRestoreAfterHandover = MpvController.prototype.restoreAfterHandover
 
 const fakeProcess = ({ exitAfter = null } = {}) => {
   const proc = new EventEmitter()
@@ -96,7 +97,12 @@ const P = MpvController.prototype
 let failStart = false
 P.ensureStarted = async function() { timeline.push(`start#${this.instanceId}`); if (failStart) throw new Error('audio device busy') }
 P.loadUrl = async function() { timeline.push(`load#${this.instanceId}`) }
-P.play = async function() { timeline.push(`play#${this.instanceId}`) }
+let failPlay = false
+P.play = async function() {
+  timeline.push(`play#${this.instanceId}`)
+  if (failPlay) throw new Error('ao init failed')
+}
+P.restoreAfterHandover = async function() { timeline.push(`restore#${this.instanceId}`) }
 P.getPaused = async function() { return false }
 P.getDuration = async function() { return 100 }
 P.silenceForHandover = async function() { timeline.push(`silence#${this.instanceId}`) }
@@ -147,4 +153,47 @@ test('#11 if the new instance fails to start, the error propagates and the old c
   assert.equal(getMpvController(), old, 'rolled back to the old controller (it restarts lazily on next use)')
   const newId = Number(timeline.find(e => e.startsWith('start#')).split('#')[1])
   assert.ok(at(`destroy#${newId}`) > -1, 'the failed new controller is cleaned up')
+})
+
+test('#11 shared output: if the new instance fails to play, the silenced old instance gets its volume back', async() => {
+  Object.assign(appSetting, { 'player.mpv.bitPerfectMode': false, 'player.mpv.extraArgs': [] })
+  timeline.length = 0
+  const old = getMpvController()
+  failPlay = true
+  await assert.rejects(restartMpvController({ url: 'http://x/song.flac', time: 30, playing: true }), /ao init failed/)
+  failPlay = false
+  assert.equal(getMpvController(), old, 'rolled back to the old controller')
+  assert.ok(at(`silence#${old.instanceId}`) > -1, JSON.stringify(timeline))
+  assert.ok(at(`restore#${old.instanceId}`) > at(`silence#${old.instanceId}`), `old volume restored after the failed handover: ${JSON.stringify(timeline)}`)
+  assert.equal(at(`destroy#${old.instanceId}`), -1, 'the old controller keeps playing')
+})
+
+test('#11 a failed start before the handover never touches the old instance volume', async() => {
+  Object.assign(appSetting, { 'player.mpv.bitPerfectMode': false, 'player.mpv.extraArgs': [] })
+  timeline.length = 0
+  const old = getMpvController()
+  failStart = true
+  await assert.rejects(restartMpvController({ url: 'http://x/song.flac', playing: true }), /audio device busy/)
+  failStart = false
+  assert.equal(at(`silence#${old.instanceId}`), -1)
+  assert.equal(at(`restore#${old.instanceId}`), -1)
+})
+
+test('restoreAfterHandover rewrites the cached volume, or keeps it silent when the user muted', async() => {
+  const writes = []
+  const controller = new MpvController()
+  controller.socket = {}
+  controller.command = async args => {
+    writes.push(args)
+    return null
+  }
+  controller.applyAoLevelMute = async() => false
+  controller.cachedVolume = 35
+  controller.cachedMute = false
+  await realRestoreAfterHandover.call(controller)
+  assert.deepEqual(writes.at(-1), ['set_property', 'volume', 35])
+  controller.cachedMute = true
+  await realRestoreAfterHandover.call(controller)
+  assert.deepEqual(writes.at(-1), ['set_property', 'volume', 0])
+  controller.socket = null
 })
