@@ -1,7 +1,7 @@
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
 import { registerListActionEvent } from '../../../../listEvent'
 import { getUserSpace } from '../../../user'
-import { filterListActionForMobile } from '../compatibility'
+import { toMobileListAction } from '../compatibility'
 
 // let socket: LX.Sync.Server.Socket | null
 let unregisterLocalListAction: (() => void) | null
@@ -11,11 +11,14 @@ const sendListAction = async(wss: LX.Sync.Server.SocketServer, action: LX.Sync.L
   // console.log('sendListAction', action.action)
   const userSpace = getUserSpace()
   let key = ''
+  // 只在存在移动端时计算一次（位置换算需要读取本地列表）
+  let mobileAction: Promise<LX.Sync.List.ActionList | null> | null = null
   for (const client of wss.clients) {
     if (!client.moduleReadys?.list) continue
     // eslint-disable-next-line require-atomic-updates
     if (!key) key = await userSpace.listManage.createSnapshot()
-    const clientAction = client.keyInfo.isMobile ? filterListActionForMobile(action) : action
+    mobileAction ??= client.keyInfo.isMobile ? toMobileListAction(action) : null
+    const clientAction = client.keyInfo.isMobile ? await mobileAction : action
     if (!clientAction) {
       void userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
       continue

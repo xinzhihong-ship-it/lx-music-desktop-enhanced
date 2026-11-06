@@ -94,8 +94,24 @@ let mediaSource: MediaElementAudioSourceNode | null = null
 let elementCaptured = false
 const routingQueue = createRoutingQueue()
 let routingChange = Promise.resolve()
-// 注册在 audio 元素上的应用事件监听（重建元素时迁移到新元素）
+// 注册在 audio 元素上的全部监听（应用事件 + 变调节点联动）。
+// 这里是唯一的登记表：登记与当前是否存在 audio 元素无关；元素创建（createAudioElement）、
+// 重建（rebuildAudioElement）、采样率切换（changeAudioSampleRate）时按此表整体迁移到新元素。
 const elementEventListeners: Array<{ event: string, listener: EventListener }> = []
+
+/** 登记一个元素级监听；当前已有 audio 元素时立即挂载。重复登记同一监听是空操作。 */
+const addElementListener = (event: string, listener: EventListener) => {
+  if (elementEventListeners.some(item => item.event === event && item.listener === listener)) return
+  elementEventListeners.push({ event, listener })
+  audio?.addEventListener(event, listener)
+}
+
+/** 注销一个元素级监听，并从当前 audio 元素上解绑。 */
+const removeElementListener = (event: string, listener: EventListener) => {
+  const index = elementEventListeners.findIndex(item => item.event === event && item.listener === listener)
+  if (index > -1) elementEventListeners.splice(index, 1)
+  audio?.removeEventListener(event, listener)
+}
 // 效果处理后的音频经此隐藏元素输出：设备切换用元素级 setSinkId，
 // 绕开 AudioContext.setSinkId 在携带媒体源的上下文上永不决议的问题。
 let outputPipe: HTMLAudioElementChrome | null = null
@@ -497,12 +513,22 @@ const disconnectNode = () => {
     disconnectPitchShifterNode()
   }
 }
+// 变调节点在暂停/缓冲时断开、播放时重连；走统一登记表，元素重建后随之迁移。
+const pitchElementListeners: ReadonlyArray<[string, EventListener]> = [
+  ['playing', connectNode],
+  ['pause', disconnectNode],
+  ['waiting', disconnectNode],
+  ['emptied', disconnectNode],
+]
+const setPitchElementListeners = (enabled: boolean) => {
+  for (const [event, listener] of pitchElementListeners) {
+    if (enabled) addElementListener(event, listener)
+    else removeElementListener(event, listener)
+  }
+}
 const connectPitchShifterNode = () => {
   console.log('connect Pitch Shifter Node')
-  audio!.addEventListener('playing', connectNode)
-  audio!.addEventListener('pause', disconnectNode)
-  audio!.addEventListener('waiting', disconnectNode)
-  audio!.addEventListener('emptied', disconnectNode)
+  setPitchElementListeners(true)
   if (audio!.paused) disconnectNode()
 
   const lastBiquadFilter = (biquads.get(`hz${freqs.at(-1)!}`)!)
@@ -525,10 +551,7 @@ const disconnectPitchShifterNode = () => {
   lastBiquadFilter.connect(convolverSourceGainNode)
   pitchShifterNodeLoadStatus = 'unconnect'
 
-  audio!.removeEventListener('playing', connectNode)
-  audio!.removeEventListener('pause', disconnectNode)
-  audio!.removeEventListener('waiting', disconnectNode)
-  audio!.removeEventListener('emptied', disconnectNode)
+  setPitchElementListeners(false)
   connectNode()
 }
 const loadPitchShifterNode = () => {
@@ -1199,6 +1222,8 @@ const changeAudioSampleRate = async() => {
       if (vst3Node && !await prepareVst3Audio()) throw new Error('音频准备被取消')
       await nextAudio.play()
     }
+    // 新图的变调节点状态以 staging 结果为准，登记表与之对齐后再整体挂到新元素
+    setPitchElementListeners(pitchShifterNodeLoadStatus === 'connected')
     for (const { event, listener } of elementEventListeners) nextAudio.addEventListener(event, listener)
     nextAudio.autoplay = true
     old.vst3Node?.disconnect()
@@ -1221,6 +1246,8 @@ const changeAudioSampleRate = async() => {
     failedPipe?.pause()
     if (failedPipe) failedPipe.srcObject = null
     restoreAudioGraph(old)
+    // staging 期间可能已为新图登记了变调联动，回滚时恢复为旧图的状态
+    setPitchElementListeners(old.pitchShifterNodeLoadStatus === 'connected')
     await nextContext.close().catch(() => {})
     try {
       if (old.vst3Node) await configureVst3Audio(old.audioContext)
@@ -1315,18 +1342,13 @@ type PlayerSub = (callback: (...args: any[]) => void) => () => void
 // 三套后端都订阅，回调根据当前播放模式过滤，保证切到 B 站视频时不用重启播放器。
 const registerEvent = (event: string, mpvSub: PlayerSub, videoSub: PlayerSub, audirvanaSub: PlayerSub, callback: Noop): (() => void) => {
   const unsubs: Array<() => void> = []
-  if (audio) {
-    const audioCallback: EventListener = () => {
-      if (!isBiliVideoActive() && appSetting['player.playEngine'] === 'electron') callback()
-    }
-    elementEventListeners.push({ event, listener: audioCallback })
-    audio.addEventListener(event, audioCallback)
-    unsubs.push(() => {
-      audio?.removeEventListener(event, audioCallback)
-      const index = elementEventListeners.findIndex(item => item.event === event && item.listener === audioCallback)
-      if (index > -1) elementEventListeners.splice(index, 1)
-    })
+  // 无论 audio 元素此刻是否存在都先登记：以 Audirvana 启动时元素尚未创建，
+  // 之后切到内置引擎由 createAudio 统一挂载，否则内置引擎的全部事件都会丢失。
+  const audioCallback: EventListener = () => {
+    if (!isBiliVideoActive() && appSetting['player.playEngine'] === 'electron') callback()
   }
+  addElementListener(event, audioCallback)
+  unsubs.push(() => { removeElementListener(event, audioCallback) })
   unsubs.push(mpvSub(() => {
     if (!isBiliVideoActive() && isMpvEngine()) callback()
   }))
