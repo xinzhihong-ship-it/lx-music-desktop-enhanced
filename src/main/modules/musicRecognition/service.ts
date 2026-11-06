@@ -6,7 +6,7 @@ import { recognizeNetease } from './wyRecognizer'
 import { getAcrcloudConfig, setAcrcloudConfig } from './configStore'
 import { addHistory, clearHistory, getHistory, removeHistory, replaceHistory } from './historyStore'
 import { throwIfAborted } from './abort'
-import { isAmbiguousRecognition, promoteRecognitionCandidate, selectAlternativeCandidates } from './decision'
+import { isAmbiguousRecognition, isSameTitle, promoteRecognitionCandidate, selectAlternativeCandidates } from './decision'
 
 const MAX_ALTERNATIVES = 8
 
@@ -14,23 +14,12 @@ const resultKey = (result: LX.MusicRecognition.Result): string => {
   return `${result.provider}:${result.providerTrackId}`
 }
 
-const normalizeTitle = (value: string): string => value
-  .normalize('NFKC')
-  .toLowerCase()
-  .replace(/[（(【[].*?[）)】\]]/g, '')
-  .replace(/[^\p{L}\p{N}]/gu, '')
-
 const artistTokens = (value: string): string[] => value
   .normalize('NFKC')
   .toLowerCase()
   .split(/[、,&/，·]|\b(?:feat|ft)\.?\b/u)
   .map(name => name.replace(/[^\p{L}\p{N}]/gu, ''))
   .filter(Boolean)
-
-const isSameTitle = (a: string, b: string): boolean => {
-  const normalized = normalizeTitle(a)
-  return normalized !== '' && normalized === normalizeTitle(b)
-}
 
 const isSameTrack = (seed: LX.MusicRecognition.Result, candidate: LX.MusicRecognition.Result): boolean => {
   if (!isSameTitle(seed.title, candidate.title)) return false

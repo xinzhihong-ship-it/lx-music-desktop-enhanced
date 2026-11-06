@@ -2,10 +2,21 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   isAmbiguousRecognition,
+  isSameTitle,
   promoteRecognitionCandidate,
   selectAlternativeCandidates,
   selectConsensusKey,
 } from '../src/main/modules/musicRecognition/decision.ts'
+
+test('titles that normalize to empty never match each other', () => {
+  const emptyTitles = ['！？♪', '(Live)', '【伴奏】', '']
+  for (const title of emptyTitles) {
+    for (const other of emptyTitles) assert.equal(isSameTitle(title, other), false)
+    assert.equal(isSameTitle(title, 'Song'), false)
+    assert.equal(isSameTitle('Song', title), false)
+  }
+  assert.equal(isSameTitle('Ｓｏｎｇ（Live）', 'song【伴奏】'), true)
+})
 
 test('Shazam requires the same track in at least two windows', () => {
   assert.equal(selectConsensusKey([]), null)
