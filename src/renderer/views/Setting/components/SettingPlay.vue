@@ -324,7 +324,7 @@ export default {
       } catch (err) {
         console.error('[SettingPlay] restart failed:', err)
         showTip({
-          message: 'MPV 重建失败：' + (err?.message ?? err),
+          message: t('setting__play_mpv_restart_failed', { message: String(err?.message ?? err) }),
           position: { top: 80, left: window.innerWidth / 2 },
           autoCloseTime: 3000,
         }, { beforeClose: () => {} })

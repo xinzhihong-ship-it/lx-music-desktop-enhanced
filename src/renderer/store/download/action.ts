@@ -269,7 +269,7 @@ const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
   downloadInfo.progress = 100
   if (appSetting['download.autoConvert'] && !['128k', '192k', '320k'].includes(downloadInfo.metadata.quality)) {
     const format = appSetting['download.convertFormat']
-    setStatusText(downloadInfo, '正在转换')
+    setStatusText(downloadInfo, window.i18n.t('download_status_converting'))
     try {
       const tasks = await addAudioConversionTasks({
         filePaths: [downloadInfo.metadata.filePath],
@@ -279,12 +279,12 @@ const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
         useCurrentDownloadDeleteSetting: true,
       })
       const [task] = await waitAudioConversionTasks(tasks.map(task => task.id))
-      if (task.status !== 'completed') throw new Error(task.error || '转换失败')
+      if (task.status !== 'completed') throw new Error(task.error || window.i18n.t('download_status_convert_failed'))
       downloadInfo.metadata.filePath = task.outputPath
       downloadInfo.metadata.fileName = path.basename(task.outputPath)
       downloadInfo.metadata.ext = path.extname(task.outputPath).slice(1) as LX.Download.FileExt
     } catch (error: any) {
-      handleError(downloadInfo, error?.message || '转换失败')
+      handleError(downloadInfo, error?.message || window.i18n.t('download_status_convert_failed'))
       return
     }
   }
