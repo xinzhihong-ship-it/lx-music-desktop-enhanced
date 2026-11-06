@@ -19,6 +19,8 @@ import {
   type ShallowRef,
   shallowReactive,
   withDefaults,
+  provide,
+  inject,
 } from 'vue'
 // import { useStore } from 'vuex'
 
@@ -73,6 +75,8 @@ export {
   markRaw,
   shallowReactive,
   withDefaults,
+  provide,
+  inject,
 }
 
 export type {
