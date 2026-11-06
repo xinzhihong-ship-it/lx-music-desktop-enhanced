@@ -820,20 +820,21 @@ export const cancelPendingUrlRequests = () => {
   clearLoadTimeout()
 }
 
-const cancelPendingPlayback = () => {
+const cancelPendingPlayback = (cancelUrlRequest = true) => {
   setPlaybackIntent(false)
   clearShouldPlayAfterLoad()
   clearShouldPlayAfterSeek()
   clearLoadTimeout()
   cancelDelayRetry?.()
-  activeUrlRequest++
+  if (cancelUrlRequest) activeUrlRequest++
   gettingUrlId = ''
   setAllStatus('')
 }
 
 /** 暂停播放，并使所有尚未完成的自动恢复失效。 */
 export const pause = () => {
-  cancelPendingPlayback()
+  // 仍在取址时需要作废请求，已加载的音质探测可以继续更新显示。
+  cancelPendingPlayback(gettingUrlId !== '' || window.lx.isPlayedStop)
   rendererPausedAt = getCurrentTime()
   if (isBiliVideoActive()) setPlayerPlaying(false)
   setPause()
