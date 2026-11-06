@@ -1,4 +1,5 @@
 import { appSetting } from '@renderer/store/setting'
+import { dialog } from '@renderer/plugins/Dialog'
 import * as mpvPlayer from './mpv'
 import * as mpvVideoPlayer from './mpvVideo'
 import * as audirvanaPlayer from './audirvana'
@@ -601,11 +602,29 @@ export const hasInitedAdvancedAudioFeatures = (): boolean => audioContext != nul
 const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
 const isAudirvanaEngine = () => appSetting['player.playEngine'] == 'audirvana'
 const isMpvUnavailableError = (message: string) => /未找到 mpv|ENOENT|mpv IPC connect timeout|mpv IPC is not connected|mpv exited before IPC became ready/i.test(message)
-const handleMpvError = (action: string, err: any) => {
+const mpvErrorDialogs = new Map<string, number>()
+const handleMpvError = (action: `player__mpv_action_${'load' | 'load_video' | 'play' | 'play_video'}`, err: any) => {
   const message = err?.message ?? String(err)
-  console.error(`mpv ${action} failed:`, message)
+  console.error(`mpv ${action.slice('player__mpv_action_'.length).replaceAll('_', ' ')} failed:`, message)
   if (!isMpvUnavailableError(message)) return
-  window.alert(`mpv ${action}失败：${message}\n\n请确认：\n1. mpv 已安装（brew install mpv）\n2. 或切换到内置引擎（设置 → 播放引擎 → 内置引擎）`)
+  const tip = window.i18n.t('player__mpv_unavailable_tip', { action: window.i18n.t(action), message })
+  const now = Date.now()
+  for (const [text, expiresAt] of mpvErrorDialogs) {
+    if (expiresAt <= now) mpvErrorDialogs.delete(text)
+  }
+  if (!mpvErrorDialogs.has(tip)) {
+    // 对话框关闭前一直去重，关闭后按弹出时间计算 10 秒间隔。
+    mpvErrorDialogs.set(tip, Infinity)
+    void dialog({
+      message: tip,
+      selection: true,
+      confirmButtonText: window.i18n.t('ok'),
+    }).catch(err => {
+      console.error('Failed to show mpv error dialog:', err)
+    }).finally(() => {
+      mpvErrorDialogs.set(tip, now + 10_000)
+    })
+  }
   window.app_event.stop()
 }
 
@@ -661,7 +680,7 @@ export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, fi
     try {
       await mpvVideoPlayer.setResource(src, videoAudioUrl)
     } catch (err) {
-      handleMpvError('加载视频', err)
+      handleMpvError('player__mpv_action_load_video', err)
       throw err
     }
     return
@@ -677,7 +696,7 @@ export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, fi
     try {
       await mpvPlayer.setResource(src)
     } catch (err) {
-      handleMpvError('加载', err)
+      handleMpvError('player__mpv_action_load', err)
       throw err
     }
     return
@@ -701,11 +720,11 @@ export const setResource = async(src: string, musicInfo?: LX.Music.MusicInfo, fi
 export const setPlay = () => {
   const revision = ++playbackRevision
   if (isBiliVideoActive()) {
-    void mpvVideoPlayer.setPlay().catch(err => { handleMpvError('播放视频', err) })
+    void mpvVideoPlayer.setPlay().catch(err => { handleMpvError('player__mpv_action_play_video', err) })
     return
   }
   if (isMpvEngine()) {
-    void mpvPlayer.setPlay().catch(err => { handleMpvError('播放', err) })
+    void mpvPlayer.setPlay().catch(err => { handleMpvError('player__mpv_action_play', err) })
     return
   }
   if (isAudirvanaEngine()) {
