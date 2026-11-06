@@ -255,6 +255,7 @@
   "lyric_search__searching": "搜尋中…",
   "lyric_search__platform_all": "全部",
   "lyric_search__empty": "沒有找到結果，試試修改關鍵字",
+  "lyric_search__no_title_match": "沒有歌名完全一致的結果，以下為相關結果",
   "lyric_search__badge_words": "逐字",
   "lyric_search__badge_translation": "翻譯",
   "lyric_search__badge_roma": "羅馬拼音",

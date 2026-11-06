@@ -39,8 +39,11 @@
           <p v-if="frame.secondary" :class="$style.lyricSub">{{ frame.secondary }}</p>
         </div>
         <div :class="$style.progress">
-          <span>{{ formatTime(mediaTime) }}</span>
-          <span :class="$style.bar"><i :style="{ transform: `scaleX(${progress})` }" /></span>
+          <span>{{ formatTime(shownTime) }}</span>
+          <span
+            :class="[$style.bar, { [$style.barActive]: seeking }]" role="slider" :aria-valuenow="Math.round(shownTime / 1000)" :aria-valuemax="Math.round(duration)"
+            @pointerdown="handleSeekStart" @pointermove="handleSeekMove" @pointerup="handleSeekEnd" @pointercancel="handleSeekCancel"
+          ><i :style="{ transform: `scaleX(${shownProgress})` }" /></span>
           <span>{{ formatTime(duration * 1000) }}</span>
         </div>
         <div :class="$style.controls">
@@ -67,7 +70,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from '@common/utils/vueTools'
 import { karaokeFrame } from '@common/utils/lyrics'
 import { clockRevision, init as initLyric, isRomaFirst, lyricDoc, readLyricPosition, readMediaTime } from '@lyric/core/lyric'
-import { playNext, playPrev, playToggle } from '@lyric/core/mainWindowChannel'
+import { playNext, playPrev, playToggle, seekTo } from '@lyric/core/mainWindowChannel'
 import { duration, isPlay, musicInfo, setting } from '@lyric/store/state'
 import { sendConnectMainWindowEvent, setIslandInteractive } from '@lyric/utils/ipc'
 
@@ -91,10 +94,37 @@ const title = computed(() => {
 })
 // 不常驻：只有鼠标在胶囊上（或贴到顶部中央）时才显示
 const hidden = computed(() => !setting['island.alwaysShow'] && !inside.value && !expanded.value)
+// macOS 顶部要让出刘海，展开时相应加高，避免底部的控制按钮被裁掉
 const capsuleSize = computed(() => expanded.value
-  ? { width: '460px', height: '172px' }
+  ? { width: '460px', height: isMac ? '200px' : '176px' }
   : { width: musicInfo.id ? '380px' : '220px', height: '34px' })
 const progress = computed(() => duration.value > 0 ? Math.min(1, mediaTime.value / (duration.value * 1000)) : 0)
+
+// ---- 拖动进度条：拖动中只预览，松手时跳转 ----
+const seeking = ref(false)
+const seekRatio = ref(0)
+const shownProgress = computed(() => seeking.value ? seekRatio.value : progress.value)
+const shownTime = computed(() => seeking.value ? seekRatio.value * duration.value * 1000 : mediaTime.value)
+const ratioAt = event => {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return rect.width > 0 ? Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) : 0
+}
+const handleSeekStart = event => {
+  if (!(duration.value > 0) || event.button != 0) return
+  event.currentTarget.setPointerCapture(event.pointerId)
+  seeking.value = true
+  seekRatio.value = ratioAt(event)
+}
+const handleSeekMove = event => {
+  if (seeking.value) seekRatio.value = ratioAt(event)
+}
+const handleSeekEnd = event => {
+  if (!seeking.value) return
+  seekRatio.value = ratioAt(event)
+  seeking.value = false
+  seekTo(seekRatio.value * duration.value)
+}
+const handleSeekCancel = () => { seeking.value = false }
 
 const formatTime = ms => {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -356,17 +386,37 @@ body {
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, .5);
 }
+// 可拖动的进度条：点击区域 14px 高，可见轨道 3px（悬停 / 拖动时加粗）
 .bar {
   flex: auto;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, .18);
-  overflow: hidden;
+  position: relative;
+  height: 14px;
+  cursor: pointer;
+  touch-action: none;
+  &::before, i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 3px;
+    margin-top: -1.5px;
+    border-radius: 2px;
+    transition: height .15s ease, margin-top .15s ease;
+  }
+  &::before {
+    content: '';
+    background: rgba(255, 255, 255, .18);
+  }
   i {
     display: block;
-    height: 100%;
     background: rgba(255, 255, 255, .9);
     transform-origin: 0 50%;
+  }
+  &:hover, &.barActive {
+    &::before, i {
+      height: 5px;
+      margin-top: -2.5px;
+    }
   }
 }
 .controls {

@@ -255,6 +255,7 @@
   "lyric_search__searching": "Searching…",
   "lyric_search__platform_all": "All",
   "lyric_search__empty": "No results. Try different keywords",
+  "lyric_search__no_title_match": "No exact title match; showing related results",
   "lyric_search__badge_words": "Word-timed",
   "lyric_search__badge_translation": "Translation",
   "lyric_search__badge_roma": "Romaji",

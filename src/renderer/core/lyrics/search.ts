@@ -7,7 +7,9 @@ import {
   buildSearchKeyword,
   hasTimedLyric,
   parseDuration,
+  relevanceScore,
   scoreCandidate,
+  scoreParts,
   type MatchSubject,
 } from '@common/utils/lyrics'
 
@@ -27,8 +29,14 @@ export interface LyricCandidate {
   interval: string
   /** 秒 */
   duration: number
-  /** 0~85；null 表示时长差太大（只在手动搜索里展示，排在最后） */
+  /** 0~85；null 表示时长差太大（不参与自动匹配） */
   score: number | null
+  /** 歌名是否对得上（默认关键词搜索时，对不上的不展示） */
+  titleMatch: boolean
+  /** 时长相差超过 10 秒（Live / 剪辑版等） */
+  durationMismatch: boolean
+  /** 搜索面板排序用：歌名对得上的永远在前 */
+  relevance: number
   /** 取词需要的平台原始字段 */
   musicInfo: Record<string, any>
 }
@@ -39,7 +47,7 @@ export interface LyricSearchResult {
   failed: LyricPlatform[]
 }
 
-const SEARCH_TIMEOUT = 8000
+const SEARCH_TIMEOUT = 12000
 const FETCH_TIMEOUT = 10000
 const SEARCH_LIMIT = 10
 const MAX_CONCURRENCY = 3
@@ -93,6 +101,7 @@ const toCandidate = (platform: LyricPlatform, info: Record<string, any>, query: 
     album: String(info.albumName ?? ''),
     duration: parseDuration(info._interval ?? info.interval),
   }
+  const parts = query ? scoreParts(query, subject) : null
   return {
     key: `${platform}_${songmid}`,
     platform,
@@ -103,6 +112,9 @@ const toCandidate = (platform: LyricPlatform, info: Record<string, any>, query: 
     interval: String(info.interval ?? ''),
     duration: subject.duration,
     score: query ? scoreCandidate(query, subject) : 0,
+    titleMatch: parts ? parts.title > 0 : true,
+    durationMismatch: parts?.durationMismatch ?? false,
+    relevance: parts ? relevanceScore(parts) : 0,
     musicInfo: pickMusicInfo(info),
   }
 }
@@ -119,26 +131,31 @@ export const searchPlatform = async(platform: LyricPlatform, keyword: string, qu
   return candidates
 }
 
-const compareCandidates = (a: LyricCandidate, b: LyricCandidate) => (b.score ?? -1) - (a.score ?? -1)
+export const compareCandidates = (a: LyricCandidate, b: LyricCandidate) => b.relevance - a.relevance
 
 /**
  * 在多个平台搜索歌词候选。keyword 为空时用“歌名 + 第一位歌手”。
  * query 为当前歌曲信息，用于打分；手动输入的关键词也按它打分（用户改关键词时可传 null 不打分）。
  */
-export const searchLyricCandidates = async({ keyword, query, platforms = LYRIC_PLATFORMS }: {
+export const searchLyricCandidates = async({ keyword, query, platforms = LYRIC_PLATFORMS, onPlatform }: {
   keyword?: string
   query: MatchSubject | null
   platforms?: readonly LyricPlatform[]
+  /** 每个平台返回（或失败）时立即回调，界面可以边搜边显示 */
+  onPlatform?: (platform: LyricPlatform, candidates: LyricCandidate[] | null) => void
 }): Promise<LyricSearchResult> => {
   const text = (keyword ?? '').trim() || (query ? buildSearchKeyword(query) : '')
   if (!text) return { candidates: [], failed: [] }
   const failed: LyricPlatform[] = []
   const lists = await runPool(platforms, MAX_CONCURRENCY, async platform => {
     try {
-      return await searchPlatform(platform, text, query)
+      const list = await searchPlatform(platform, text, query)
+      onPlatform?.(platform, list)
+      return list
     } catch (err) {
       console.warn(`lyric search failed: ${platform}`, err)
       failed.push(platform)
+      onPlatform?.(platform, null)
       return []
     }
   })
@@ -184,7 +201,10 @@ export const autoMatchLyric = async(query: MatchSubject, excludePlatform?: strin
   if (!query.name.trim()) return null
   const platforms = LYRIC_PLATFORMS.filter(platform => platform != excludePlatform)
   const { candidates } = await searchLyricCandidates({ query, platforms })
-  const accepted = candidates.filter(candidate => (candidate.score ?? 0) >= AUTO_MATCH_SCORE).slice(0, 3)
+  const accepted = candidates
+    .filter(candidate => (candidate.score ?? 0) >= AUTO_MATCH_SCORE)
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, 3)
   for (const candidate of accepted) {
     try {
       return { candidate, lyricInfo: await fetchCandidateLyric(candidate) }

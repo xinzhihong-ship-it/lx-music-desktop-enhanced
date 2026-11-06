@@ -124,3 +124,23 @@ test('autoMatchLyric excludes the song\'s own platform and returns null when not
   assert.deepEqual(ctl.fetched, [])
   assert.equal(await autoMatchLyric({ ...query, name: ' ' }), null)
 })
+
+test('same-title versions (even with a far-off length) rank above unrelated songs by the same singer', async() => {
+  ctl.lists = {
+    kg: [item('unrelated', { name: '简单爱', interval: '04:29' }), item('live', { name: '晴天 (Live)', interval: '04:59' }), item('exact')],
+  }
+  const { candidates } = await searchLyricCandidates({ query, platforms: ['kg'] })
+  assert.deepEqual(candidates.map(c => c.songmid), ['exact', 'live', 'unrelated'])
+  const byId = Object.fromEntries(candidates.map(c => [c.songmid, c]))
+  assert.equal(byId.live.durationMismatch, true)
+  assert.equal(byId.live.score, null, 'still never auto-applied')
+  assert.equal(byId.unrelated.titleMatch, false)
+  assert.equal(byId.exact.titleMatch, true)
+})
+
+test('onPlatform reports each platform as soon as it answers, failures as null', async() => {
+  ctl.lists = { kg: [item('k1')], tx: new Error('down') }
+  const seen = []
+  await searchLyricCandidates({ query, platforms: ['kg', 'tx'], onPlatform: (platform, list) => { seen.push([platform, list ? list.length : null]) } })
+  assert.deepEqual(seen.sort(), [['kg', 1], ['tx', null]])
+})

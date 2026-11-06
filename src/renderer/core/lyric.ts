@@ -108,7 +108,7 @@ const buildInfo = (): LX.DesktopLyric.LyricActions => ({
     played_time: getCurrentTime(),
   },
 })
-const handleDesktopLyricMessage = (action: LX.DesktopLyric.WinMainActions, port: ClientPort) => {
+const handleDesktopLyricMessage = (action: LX.DesktopLyric.WinMainActions, port: ClientPort, data?: unknown) => {
   switch (action) {
     case 'get_info':
       port.postMessage(buildInfo())
@@ -132,6 +132,10 @@ const handleDesktopLyricMessage = (action: LX.DesktopLyric.WinMainActions, port:
       break
     case 'play_prev':
       void import('@renderer/core/player/action').then(({ playPrev }) => playPrev())
+      break
+    // 歌词岛拖动进度条：data 为目标位置（秒）
+    case 'seek':
+      if (typeof data == 'number' && Number.isFinite(data) && data >= 0) window.app_event.setProgress(data)
       break
     case 'play_next':
       void import('@renderer/core/player/action').then(({ playNext }) => playNext())
@@ -171,7 +175,7 @@ export const init = () => {
     clientPorts.set(kind, port)
 
     port.onmessage = ({ data }) => {
-      handleDesktopLyricMessage(data.action, port)
+      handleDesktopLyricMessage(data.action, port, data.data)
     }
 
     port.onmessageerror = (event) => {

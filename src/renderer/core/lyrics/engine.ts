@@ -9,7 +9,8 @@ import { getCurrentTime } from '@renderer/core/lyric'
 /** 当前歌曲的歌词（按设置决定是否使用逐字 / 翻译 / 罗马音） */
 export const lyricDoc = computed<LyricDoc>(() => buildLyricDoc({
   lyric: musicInfo.lrc ?? '',
-  lxlyric: appSetting['player.isPlayLxlrc'] ? musicInfo.lxlrc : '',
+  // 有逐字时间就用：新显示没有旧播放器的性能负担，不再受“逐字歌词”开关（macOS 默认关闭）限制
+  lxlyric: musicInfo.lxlrc,
   tlyric: appSetting['player.isShowLyricTranslation'] ? musicInfo.tlrc : '',
   rlyric: appSetting['player.isShowLyricRoma'] ? musicInfo.rlrc : '',
 }))

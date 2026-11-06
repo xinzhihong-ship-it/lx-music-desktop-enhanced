@@ -123,3 +123,7 @@ export const getStatus = () => {
 export const playToggle = () => { sendDesktopLyricInfo('play_toggle') }
 export const playPrev = () => { sendDesktopLyricInfo('play_prev') }
 export const playNext = () => { sendDesktopLyricInfo('play_next') }
+/** 跳到指定位置（秒） */
+export const seekTo = (seconds: number) => {
+  mainWindowPort?.postMessage({ action: 'seek', data: seconds })
+}

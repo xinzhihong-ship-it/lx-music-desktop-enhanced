@@ -14,10 +14,11 @@
 
       <div :class="$style.body">
         <ul :class="[$style.list, 'scroll']" role="listbox" :aria-label="$t('lyric_search__title')">
-          <li v-if="!loading && searched && !candidates.length" :class="$style.empty">{{ $t('lyric_search__empty') }}</li>
+          <li v-if="!loading && searched && !shownCandidates.length" :class="$style.empty">{{ $t('lyric_search__empty') }}</li>
+          <li v-if="showingUnrelated" :class="$style.notice">{{ $t('lyric_search__no_title_match') }}</li>
           <li
-            v-for="candidate in candidates" :key="candidate.key"
-            :class="[$style.item, { [$style.active]: selected?.key == candidate.key, [$style.weak]: candidate.score == null || candidate.score < AUTO_MATCH_SCORE }]"
+            v-for="candidate in shownCandidates" :key="candidate.key"
+            :class="[$style.item, { [$style.active]: selected?.key == candidate.key, [$style.weak]: !candidate.titleMatch || candidate.durationMismatch }]"
             role="option" :aria-selected="selected?.key == candidate.key" tabindex="0"
             @click="handlePreview(candidate)" @keyup.enter="handlePreview(candidate)"
           >
@@ -43,10 +44,10 @@
             <p v-if="previewLoading" :class="$style.hint">{{ $t('lyric_search__preview_loading') }}</p>
             <p v-else-if="previewError" :class="$style.hint">{{ previewError }}</p>
             <template v-else>
-              <ol :class="[$style.lines, 'scroll']">
-                <li v-for="(line, index) in previewLines" :key="index">
-                  <span>{{ line.text }}</span>
-                  <span v-if="line.translation" :class="$style.translation">{{ line.translation }}</span>
+              <ol :class="$style.lines">
+                <li v-for="item in previewLines" :key="item.index" :class="{ [$style.lineCurrent]: item.current }">
+                  <span>{{ item.line.text }}</span>
+                  <span v-if="item.line.translation" :class="$style.translation">{{ item.line.translation }}</span>
                 </li>
               </ol>
               <base-btn :class="$style.useBtn" :disabled="applying" @click="handleApply">{{ $t('lyric_search__use') }}</base-btn>
@@ -68,15 +69,19 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, shallowRef, watch } from '@common/utils/vueTools'
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
-import { AUTO_MATCH_SCORE, buildLyricDoc, buildSearchKeyword, hasTimedLyric } from '@common/utils/lyrics'
-import { fetchCandidateLyric, LYRIC_PLATFORMS, searchLyricCandidates } from '@renderer/core/lyrics/search'
+import { buildLyricDoc, buildSearchKeyword, findLineIndex, hasTimedLyric } from '@common/utils/lyrics'
+import { compareCandidates, fetchCandidateLyric, LYRIC_PLATFORMS, searchLyricCandidates } from '@renderer/core/lyrics/search'
+import { getCurrentTime } from '@renderer/core/lyric'
 import { getBinding, getMatchSubject, getSongMusicInfo, unbindLyric } from '@renderer/core/lyrics/binding'
 import { applyLyricCandidate, reloadLyric, restoreAutoLyric } from '@renderer/core/lyrics/actions'
 import { saveLyricEdited } from '@renderer/utils/ipc'
 
-const PREVIEW_LINES = 8
+// 预览：当前播放位置前 2 行、后 4 行，跟随播放刷新
+const PREVIEW_BEFORE = 2
+const PREVIEW_AFTER = 4
+const PREVIEW_REFRESH = 300
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -94,7 +99,10 @@ const failed = ref([])
 const selected = shallowRef(null)
 const previewLoading = ref(false)
 const previewError = ref('')
-const previewLines = shallowRef([])
+const previewDoc = shallowRef(null)
+const previewPos = ref(0)
+// 各平台的搜索状态：'loading' | 结果条数 | 'failed'
+const platformState = ref({})
 const features = reactive({})
 const applying = ref(false)
 const binding = ref(null)
@@ -103,10 +111,30 @@ let previewId = 0
 
 const subject = computed(() => props.musicInfo ? getMatchSubject(props.musicInfo) : null)
 const platformName = id => t(`source_${id}`)
+const stateSuffix = id => {
+  const state = platformState.value[id]
+  if (state == null) return ''
+  if (state == 'loading') return ' …'
+  if (state == 'failed') return ' ×'
+  return ` ${state}`
+}
 const platformTabs = computed(() => [
   { id: 'all', label: t('lyric_search__platform_all') },
-  ...LYRIC_PLATFORMS.map(id => ({ id, label: platformName(id) })),
+  ...LYRIC_PLATFORMS.map(id => ({ id, label: platformName(id) + stateSuffix(id) })),
 ])
+// 默认关键词（歌名 + 歌手）搜索时，歌名对不上的结果不展示；用户改了关键词就全部展示
+const defaultKeyword = computed(() => subject.value ? buildSearchKeyword(subject.value) : '')
+const isCustomKeyword = computed(() => keyword.value.trim() != defaultKeyword.value)
+const titleMatched = computed(() => candidates.value.filter(candidate => candidate.titleMatch))
+const showingUnrelated = computed(() => !isCustomKeyword.value && searched.value && candidates.value.length > 0 && !titleMatched.value.length)
+const shownCandidates = computed(() => isCustomKeyword.value || showingUnrelated.value ? candidates.value : titleMatched.value)
+const previewLines = computed(() => {
+  const doc = previewDoc.value
+  if (!doc) return []
+  const current = findLineIndex(doc.lines, previewPos.value)
+  const from = Math.max(0, current - PREVIEW_BEFORE)
+  return doc.lines.slice(from, Math.max(from, current) + PREVIEW_AFTER + 1).map((line, i) => ({ line, index: from + i, current: from + i == current }))
+})
 const failedText = computed(() => failed.value.length
   ? t('lyric_search__failed', { platforms: failed.value.map(platformName).join('、') })
   : '')
@@ -122,17 +150,29 @@ const close = () => { emit('update:show', false) }
 const handleSearch = async() => {
   if (!subject.value) return
   const id = ++searchId
+  const platforms = platform.value == 'all' ? LYRIC_PLATFORMS : [platform.value]
   loading.value = true
   selected.value = null
+  candidates.value = []
+  failed.value = []
+  platformState.value = Object.fromEntries(platforms.map(p => [p, 'loading']))
   try {
-    const result = await searchLyricCandidates({
+    await searchLyricCandidates({
       keyword: keyword.value,
       query: subject.value,
-      platforms: platform.value == 'all' ? LYRIC_PLATFORMS : [platform.value],
+      platforms,
+      // 边搜边显示：每个平台一返回就并入列表
+      onPlatform: (p, list) => {
+        if (id != searchId) return
+        platformState.value = { ...platformState.value, [p]: list ? list.length : 'failed' }
+        if (!list) {
+          failed.value = [...failed.value, p]
+          return
+        }
+        const seen = new Set(candidates.value.map(candidate => candidate.key))
+        candidates.value = [...candidates.value, ...list.filter(candidate => !seen.has(candidate.key))].sort(compareCandidates)
+      },
     })
-    if (id != searchId) return
-    candidates.value = result.candidates
-    failed.value = result.failed
   } finally {
     if (id == searchId) {
       loading.value = false
@@ -151,7 +191,8 @@ const handlePreview = async candidate => {
     if (id != previewId) return
     const doc = buildLyricDoc(lyricInfo)
     features[candidate.key] = { hasWords: doc.hasWords, hasTranslation: doc.hasTranslation, hasRoma: doc.hasRoma }
-    previewLines.value = doc.lines.slice(0, PREVIEW_LINES)
+    previewDoc.value = doc
+    previewPos.value = getCurrentTime() + doc.offset
   } catch {
     if (id != previewId) return
     previewError.value = t('lyric_search__preview_failed')
@@ -197,6 +238,20 @@ const handleImport = async event => {
   close()
 }
 
+let previewTimer = null
+const stopPreviewTimer = () => {
+  if (previewTimer) clearInterval(previewTimer)
+  previewTimer = null
+}
+watch(() => props.show, show => {
+  stopPreviewTimer()
+  if (!show) return
+  previewTimer = setInterval(() => {
+    if (previewDoc.value) previewPos.value = getCurrentTime() + previewDoc.value.offset
+  }, PREVIEW_REFRESH)
+})
+onBeforeUnmount(stopPreviewTimer)
+
 watch(() => props.show, async show => {
   if (!show || !props.musicInfo) return
   keyword.value = subject.value ? buildSearchKeyword(subject.value) : ''
@@ -204,6 +259,7 @@ watch(() => props.show, async show => {
   candidates.value = []
   failed.value = []
   selected.value = null
+  previewDoc.value = null
   searched.value = false
   binding.value = await getBinding(props.musicInfo).catch(() => null)
   void handleSearch()
@@ -322,7 +378,7 @@ watch(() => props.show, async show => {
 .lines {
   flex: auto;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   font-size: 13px;
   line-height: 1.7;
   color: var(--color-font);
@@ -330,6 +386,15 @@ watch(() => props.show, async show => {
     display: flex;
     flex-flow: column nowrap;
   }
+}
+.lineCurrent {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.notice {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--color-font-label);
 }
 .translation {
   font-size: 12px;

@@ -94,14 +94,19 @@ const cached = (key, build) => {
   return layoutCache.get(key)
 }
 
-const wordStyle = (state, fontSize, margin) => ({
-  marginInlineEnd: `${margin}px`,
-  fontSize: `${fontSize}px`,
-  transform: `translate(${state.x}px, ${state.y}px) rotate(${state.rotate}deg) scale(${state.scale})`,
-  opacity: state.opacity * state.brightness,
-  filter: state.blur > 0.3 ? `blur(${state.blur}px)` : undefined,
-  textShadow: state.glow > 0.01 ? `0 0 ${fontSize * 0.2}px color-mix(in srgb, var(--stage-accent) ${Math.round(85 * state.glow)}%, transparent)` : undefined,
-})
+// 性能：不再给每个字做 filter: blur（大字号逐帧模糊会让 GPU 每帧重新光栅化，几个字同时弹入就卡）；
+// 光晕量化为 4 档，text-shadow 每个字只变几次，不再逐帧重绘
+const GLOW_STEPS = 4
+const wordStyle = (state, fontSize, margin) => {
+  const glow = Math.round(state.glow * GLOW_STEPS) / GLOW_STEPS
+  return {
+    marginInlineEnd: `${margin}px`,
+    fontSize: `${fontSize}px`,
+    transform: `translate(${state.x.toFixed(1)}px, ${state.y.toFixed(1)}px) rotate(${state.rotate.toFixed(2)}deg) scale(${state.scale.toFixed(3)})`,
+    opacity: (state.opacity * state.brightness).toFixed(3),
+    textShadow: glow > 0 ? `0 0 ${Math.round(fontSize * 0.2)}px color-mix(in srgb, var(--stage-accent) ${Math.round(85 * glow)}%, transparent)` : undefined,
+  }
+}
 const sparkKey = (lineStart, index) => `${lineStart}:${index}`
 
 const flowModel = (line, p, fade, h) => {
@@ -296,6 +301,7 @@ const model = computed(() => {
 })
 
 // ---- 火花：字词落定后 0.6 秒内从边缘射出的短线 ----
+const sparkRects = new Map()
 const drawSparks = () => {
   const canvas = dom_canvas.value
   const root = dom_root.value
@@ -316,20 +322,29 @@ const drawSparks = () => {
   if (cur < 0) return false
   // canvas 不认识 CSS 变量：借一个隐藏元素把强调色解析成具体颜色
   const accent = dom_accent.value ? getComputedStyle(dom_accent.value).color : getComputedStyle(root).color
-  const rootRect = root.getBoundingClientRect()
   let active = false
+  let rootRect = null
   for (const lineIndex of [cur - 1, cur]) {
     const line = lines[lineIndex]
     if (!line) continue
     line.words.forEach((word, i) => {
       const since = (pos.value - word.start) / 1000
       if (since < 0 || since >= SPARK_TIME) return
-      const el = root.querySelector(`[data-spark="${sparkKey(line.start, i)}"]`)
-      if (!el) return
+      const key = sparkKey(line.start, i)
+      let r = sparkRects.get(key)
+      if (!r) {
+        // 只在火花开始时量一次（读位置会强制同步排版），之后 0.6 秒内复用
+        const el = root.querySelector(`[data-spark="${key}"]`)
+        if (!el) return
+        rootRect ??= root.getBoundingClientRect()
+        const box = el.getBoundingClientRect()
+        r = { cx: box.left - rootRect.left + box.width / 2, cy: box.top - rootRect.top + box.height / 2, width: box.width, height: box.height }
+        if (sparkRects.size > 64) sparkRects.clear()
+        sparkRects.set(key, r)
+      }
       active = true
-      const r = el.getBoundingClientRect()
-      const cx = r.left - rootRect.left + r.width / 2
-      const cy = r.top - rootRect.top + r.height / 2
+      const cx = r.cx
+      const cy = r.cy
       const last = i == line.words.length - 1
       const count = last ? 16 : 9
       const reach = Math.max(r.width, r.height) * 0.75 * (last ? 1.6 : 1)
@@ -393,6 +408,7 @@ function frame() {
 
 watch(() => [props.doc, props.styleName, props.sparks, isPlay.value], () => {
   layoutCache.clear()
+  sparkRects.clear()
   frame()
 })
 
@@ -405,6 +421,7 @@ onMounted(() => {
     width.value = rect.width
     height.value = rect.height
     layoutCache.clear()
+    sparkRects.clear()
   })
   if (dom_root.value) resizeObserver.observe(dom_root.value)
   frame()

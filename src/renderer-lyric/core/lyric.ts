@@ -19,7 +19,8 @@ const tempOffset = ref(0)
 
 export const lyricDoc = computed<LyricDoc>(() => buildLyricDoc({
   lyric: source.value.lyric,
-  lxlyric: setting['player.isPlayLxlrc'] ? source.value.lxlyric : '',
+  // 有逐字时间就用（不再受“逐字歌词”开关限制，见播放详情页同一处说明）
+  lxlyric: source.value.lxlyric,
   tlyric: setting['player.isShowLyricTranslation'] ? source.value.tlyric : '',
   rlyric: setting['player.isShowLyricRoma'] ? source.value.rlyric : '',
 }))

@@ -68,18 +68,42 @@ const singerScore = (query: string[], candidate: string[]) => {
     : 0
 }
 
-/** 返回 0~85 的分数；时长相差超过 10 秒返回 null（淘汰） */
-export const scoreCandidate = (query: MatchSubject, candidate: MatchSubject): number | null => {
+export interface ScoreParts {
+  title: number
+  singer: number
+  duration: number
+  /** 时长相差超过 10 秒：不自动采用（Live / 剪辑版等），搜索面板里排在后面 */
+  durationMismatch: boolean
+}
+
+export const scoreParts = (query: MatchSubject, candidate: MatchSubject): ScoreParts => {
   let duration = 5
+  let durationMismatch = false
   if (query.duration > 0 && candidate.duration > 0) {
     const gap = Math.abs(query.duration - candidate.duration)
-    if (gap > MAX_DURATION_GAP) return null
+    durationMismatch = gap > MAX_DURATION_GAP
     duration = gap <= 2 ? 20 : gap <= 5 ? 10 : 0
   }
-  return titleScore(normalizeTitle(query.name), normalizeTitle(candidate.name)) +
-    singerScore(normalizeSingers(query.singer), normalizeSingers(candidate.singer)) +
-    duration
+  return {
+    title: titleScore(normalizeTitle(query.name), normalizeTitle(candidate.name)),
+    singer: singerScore(normalizeSingers(query.singer), normalizeSingers(candidate.singer)),
+    duration,
+    durationMismatch,
+  }
 }
+
+/** 返回 0~85 的分数；时长相差超过 10 秒返回 null（淘汰，不参与自动匹配） */
+export const scoreCandidate = (query: MatchSubject, candidate: MatchSubject): number | null => {
+  const parts = scoreParts(query, candidate)
+  if (parts.durationMismatch) return null
+  return parts.title + parts.singer + parts.duration
+}
+
+/**
+ * 搜索面板里的排序分：歌名对得上的永远排在歌名对不上的前面；
+ * 时长差太大（Live 等版本）不淘汰，只是不加时长分、排在同歌名的完整匹配之后。
+ */
+export const relevanceScore = (parts: ScoreParts) => (parts.title > 0 ? 100 : 0) + parts.title + parts.singer + (parts.durationMismatch ? 0 : parts.duration)
 
 const normalizeSingersRaw = (singer: string) => (singer || '').split(SINGER_SPLIT_RXP).map(s => s.trim()).filter(Boolean)
 

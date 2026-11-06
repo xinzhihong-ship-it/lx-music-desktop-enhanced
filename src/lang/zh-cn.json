@@ -255,6 +255,7 @@
   "lyric_search__searching": "搜索中…",
   "lyric_search__platform_all": "全部",
   "lyric_search__empty": "没有找到结果，试试修改关键词",
+  "lyric_search__no_title_match": "没有歌名完全一致的结果，以下为相关结果",
   "lyric_search__badge_words": "逐字",
   "lyric_search__badge_translation": "翻译",
   "lyric_search__badge_roma": "罗马音",
