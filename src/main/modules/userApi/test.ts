@@ -151,16 +151,21 @@ const ensureRuntime = async(apiId: string) => {
     return existing
   }
   let runtime: Runtime | undefined
+  let timer: NodeJS.Timeout | undefined
   try {
     runtime = await createRuntime(apiId)
     await Promise.race([
       runtime.initPromise,
-      new Promise<never>((_resolve, reject) => setTimeout(() => { reject(new Error('音源初始化超时')) }, 20_000)),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => { reject(new Error('音源初始化超时')) }, 20_000)
+      }),
     ])
     return runtime
   } catch (error: any) {
     if (runtime) destroyRuntime(runtime)
     throw error instanceof Error ? error : new Error(String(error))
+  } finally {
+    clearTimeout(timer)
   }
 }
 
