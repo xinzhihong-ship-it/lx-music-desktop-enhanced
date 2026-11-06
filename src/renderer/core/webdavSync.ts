@@ -1,4 +1,4 @@
-import { toRaw } from '@common/utils/vueTools'
+import { ref, toRaw } from '@common/utils/vueTools'
 import { getWebDAVFilePath, hashSyncData, decideWebDAVSync, getWebDAVUploadSettings, pickWebDAVDownloadSettings } from '@common/utils/webdavSync'
 import { LIST_IDS } from '@common/constants'
 import { filterMusicList, fixNewMusicInfoQuality } from '@renderer/utils'
@@ -10,6 +10,8 @@ import { createExportSetting, preserveAgreement } from '@renderer/utils/exportSe
 import { getUserApiData, overwriteUserApiData, sendWebDAVAction } from '@renderer/utils/ipc'
 import { setUserApi } from '@renderer/core/apiSource'
 import { dialog } from '@renderer/plugins/Dialog'
+import { setAllStatus } from '@renderer/store/player/action'
+import { statusText } from '@renderer/store/player/state'
 
 interface ListsFile {
   version: '2'
@@ -289,14 +291,54 @@ export const downloadWebDAVUserApis = async() => {
   }
 }
 
+// ---- 自动同步：后台静默执行，问题只在状态栏提示，不弹阻塞对话框 ----
+
+export interface WebDAVAutoSyncNotice {
+  type: 'failed' | 'conflict'
+  message: string
+  time: number
+}
+/** 自动同步最近一次的问题，在 WebDAV 设置中持续展示；同步成功后清空 */
+export const webdavAutoSyncNotice = ref<WebDAVAutoSyncNotice | null>(null)
+
+/** 同一类问题连续出现时，状态栏最多每 5 分钟提示一次（断网时每次歌单变更 / 窗口获焦都会触发同步） */
+const STATUS_NOTICE_INTERVAL = 5 * 60_000
+const STATUS_NOTICE_DURATION = 8000
+const lastStatusNoticeAt = new Map<WebDAVAutoSyncNotice['type'], number>()
+
+const tp = (key: string, params: Record<string, string>) => (window.i18n.t as unknown as (key: string, params: Record<string, string>) => string)(key, params)
+
+const reportAutoSyncProblem = (type: WebDAVAutoSyncNotice['type'], message: string) => {
+  const now = Date.now()
+  webdavAutoSyncNotice.value = { type, message, time: now }
+  if (now - (lastStatusNoticeAt.get(type) ?? 0) < STATUS_NOTICE_INTERVAL) return
+  lastStatusNoticeAt.set(type, now)
+  setAllStatus(message)
+  setTimeout(() => { if (statusText.value == message) setAllStatus('') }, STATUS_NOTICE_DURATION)
+}
+
+/** 执行一次自动同步（歌单变更防抖后、窗口获焦、启动时）。失败不抛出、不弹窗。 */
+export const runWebDAVAutoSync = async() => {
+  if (applyingRemote || !appSetting['sync.webdav.enable'] || !appSetting['sync.webdav.autoSync']) return
+  try {
+    await syncWebDAVLists(false)
+    // 成功：结束本轮问题，之后再出问题重新提示
+    lastStatusNoticeAt.clear()
+    webdavAutoSyncNotice.value = null
+  } catch (error: any) {
+    const message = error?.message ?? String(error)
+    // 与手动同步或另一次自动触发重叠：不是失败，静默跳过
+    if (message == t('setting__webdav_syncing')) return
+    reportAutoSyncProblem('failed', tp('setting__webdav_auto_sync_failed_status', { message }))
+  }
+}
+
 const scheduleAutoSync = () => {
   if (applyingRemote || !appSetting['sync.webdav.enable'] || !appSetting['sync.webdav.autoSync']) return
   if (autoTimer) clearTimeout(autoTimer)
   autoTimer = setTimeout(() => {
     autoTimer = null
-    void syncWebDAVLists(false).catch(error => {
-      void dialog({ message: `${t('setting__webdav_sync_failed')}: ${error?.message ?? String(error)}` })
-    })
+    void runWebDAVAutoSync()
   }, 3000)
 }
 
@@ -304,10 +346,6 @@ export const initWebDAVSync = () => {
   if (initialized) return
   initialized = true
   window.app_event.on('myListUpdate', scheduleAutoSync)
-  window.app_event.on('focus', () => {
-    if (appSetting['sync.webdav.enable'] && appSetting['sync.webdav.autoSync']) void syncWebDAVLists(false).catch(() => {})
-  })
-  if (appSetting['sync.webdav.enable'] && appSetting['sync.webdav.autoSync']) {
-    void syncWebDAVLists(false).catch(() => {})
-  }
+  window.app_event.on('focus', () => { void runWebDAVAutoSync() })
+  void runWebDAVAutoSync()
 }

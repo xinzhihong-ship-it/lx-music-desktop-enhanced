@@ -819,6 +819,7 @@
   "setting__webdav_remote_missing": "雲端找不到對應的備份檔案",
   "setting__webdav_syncing": "正在同步，請稍候",
   "setting__webdav_sync_failed": "WebDAV 操作失敗",
+  "setting__webdav_auto_sync_failed_status": "WebDAV 自動同步失敗：{message}（將在歌單變更或回到視窗時自動重試）",
   "setting__webdav_test_success": "WebDAV 連線成功",
   "setting__webdav_sync_success": "歌單同步完成",
   "setting__webdav_upload_success": "上傳完成",
