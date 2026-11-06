@@ -830,6 +830,7 @@
   "setting__webdav_syncing": "A sync is already running",
   "setting__webdav_sync_failed": "WebDAV operation failed",
   "setting__webdav_auto_sync_failed_status": "WebDAV auto sync failed: {message} (will retry when playlists change or the window regains focus)",
+  "setting__webdav_auto_sync_conflict_status": "WebDAV: both local and cloud playlists changed. Auto sync kept the local version (the cloud was not overwritten). Sync manually in Settings → Sync to choose which version to keep.",
   "setting__webdav_test_success": "WebDAV connection succeeded",
   "setting__webdav_sync_success": "Playlist sync completed",
   "setting__webdav_upload_success": "Upload completed",

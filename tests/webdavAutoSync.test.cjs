@@ -148,3 +148,45 @@ test('regression: automatic sync is a no-op when disabled', async() => {
   assert.deepEqual(h.calls.actions, [])
 })
 
+// 本地与云端相对上次同步都有修改 → 冲突
+const conflictHarness = () => harness({
+  remote: remoteFile(remoteLists([{ id: 'cloud-song', source: 'kw', name: 'c', singer: 'd', meta: {} }])),
+  appSettingOverrides: { 'sync.webdav.lastListHash': 'stale-hash' },
+})
+
+test('#24 an automatic sync conflict keeps the local version silently: no dialog, no upload, no local overwrite', async() => {
+  const h = conflictHarness()
+  await h.sync.runWebDAVAutoSync()
+  assert.deepEqual(h.calls.confirms, [], 'no blocking confirm dialog')
+  assert.deepEqual(h.calls.dialogs, [])
+  assert.deepEqual(h.calls.actions, ['download'], 'cloud is not overwritten and no backup / apply happens')
+  assert.equal(h.calls.overwrites, 0, 'local lists are kept')
+  assert.equal(h.appSetting['sync.webdav.lastListHash'], 'stale-hash', 'sync baseline unchanged so the conflict stays detectable')
+  assert.equal(h.sync.webdavAutoSyncNotice.value.type, 'conflict')
+  assert.deepEqual(h.calls.status, ['setting__webdav_auto_sync_conflict_status'])
+})
+
+test('#24 repeated automatic conflicts are throttled in the status bar', async() => {
+  const h = conflictHarness()
+  for (let i = 0; i < 4; i++) await h.sync.runWebDAVAutoSync()
+  assert.equal(h.calls.status.length, 1)
+  assert.deepEqual(h.calls.confirms, [])
+})
+
+test('regression: a manual sync on the same conflict still asks which version to keep', async() => {
+  const h = conflictHarness()
+  const decision = await h.sync.syncWebDAVLists(true)
+  assert.equal(h.calls.confirms.length, 1)
+  assert.equal(decision, 'upload') // 确认框选择了「保留本地」
+  assert.ok(h.calls.actions.includes('upload'))
+})
+
+test('#24 after the conflict is resolved manually, the next automatic sync is clean and clears the notice', async() => {
+  const h = conflictHarness()
+  await h.sync.runWebDAVAutoSync()
+  assert.equal(h.sync.webdavAutoSyncNotice.value.type, 'conflict')
+  await h.sync.syncWebDAVLists(true) // 手动同步：保留本地并上传
+  h.state.remote = remoteFile(remoteLists([{ id: 'local-song', source: 'kw', name: 'a', singer: 'b', meta: {} }]))
+  await h.sync.runWebDAVAutoSync()
+  assert.equal(h.sync.webdavAutoSyncNotice.value, null)
+})
