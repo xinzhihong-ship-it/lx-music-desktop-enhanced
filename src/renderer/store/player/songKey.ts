@@ -6,6 +6,7 @@ import {
   openNativeSongKeyWindow,
   closeNativeSongKeyWindow,
   syncNativeSongKeyData,
+  onSongKeyWindowActive,
   onSongKeyWindowSaveAction,
   onSongKeyWindowResetAction,
   onSongKeyWindowReanalyzeAction,
@@ -327,24 +328,15 @@ export const syncToNativeWindow = async(): Promise<void> => {
     retuneSpeedAuto: isRetuneSpeedAutomationSupported,
     themeCss: (window as any).dom_style?.innerText ?? '',
   }
-  const isAlive = await syncNativeSongKeyData(payload)
-  isNativeWindowActive.value = Boolean(isAlive)
+  await syncNativeSongKeyData(payload)
 }
 
 export const openIndependentSongKeyWindow = () => {
   openNativeSongKeyWindow()
-  isNativeWindowActive.value = true
-  // 多点重试同步，确保窗口渲染完毕后立即接到初始数据
-  for (const delay of [50, 200, 500, 1000]) {
-    setTimeout(() => {
-      void syncToNativeWindow()
-    }, delay)
-  }
 }
 
 export const closeIndependentSongKeyWindow = () => {
   closeNativeSongKeyWindow()
-  isNativeWindowActive.value = false
 }
 
 // 监听独立窗口回传的保存/重置动作
@@ -468,9 +460,6 @@ const updatePlaybackSeconds = () => {
   if (Number.isFinite(seconds) && seconds >= 0 && seconds !== playbackSeconds.value) {
     playbackSeconds.value = seconds
   }
-  if (isNativeWindowActive.value) {
-    void syncToNativeWindow()
-  }
 }
 
 try {
@@ -478,10 +467,22 @@ try {
 } catch {}
 
 const PROGRESS_POLL_MS = 500
-const progressTimer: unknown = setInterval(updatePlaybackSeconds, PROGRESS_POLL_MS)
-if (progressTimer && typeof progressTimer === 'object' && 'unref' in progressTimer) {
-  (progressTimer as { unref: () => void }).unref()
-}
+let progressTimer: ReturnType<typeof setInterval> | null = null
+onSongKeyWindowActive((active: boolean) => {
+  isNativeWindowActive.value = active
+  if (!active) {
+    if (progressTimer != null) clearInterval(progressTimer)
+    progressTimer = null
+    return
+  }
+
+  const syncProgress = () => {
+    updatePlaybackSeconds()
+    void syncToNativeWindow()
+  }
+  syncProgress()
+  progressTimer ??= setInterval(syncProgress, PROGRESS_POLL_MS)
+})
 
 // 自愈兜底：音源在歌曲信息不变的情况下被重新设置（播放失败自动换源、同曲重播）时，
 // 当前歌曲若还没有基调就补跑一次分析。正常切歌路径由上方 watch 负责，这里只处理漏网场景。

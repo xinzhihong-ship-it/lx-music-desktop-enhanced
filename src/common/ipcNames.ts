@@ -108,6 +108,7 @@ const modules = {
     song_key_decode_pcm: 'winMain_song_key_decode_pcm',
     open_song_key_window: 'winMain_open_song_key_window',
     close_song_key_window: 'winMain_close_song_key_window',
+    song_key_window_active: 'winMain_song_key_window_active',
     sync_song_key_data: 'winMain_sync_song_key_data',
     song_key_window_save_action: 'winMain_song_key_window_save_action',
     song_key_window_reset_action: 'winMain_song_key_window_reset_action',

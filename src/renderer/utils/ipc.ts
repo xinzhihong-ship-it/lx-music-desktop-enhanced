@@ -411,6 +411,12 @@ export const syncNativeSongKeyData = async(payload: any) => {
   return await rendererInvoke<any, boolean>(WIN_MAIN_RENDERER_EVENT_NAME.sync_song_key_data, payload).catch(() => false)
 }
 
+export const onSongKeyWindowActive = (callback: (active: boolean) => void) => {
+  rendererOn<boolean>(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_active, ({ params }: { params: boolean }) => {
+    callback(params)
+  })
+}
+
 export const onSongKeyWindowSaveAction = (callback: (data: any) => void) => {
   rendererOn<any>(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_save_action, ({ params }) => {
     callback(params)
