@@ -5,6 +5,8 @@ import {
   filterListDataForMobile,
   mapMovePositionToDesktop,
   mapMovePositionToMobile,
+  primeDesktopOnlyListCache,
+  resetDesktopOnlyListCache,
   restoreDesktopOnlyListData,
   toMobileListAction,
 } from '../src/main/modules/sync/server/modules/list/compatibility.ts'
@@ -109,3 +111,49 @@ test('position mapping skips Bilibili songs in both directions', () => {
   assert.equal(mapMovePositionToMobile(plain, ['c'], 1, isBili), 1)
 })
 
+test('operations targeting a Bilibili-source list are never sent to mobile', async() => {
+  const data = listData()
+  const reader = createReader(data)
+  const targeted = [
+    { action: 'list_music_overwrite', data: { listId: 'bili-list', musicInfos: [biliMusic, kwMusic] } },
+    { action: 'list_music_overwrite', data: { listId: 'bili-list', musicInfos: [] } },
+    { action: 'list_music_add', data: { id: 'bili-list', musicInfos: [kwMusic], addMusicLocationType: 'bottom' } },
+    { action: 'list_music_clear', data: ['bili-list'] },
+    { action: 'list_music_remove', data: { listId: 'bili-list', ids: ['kw-1'] } },
+    { action: 'list_music_update_position', data: { listId: 'bili-list', position: 0, ids: ['kw-1'] } },
+    { action: 'list_music_update', data: [{ id: 'bili-list', musicInfo: kwMusic }] },
+    { action: 'list_create', data: { position: 0, listInfos: [{ id: 'bili-new', name: 'b', source: 'bili', locationUpdateTime: null }] } },
+    { action: 'list_update_position', data: { position: 0, ids: ['bili-list'] } },
+  ]
+  for (const action of targeted) assert.equal(await toMobileListAction(action, reader), null, action.action)
+
+  // 混合目标时只保留普通歌单
+  const clear = await toMobileListAction({ action: 'list_music_clear', data: ['bili-list', 'custom-list'] }, reader)
+  assert.deepEqual(clear.data, ['custom-list'])
+  // 普通列表只剩 B 站歌曲时仍下发空覆盖
+  const overwrite = await toMobileListAction({ action: 'list_music_overwrite', data: { listId: 'custom-list', musicInfos: [biliMusic] } }, reader)
+  assert.deepEqual(overwrite.data, { listId: 'custom-list', musicInfos: [] })
+})
+
+test('moving songs across a Bilibili-source list only shows the visible side on mobile', async() => {
+  const reader = createReader(listData())
+  const base = { musicInfos: [biliMusic, kwMusic], addMusicLocationType: 'top' }
+  assert.deepEqual(await toMobileListAction({ action: 'list_music_move', data: { ...base, fromId: 'custom-list', toId: 'bili-list' } }, reader),
+    { action: 'list_music_remove', data: { listId: 'custom-list', ids: ['kw-1'] } })
+  assert.deepEqual(await toMobileListAction({ action: 'list_music_move', data: { ...base, fromId: 'bili-list', toId: 'default' } }, reader),
+    { action: 'list_music_add', data: { id: 'default', musicInfos: [kwMusic], addMusicLocationType: 'top' } })
+  assert.equal(await toMobileListAction({ action: 'list_music_move', data: { ...base, fromId: 'bili-list', toId: 'bili-list' } }, reader), null)
+  const normal = await toMobileListAction({ action: 'list_music_move', data: { ...base, fromId: 'custom-list', toId: 'default' } }, reader)
+  assert.deepEqual(normal.data.musicInfos, [kwMusic])
+})
+
+test('removing a Bilibili-source list is recognised even after it left the database', async() => {
+  resetDesktopOnlyListCache()
+  const data = listData()
+  await primeDesktopOnlyListCache(createReader(data))
+  // 列表事件在数据库删除之后触发：此时已读不到 bili-list
+  const afterDelete = createReader({ ...data, userList: data.userList.filter(list => list.id !== 'bili-list') })
+  assert.equal(await toMobileListAction({ action: 'list_remove', data: ['bili-list'] }, afterDelete), null)
+  const mixed = await toMobileListAction({ action: 'list_remove', data: ['custom-list'] }, afterDelete)
+  assert.deepEqual(mixed.data, ['custom-list'])
+})
