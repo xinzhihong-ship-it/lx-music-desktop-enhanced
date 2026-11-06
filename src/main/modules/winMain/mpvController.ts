@@ -1012,6 +1012,15 @@ export class MpvController {
    * （若把软件音量写成 0，取消静音又会因为队列而慢 2 秒 —— 这一点是实测踩过的坑）。
    * 驱动不支持（写失败）或不是 avfoundation 时，退回原来的软件音量方案。
    */
+  /**
+   * 无感重启交接期间静音旧实例，避免新旧实例同时出声。只调软件音量，不改 cachedMute，
+   * 也不使用 AO 级静音（可能作用于新实例共用的同一输出设备）。
+   */
+  async silenceForHandover(): Promise<void> {
+    if (!this.socket) return
+    await this.command(['set_property', 'volume', 0]).catch(() => {})
+  }
+
   async setMute(isMute: boolean): Promise<void> {
     this.cachedMute = isMute
     if (!this.socket) return
@@ -1207,7 +1216,11 @@ export class MpvController {
     this.pollTimer = null
   }
 
-  async destroy(): Promise<void> {
+  /**
+   * @param options.waitForExit 等待 mpv 进程真正退出（独占设备 / bit-perfect 重启时，
+   * 必须等旧进程释放音频设备后才能启动新进程）
+   */
+  async destroy(options: { waitForExit?: boolean } = {}): Promise<void> {
     this.isDestroyed = true
     this.isLoading = false
     this.isPlayingState = false
@@ -1218,8 +1231,10 @@ export class MpvController {
       await this.command(['quit']).catch(() => {})
     }
     this.cleanupSocket()
-    if (this.process && !this.process.killed) this.process.kill()
+    const mpvProcess = this.process
+    if (mpvProcess && !mpvProcess.killed) mpvProcess.kill()
     this.process = null
+    if (options.waitForExit && mpvProcess) await waitForProcessExit(mpvProcess)
     this.cachedPathInfo = null
     if (this.videoInputConfPath) {
       await fs.promises.unlink(this.videoInputConfPath).catch(() => {})
@@ -1432,6 +1447,29 @@ const setActiveMpvController = (controller: MpvController) => {
   activeMpvController = controller
 }
 
+/** 等待进程退出；超时后强制结束（SIGKILL），再给一点时间让系统回收 */
+export const waitForProcessExit = async(proc: ChildProcess, timeout = 3000): Promise<void> => {
+  if (proc.exitCode != null || proc.signalCode != null) return
+  const exited = new Promise<void>(resolve => { proc.once('exit', () => { resolve() }) })
+  const timedOut = await Promise.race([
+    exited.then(() => false),
+    new Promise<boolean>(resolve => setTimeout(() => { resolve(true) }, timeout)),
+  ])
+  if (!timedOut) return
+  log.warn(`[MpvController] mpv pid=${proc.pid ?? '?'} did not exit in ${timeout}ms, killing`)
+  try { proc.kill('SIGKILL') } catch {}
+  await Promise.race([exited, new Promise<void>(resolve => setTimeout(resolve, 1000))])
+}
+
+/**
+ * 是否必须「先彻底终止旧进程再启动新进程」：bit-perfect 模式或独占输出（--audio-exclusive）下，
+ * 旧进程占着音频设备，新进程无法打开同一设备，无感切换会失败或双重出声。
+ */
+export const requiresStopBeforeRestart = (setting: Partial<Pick<LX.AppSetting, 'player.mpv.bitPerfectMode' | 'player.mpv.extraArgs'>>): boolean => {
+  if (setting['player.mpv.bitPerfectMode']) return true
+  return (setting['player.mpv.extraArgs'] ?? []).some(arg => /^--audio-exclusive(?:=(?:yes|true|1))?$/i.test(String(arg).trim()))
+}
+
 export interface MpvRestartState {
   url?: string
   time?: number
@@ -1457,6 +1495,13 @@ const doRestartMpvController = async(
     if (pathFromMpv) url = pathFromMpv
   }
 
+  // 独占设备 / bit-perfect：旧进程不退出就不会释放设备，必须先彻底终止再启动新进程
+  const stopFirst = requiresStopBeforeRestart(global.lx.appSetting)
+  if (stopFirst) {
+    log.info(`[restartMpvController] exclusive / bit-perfect output: stopping old controller ${oldController.instanceId} first`)
+    await oldController.destroy({ waitForExit: true })
+  }
+
   try {
     await newController.ensureStarted()
     log.info(
@@ -1480,6 +1525,8 @@ const doRestartMpvController = async(
         `[restartMpvController] switched to new controller ${newController.instanceId} before play`,
       )
       if (state.playing) {
+        // 无感切换：新实例开始出声前静音旧实例，避免短暂的双重出声
+        if (!stopFirst) await oldController.silenceForHandover()
         await newController.play()
         log.info(
           `[restartMpvController] new controller ${newController.instanceId} playing`,
@@ -1522,8 +1569,8 @@ const doRestartMpvController = async(
     throw err
   }
 
-  // 旧进程在新进程成功接管后再销毁，实现无感切换
-  if (getMpvController() === newController) {
+  // 旧进程在新进程成功接管后再销毁，实现无感切换（stopFirst 时已提前销毁）
+  if (!stopFirst && getMpvController() === newController) {
     log.info(
       `[restartMpvController] destroying old controller ${oldController.instanceId}`,
     )
