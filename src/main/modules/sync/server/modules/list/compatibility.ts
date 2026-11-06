@@ -172,8 +172,33 @@ export const filterListDataForMobile = <T extends MakeOptional<LX.List.ListDataF
 }
 
 /**
+ * 已知的 B 站来源歌单 id。列表事件在数据库写入之后才触发，删除 B 站歌单时已无法再查到其来源，
+ * 因此每次读取歌单时记录下来，供 list_remove 判断。
+ */
+const knownDesktopOnlyListIds = new Set<string>()
+const rememberDesktopOnlyLists = (lists: readonly UserListInfo[]) => {
+  for (const list of lists) if (isDesktopOnlyList(list)) knownDesktopOnlyListIds.add(list.id)
+}
+
+/** 读取当前全部 B 站来源歌单 id（同时刷新缓存）。默认列表 / 收藏列表永远不是 B 站来源。 */
+const getDesktopOnlyListIds = async(reader: LocalListReader): Promise<Set<string>> => {
+  const lists = await reader.getUserLists()
+  rememberDesktopOnlyLists(lists)
+  return new Set(lists.filter(isDesktopOnlyList).map(list => list.id))
+}
+
+/** 同步服务启动时预热缓存，保证启动后第一次删除 B 站歌单也能被识别。 */
+export const primeDesktopOnlyListCache = async(reader: LocalListReader = defaultReader) => {
+  await getDesktopOnlyListIds(reader)
+}
+
+/** 仅供测试：清空缓存。 */
+export const resetDesktopOnlyListCache = () => { knownDesktopOnlyListIds.clear() }
+
+/**
  * 把本地（桌面端视角）的列表操作转换成发给移动端的操作；返回 null 表示该操作对移动端无可见影响。
- * 位置换算读取的是本地当前列表，操作执行前后读取结果一致（换算只依赖「移出 ids 后」的列表）。
+ * - 目标为 B 站来源歌单的操作一律不下发（移动端没有该歌单，下发会产生孤儿数据或报错）。
+ * - 位置换算读取的是本地当前列表，操作执行前后读取结果一致（换算只依赖「移出 ids 后」的列表）。
  */
 export const toMobileListAction = async(
   action: ListAction,
@@ -183,36 +208,59 @@ export const toMobileListAction = async(
     case 'list_data_overwrite':
       return { ...action, data: filterListDataForMobile(action.data) }
     case 'list_create': {
+      rememberDesktopOnlyLists(action.data.listInfos)
       const listInfos = action.data.listInfos.filter(list => !isDesktopOnlyList(list))
       if (!listInfos.length) return null
       const createdIds = new Set(action.data.listInfos.map(list => list.id))
       const preLists = (await reader.getUserLists()).filter(list => !createdIds.has(list.id))
       return { ...action, data: { listInfos, position: mapCreatePositionToMobile(preLists, action.data.position) } }
     }
+    case 'list_remove': {
+      const hiddenIds = await getDesktopOnlyListIds(reader)
+      const ids = action.data.filter(id => !hiddenIds.has(id) && !knownDesktopOnlyListIds.has(id))
+      for (const id of action.data) if (!hiddenIds.has(id)) knownDesktopOnlyListIds.delete(id)
+      return ids.length ? { ...action, data: ids } : null
+    }
     case 'list_update': {
+      rememberDesktopOnlyLists(action.data)
       const listInfos = action.data.filter(list => !isDesktopOnlyList(list))
       return listInfos.length ? { ...action, data: listInfos } : null
     }
     case 'list_update_position': {
       const lists = await reader.getUserLists()
+      rememberDesktopOnlyLists(lists)
       const hiddenIds = new Set(lists.filter(isDesktopOnlyList).map(list => list.id))
       const ids = action.data.ids.filter(id => !hiddenIds.has(id))
       if (!ids.length) return null
       return { ...action, data: { ids, position: mapMovePositionToMobile(lists, action.data.ids, action.data.position, isDesktopOnlyList) } }
     }
     case 'list_music_add': {
+      if ((await getDesktopOnlyListIds(reader)).has(action.data.id)) return null
       const musicInfos = filterMusicInfos(action.data.musicInfos)
       return musicInfos.length ? { ...action, data: { ...action.data, musicInfos } } : null
     }
     case 'list_music_move': {
+      const hiddenIds = await getDesktopOnlyListIds(reader)
+      const fromHidden = hiddenIds.has(action.data.fromId)
+      const toHidden = hiddenIds.has(action.data.toId)
       const musicInfos = filterMusicInfos(action.data.musicInfos)
-      return musicInfos.length ? { ...action, data: { ...action.data, musicInfos } } : null
+      if (!musicInfos.length || (fromHidden && toHidden)) return null
+      // 跨越 B 站歌单的移动：移动端只看得到可见一侧的变化
+      if (toHidden) return { action: 'list_music_remove', data: { listId: action.data.fromId, ids: musicInfos.map(musicInfo => musicInfo.id) } }
+      if (fromHidden) return { action: 'list_music_add', data: { id: action.data.toId, musicInfos, addMusicLocationType: action.data.addMusicLocationType } }
+      return { ...action, data: { ...action.data, musicInfos } }
+    }
+    case 'list_music_remove': {
+      if ((await getDesktopOnlyListIds(reader)).has(action.data.listId)) return null
+      return action
     }
     case 'list_music_update': {
-      const musicInfos = action.data.filter(item => !isDesktopOnlyMusic(item.musicInfo))
+      const hiddenIds = await getDesktopOnlyListIds(reader)
+      const musicInfos = action.data.filter(item => !hiddenIds.has(item.id) && !isDesktopOnlyMusic(item.musicInfo))
       return musicInfos.length ? { ...action, data: musicInfos } : null
     }
     case 'list_music_update_position': {
+      if ((await getDesktopOnlyListIds(reader)).has(action.data.listId)) return null
       const list = await reader.getListMusics(action.data.listId)
       const hiddenIds = new Set(list.filter(isDesktopOnlyMusic).map(musicInfo => musicInfo.id))
       const ids = action.data.ids.filter(id => !hiddenIds.has(id))
@@ -223,10 +271,15 @@ export const toMobileListAction = async(
       }
     }
     case 'list_music_overwrite':
-      // 列表只剩 B 站歌曲时也要下发（空列表），否则移动端会残留已被覆盖掉的旧歌曲
+      if ((await getDesktopOnlyListIds(reader)).has(action.data.listId)) return null
+      // 普通列表只剩 B 站歌曲时也要下发（空列表），否则移动端会残留已被覆盖掉的旧歌曲
       return { ...action, data: { ...action.data, musicInfos: filterMusicInfos(action.data.musicInfos) } }
+    case 'list_music_clear': {
+      const hiddenIds = await getDesktopOnlyListIds(reader)
+      const ids = action.data.filter(id => !hiddenIds.has(id))
+      return ids.length ? { ...action, data: ids } : null
+    }
     default:
-      // list_remove / list_music_remove / list_music_clear：只含 id，移动端忽略不存在的 id
       return action
   }
 }

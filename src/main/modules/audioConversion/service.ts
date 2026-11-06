@@ -38,6 +38,9 @@ const getOutputPath = (
   }
 }
 
+/** ffprobe 单次检测的最长时间。 */
+const PROBE_TIMEOUT_MS = 30_000
+
 /** 任务在执行中途被取消或移出队列，runNext 据此提前退出。 */
 class ConversionAbortedError extends Error {
   constructor() {
@@ -203,11 +206,27 @@ export class AudioConversionService {
     this.persist()
   }
 
+  /**
+   * 用 ffprobe 检测音频。子进程登记为当前运行进程，取消任务时随之被终止；
+   * 超过 PROBE_TIMEOUT_MS 未结束（如网络盘 / 已拔出的设备导致读取挂起）则强制终止并判定失败，
+   * 避免检测卡住使整个转换队列停滞。
+   */
   private async probe(filePath: string) {
     const binary = getBinaryPath('ffprobe')
-    return new Promise<{ duration: number }>((resolve, reject) => {
+    return new Promise<{ duration: number }>((_resolve, _reject) => {
       let output = ''
       let stderr = ''
+      let settled = false
+      let timer: NodeJS.Timeout | null = null
+      const settle = () => {
+        if (settled) return false
+        settled = true
+        if (timer) clearTimeout(timer)
+        if (this.running === child) this.running = null
+        return true
+      }
+      const resolve = (value: { duration: number }) => { if (settle()) _resolve(value) }
+      const reject = (error: Error) => { if (settle()) _reject(error) }
       const child = spawn(binary, [
         '-v',
         'error',
@@ -219,6 +238,11 @@ export class AudioConversionService {
         'json',
         filePath,
       ], { shell: false })
+      this.running = child
+      timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        reject(new Error(`ffprobe 检测音频超时（${PROBE_TIMEOUT_MS / 1000} 秒），请检查文件是否可正常读取`))
+      }, PROBE_TIMEOUT_MS)
       child.stdout.on('data', (chunk) => {
         output += chunk.toString()
       })

@@ -1,7 +1,7 @@
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
 import { registerListActionEvent } from '../../../../listEvent'
 import { getUserSpace } from '../../../user'
-import { toMobileListAction } from '../compatibility'
+import { primeDesktopOnlyListCache, toMobileListAction } from '../compatibility'
 
 // let socket: LX.Sync.Server.Socket | null
 let unregisterLocalListAction: (() => void) | null
@@ -41,8 +41,18 @@ export const registerEvent = (wss: LX.Sync.Server.SocketServer) => {
   //   unregisterLocalListAction = null
   // })
   unregisterEvent()
+  // 发给各客户端的 remoteQueueList 按「调用先后」排队；sendListAction 内部有读库等异步步骤，
+  // 若并发执行，后发生的操作可能先被调用、先发出。这里串成队列：上一个操作对所有客户端完成调用
+  // （只等调用发出，不等对端响应）后才处理下一个，保证同一客户端收到的顺序与本地发生顺序一致。
+  // 队列首项预热 B 站歌单缓存，保证启动后第一次删除 B 站歌单也能识别。
+  let sendQueue: Promise<void> = primeDesktopOnlyListCache().catch(err => {
+    console.log('prime desktop-only list cache failed:', err?.message ?? err)
+  })
   unregisterLocalListAction = registerListActionEvent((action) => {
-    void sendListAction(wss, action)
+    sendQueue = sendQueue.then(async() => sendListAction(wss, action)).catch(err => {
+      // 单个操作失败不能阻断后续操作的发送
+      console.log('send list action failed:', err?.message ?? err)
+    })
   })
 }
 
