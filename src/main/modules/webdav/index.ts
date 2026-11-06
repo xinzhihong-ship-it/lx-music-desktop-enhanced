@@ -49,6 +49,10 @@ const ensureDirectory = async(config: LX.WebDAVSync.Config, filePath: string) =>
   for (const segment of segments) {
     current += `/${segment}`
     const response = await request(config, 'MKCOL', current)
+    const status = response.statusCode ?? 0
+    if ((status >= 200 && status < 300) || status === 405) continue
+    const probe = await request(config, 'PROPFIND', current, undefined, { Depth: '0' }).catch(() => null)
+    if (probe?.statusCode === 207 || probe?.statusCode === 200) continue
     assertSuccess(response, [405])
   }
 }
