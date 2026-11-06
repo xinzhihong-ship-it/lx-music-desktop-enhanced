@@ -367,8 +367,7 @@ export class MpvController {
       this.isPlayingState = false
       this.hasFileLoaded = false
       this.isPaused = true
-      this.cleanupSocket()
-      this.rejectAll(new Error(message))
+      this.cleanupSocket(new Error(message))
       if (!this.isDestroyed) this.sendEvent('error', { message })
     })
 
@@ -546,7 +545,11 @@ export class MpvController {
           this.sendEvent('error', { message: err.message })
         })
         socket.on('close', () => {
+          // 只处理当前连接：迟到的旧连接 close 事件不能清掉新连接
+          if (this.socket !== socket) return
           this.socket = null
+          // 连接已断开，挂起的请求不可能再收到回复：立即统一 reject，不再空等 5 秒超时
+          this.rejectAll(new Error('mpv IPC connection closed'))
         })
         resolve()
       })
@@ -1227,10 +1230,15 @@ export class MpvController {
     // 保持 isDestroyed=true，避免退出事件被误转发给 renderer 造成播放状态混乱。
   }
 
-  private cleanupSocket() {
+  /**
+   * 关闭 IPC 连接并统一 reject 所有挂起请求（销毁、进程退出等场景），避免它们空等 5 秒超时。
+   * @param reason 挂起请求收到的错误；进程退出时传入退出码信息
+   */
+  private cleanupSocket(reason: Error = new Error('mpv IPC connection closed')) {
     this.stopPolling()
     this.socket?.destroy()
     this.socket = null
+    this.rejectAll(reason)
     if (!isWin && this.ipcPath) {
       try {
         fs.unlinkSync(this.ipcPath)
