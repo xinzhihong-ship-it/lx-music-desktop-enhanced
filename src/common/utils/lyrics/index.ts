@@ -1,0 +1,5 @@
+export type { LyricDoc, LyricLine, LyricSourceText, LyricWord } from './types'
+export { buildLyricDoc, hasTimedLyric, parseLrc, parseLxWords } from './parse'
+export { isCjkChar, splitWords, spreadWords, wordProgress } from './words'
+export { findLineIndex, findQuiets, isCreditLine } from './timeline'
+export type { QuietRange } from './timeline'
