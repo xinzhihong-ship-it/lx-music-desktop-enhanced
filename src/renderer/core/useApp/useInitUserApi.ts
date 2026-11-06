@@ -2,16 +2,17 @@ import { onBeforeUnmount, watch } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
 import { onUserApiStatus, getUserApiList, sendUserApiRequest as sendUserApiRequestRemote, userApiRequestCancel, onShowUserApiUpdateAlert } from '@renderer/utils/ipc'
 import { openUrl } from '@common/utils/electron'
-import { qualityList, userApi } from '@renderer/store'
+import { apiSource, qualityList, userApi } from '@renderer/store'
 import { appSetting } from '@renderer/store/setting'
 import { dialog } from '@renderer/plugins/Dialog'
-import { setUserApi } from '@renderer/core/apiSource'
+import { getRequestedApiId, setUserApi } from '@renderer/core/apiSource'
 import { ALWAYS_SUPPORTED_SOURCE_QUALITYS } from '@common/constants'
 
 const sendUserApiRequest: typeof sendUserApiRequestRemote = async(data) => {
   let stop: () => void
   return new Promise<void>((resolve, reject) => {
-    stop = watch(() => appSetting['common.apiSource'], () => {
+    // 跟随运行时音源（错误恢复临时换源时设置不变，但旧音源的请求同样需要取消）
+    stop = watch(() => apiSource.value, () => {
       reject(new Error('source changed'))
     })
     void sendUserApiRequestRemote(data).then(resolve).catch(reject)
@@ -28,7 +29,8 @@ export default () => {
     userApi.status = status
     userApi.message = message
 
-    if (!apiInfo || apiInfo.id !== appSetting['common.apiSource']) return
+    // 只接收当前请求的音源的状态；常规情况下它就是设置中的音源，临时换源时则是临时音源
+    if (!apiInfo || apiInfo.id !== getRequestedApiId()) return
     if (status) {
       if (apiInfo.sources) {
         let apis: any = {}

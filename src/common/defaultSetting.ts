@@ -62,6 +62,7 @@ const defaultSetting: LX.AppSetting = {
   'player.playErrorStrategyOrder': ['apiSource', 'platform', 'quality', 'next'],
   'player.playErrorRetryCount': 1,
   'player.playErrorApiSourceCount': 2,
+  'player.playErrorStrictQuality': false,
   'player.isAutoCleanPlayedList': false,
   'player.soundEffect.convolution.fileName': '',
   'player.soundEffect.convolution.mainGain': 10,

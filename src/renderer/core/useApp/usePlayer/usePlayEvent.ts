@@ -1,18 +1,18 @@
 import { onBeforeUnmount } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
-import { musicInfo, playMusicInfo, playQuality } from '@renderer/store/player/state'
+import { musicInfo, playMusicInfo, playQuality, statusText } from '@renderer/store/player/state'
 import { setStop } from '@renderer/plugins/player'
 import { playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
-import { getPlayErrorActions, getPlayErrorApiSourceCount, getPlayErrorRetryCount, isPlayErrorHandlingEnabled } from '@renderer/core/player/errorStrategy'
+import { getPlayErrorActions, getPlayErrorApiSourceCount, getPlayErrorRetryCount, isPlayErrorHandlingEnabled, isStrictPlayQualityEnabled } from '@renderer/core/player/errorStrategy'
 import { getExactPlayQuality, getOtherSource } from '@renderer/core/music/utils'
 import { loadDetailedQuality } from '@renderer/core/music/online'
 import { createPlaybackRecoveryPlan, getRecoveryApiIds, type RecoveryCombination } from '@common/utils/playbackRecovery'
 import { getCurrentPlaybackAttempt, playbackAttemptKey } from '@renderer/core/player/playbackAttempt'
 import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { userApi } from '@renderer/store'
-import { setUserApi } from '@renderer/core/apiSource'
+import { getRequestedApiId, setUserApi } from '@renderer/core/apiSource'
 import { getPlaybackIntent, getPlaybackIntentRevision, onPlaybackIntentChange } from '@renderer/core/player/playbackIntent'
 
 export default () => {
@@ -29,6 +29,34 @@ export default () => {
   let recoveryGeneration = 0
   let recoveryIntentRevision = 0
   const cancelRecoveryWaits = new Set<() => void>()
+
+  // ---- 临时音源：错误恢复只切换运行时音源，不写回设置；恢复结束后切回用户在设置中选择的音源 ----
+  let tempApiId: string | null = null
+  /** 当前实际使用的音源（运行时），临时换源期间与 appSetting['common.apiSource'] 不同 */
+  const getActiveApiId = () => getRequestedApiId() || appSetting['common.apiSource']
+  const getApiName = (id: string) => userApi.list.find(api => api.id == id)?.name ?? id
+  /**
+   * 结束临时音源，切回设置中的音源。返回本次临时使用过的音源 id（未切换过则为 null）。
+   * 切回会立即替换 apiInitPromise，之后发起的取址请求（下一首、预加载）都会等待原音源初始化完成。
+   */
+  const restoreUserApiSource = (): string | null => {
+    if (!tempApiId) return null
+    const usedId = tempApiId
+    tempApiId = null
+    const userApiId = appSetting['common.apiSource']
+    if (getRequestedApiId() != userApiId) {
+      void setUserApi(userApiId).catch(err => { console.warn('restore user api source failed', err) })
+    }
+    return usedId
+  }
+  const showTempApiNotice = (usedId: string) => {
+    const message = t('player__api_source_temp_used', { name: getApiName(usedId), original: getApiName(appSetting['common.apiSource']) })
+    // 放到本轮 playing 事件处理之后，避免被其他 playing 监听清空
+    setTimeout(() => {
+      setAllStatus(message)
+      setTimeout(() => { if (statusText.value == message) setAllStatus('') }, 6000)
+    })
+  }
   const waitForRecovery = async<T>(task: () => Promise<T>): Promise<T> => {
     let timer: NodeJS.Timeout
     let cancel: () => void
@@ -104,6 +132,9 @@ export default () => {
   const handlePlaying = () => {
     setAllStatus('')
     clearLoadingTimeout()
+    // 临时音源已成功恢复播放：当前歌曲的地址已取到，立即切回用户音源，后续歌曲不再沿用临时音源
+    const usedId = restoreUserApiSource()
+    if (usedId) showTempApiNotice(usedId)
   }
 
   const handleEmpied = () => {
@@ -124,6 +155,12 @@ export default () => {
       setAllStatus(t('player__error'))
       setTimeout(() => { addDelayNextTimeout(generation) })
     }
+  }
+
+  /** 所有恢复手段均已失败、停留在当前歌曲：切回用户音源并提示 */
+  const stopRecoveryWithError = () => {
+    restoreUserApiSource()
+    setAllStatus(t('player__error_stopped'))
   }
 
   const recoverPlayback = async(allowRefresh: boolean, shouldResume: boolean, generation: number, errCode?: number) => {
@@ -159,13 +196,13 @@ export default () => {
     if (!onlineMusicInfo || isBiliVideoActive()) {
       recoveryFinished = true
       if (actions.includes('next')) playNextAfterFailure(generation)
-      else setAllStatus(t('player__error_stopped'))
+      else stopRecoveryWithError()
       return
     }
     if (!recoveryPlan) {
       planActions = [...actions]
       const original = currentAttempt?.musicInfo ?? onlineMusicInfo
-      const apiId = currentAttempt?.apiId ?? appSetting['common.apiSource']
+      const apiId = currentAttempt?.apiId ?? getActiveApiId()
       const quality = currentAttempt?.quality ?? appSetting['player.playQuality'] ?? playQuality.value as LX.Quality
       failedCombinations.add(playbackAttemptKey({ ownerId: currentMusicInfo.id, apiId, musicInfo: original, quality }))
       recoveryPlan = createPlaybackRecoveryPlan({
@@ -201,29 +238,33 @@ export default () => {
       if (next.done) {
         recoveryFinished = true
         if (planActions.includes('next')) playNextAfterFailure(generation)
-        else setAllStatus(t('player__error_stopped'))
+        else stopRecoveryWithError()
         return
       }
       const combination = { ...next.value, ownerId: currentMusicInfo.id }
       const key = playbackAttemptKey(combination)
       if (failedCombinations.has(key) || failedApis.has(combination.apiId)) continue
       failedCombinations.add(key)
-      if (combination.apiId != appSetting['common.apiSource']) {
+      if (combination.apiId != getActiveApiId()) {
         const api = userApi.list.find(api => api.id == combination.apiId)
         setAllStatus(t('player__switch_api_source', { name: api?.name ?? combination.apiId }))
         try {
+          // 临时切换：不写回设置，恢复结束后由 restoreUserApiSource 切回；切回用户自己的音源不算临时切换
+          tempApiId = combination.apiId == appSetting['common.apiSource'] ? null : combination.apiId
           const initialized = await waitForRecovery(async() => {
-            await setUserApi(combination.apiId)
+            await setUserApi(combination.apiId, { persist: false })
             if (!isRecoveryCurrent(generation)) return false
             return window.lx.apiInitPromise[0]
           })
           if (!isRecoveryCurrent(generation)) return
-          if (!initialized || appSetting['common.apiSource'] != combination.apiId) {
+          if (!initialized || getActiveApiId() != combination.apiId) {
             failedApis.add(combination.apiId)
             continue
           }
         } catch (err) {
           console.warn('switch playback api failed', err)
+          // 已被取消的旧恢复（切歌 / 暂停后）不能把失败记录写进新一轮恢复的状态
+          if (!isRecoveryCurrent(generation)) return
           failedApis.add(combination.apiId)
           continue
         }
@@ -238,13 +279,14 @@ export default () => {
       const quality = getExactPlayQuality(combination.quality, combination.musicInfo)
       if (!quality) continue
       if (shouldResume) setShouldPlayAfterLoad(true)
-      setMusicUrl(currentMusicInfo, true, { sourceMusicInfo: combination.musicInfo, quality, strictQuality: true })
+      // 恢复组合需要精确请求该档位；实际降质是否算失败由「严格音质」设置决定
+      setMusicUrl(currentMusicInfo, true, { sourceMusicInfo: combination.musicInfo, quality, strictQuality: true, rejectDowngrade: isStrictPlayQualityEnabled() })
       if (quality != currentAttempt?.quality) setAllStatus(t('player__lower_quality', { quality }))
       else if (combination.musicInfo.source != currentAttempt?.musicInfo.source) setAllStatus(t('toggle_source_try'))
       return
     }
 
-    setAllStatus(t('player__error_stopped'))
+    stopRecoveryWithError()
   }
 
   const handleError = (errCode?: number) => {
@@ -284,6 +326,8 @@ export default () => {
   }
 
   const handleSetPlayInfo = () => {
+    // 切歌 / 停止 / 暂停 / 卸载：本轮恢复结束，临时音源不带到下一首
+    restoreUserApiSource()
     recoveryGeneration++
     for (const cancel of cancelRecoveryWaits) cancel()
     cancelRecoveryWaits.clear()
