@@ -11,6 +11,7 @@ import * as accountSessions from '@main/modules/account/sessions'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { getBundledMacMpvAppNames } from '@common/utils/mpvCompatibility'
 import { isCoreAudioMappedDevice, resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
+import { trackMpvProcess } from './mpvOrphan'
 
 export type MpvPathSource =
   | 'custom'
@@ -338,6 +339,8 @@ export class MpvController {
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    // 登记子进程：主进程退出（含异常退出、终止信号）时同步结束，避免残留孤儿 mpv
+    trackMpvProcess(mpvProcess)
     this.process = mpvProcess
 
     mpvProcess.stdout?.on('data', (data) => {
@@ -1344,6 +1347,7 @@ export class MpvController {
           stdio: ['ignore', 'pipe', 'pipe'],
         },
       )
+      trackMpvProcess(proc)
       let output = ''
       let settled = false
       let timeout: ReturnType<typeof setTimeout> | null = null
