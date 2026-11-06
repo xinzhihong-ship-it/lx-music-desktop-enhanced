@@ -79,7 +79,7 @@
     "test:issue21": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue21.test.mjs",
     "test:issue22": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue22.test.mjs tests/kugouPlaylist.test.mjs tests/issue21.test.mjs tests/neteasePlaylistDetails.test.mjs tests/platformPlaylistChanges.test.mjs tests/biliPlaylistPagination.test.mjs",
     "test:webdav": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/webdavSync.test.mjs",
-    "test:lyrics": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/lyricsModel.test.mjs",
+    "test:lyrics": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/lyricsModel.test.mjs tests/lyricsMatch.test.mjs tests/lyricsResolve.test.mjs tests/lyricsSearch.test.mjs",
     "test:audio-conversion": "node --test tests/audioConversion.test.mjs",
     "test:song-key": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/songKey.test.mjs tests/songKeyAnalysis.test.mjs tests/songKeyStore.test.mjs",
     "test:song-key-ipc": "electron tests/songKeyIpc.test.cjs",

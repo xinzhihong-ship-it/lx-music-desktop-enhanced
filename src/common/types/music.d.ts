@@ -108,6 +108,27 @@ declare namespace LX {
       lyrics: LyricInfo
     }
 
+    /** 用户为某首歌手动选定的歌词来源 */
+    interface LyricBinding {
+      /** 歌词所在平台：kg / tx / wy / kw / mg */
+      platform: string
+      songmid: string
+      name: string
+      singer: string
+      album: string
+      interval: string
+      /** 该平台搜索结果里的原始歌曲信息，取词时直接使用（酷狗 hash、咪咕歌词地址等） */
+      musicInfo: Record<string, any>
+      /** 本首歌词偏移（毫秒），生效位置 = 播放位置 + offset */
+      offset: number
+      updatedAt: number
+    }
+
+    interface LyricBindingSave {
+      id: string
+      binding: LyricBinding
+    }
+
     interface MusicFileMeta {
       title: string
       artist: string | null

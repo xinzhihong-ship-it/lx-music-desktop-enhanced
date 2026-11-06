@@ -35,7 +35,8 @@
         </div>
       </div>
     </transition>
-    <LyricMenu v-model="lyricMenuVisible" :xy="lyricMenuXY" :lyric-info="lyricInfo" @update-lyric="handleUpdateLyric" />
+    <LyricMenu v-model="lyricMenuVisible" :xy="lyricMenuXY" :lyric-info="lyricInfo" @update-lyric="handleUpdateLyric" @search="isShowLyricSearch = true" />
+    <LyricSearchModal v-model:show="isShowLyricSearch" :music-info="playMusicInfo.musicInfo" />
   </div>
 </template>
 
@@ -57,6 +58,7 @@ import {
 import { onMounted, onBeforeUnmount, computed, reactive, ref, nextTick, watch } from '@common/utils/vueTools'
 import useLyric from '@renderer/utils/compositions/useLyric'
 import LyricMenu from './components/LyricMenu.vue'
+import LyricSearchModal from './components/LyricSearchModal.vue'
 import { appSetting } from '@renderer/store/setting'
 import { setLyricOffset } from '@renderer/core/lyric'
 import useSelectAllLrc from './useSelectAllLrc'
@@ -64,6 +66,7 @@ import useSelectAllLrc from './useSelectAllLrc'
 export default {
   components: {
     LyricMenu,
+    LyricSearchModal,
   },
   setup() {
     const isZoomActiveLrc = computed(() => appSetting['playDetail.isZoomActiveLrc'])
@@ -92,6 +95,7 @@ export default {
     })
 
     const lyricMenuVisible = ref(false)
+    const isShowLyricSearch = ref(false)
     const lyricMenuXY = reactive({
       x: 0,
       y: 0,
@@ -176,6 +180,8 @@ export default {
       isStopScroll,
       lyricMenuVisible,
       lyricMenuXY,
+      isShowLyricSearch,
+      playMusicInfo,
       handleShowLyricMenu,
       handleUpdateLyric,
       lyricInfo,

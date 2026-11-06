@@ -876,6 +876,16 @@ export const getLyricEditedCount = async() => {
   return rendererInvoke<number>(WIN_MAIN_RENDERER_EVENT_NAME.get_lyric_edited_count)
 }
 
+export const getLyricBinding = async(id: string) => {
+  return rendererInvoke<string, LX.Music.LyricBinding | null>(WIN_MAIN_RENDERER_EVENT_NAME.get_lyric_binding, id)
+}
+export const saveLyricBinding = async(id: string, binding: LX.Music.LyricBinding) => {
+  await rendererInvoke<LX.Music.LyricBindingSave>(WIN_MAIN_RENDERER_EVENT_NAME.save_lyric_binding, { id, binding })
+}
+export const removeLyricBinding = async(id: string) => {
+  await rendererInvoke<string>(WIN_MAIN_RENDERER_EVENT_NAME.remove_lyric_binding, id)
+}
+
 
 export const saveTheme = async(theme: LX.Theme) => {
   return rendererInvoke<LX.Theme>(WIN_MAIN_RENDERER_EVENT_NAME.save_theme, theme)

@@ -10,6 +10,11 @@
     </div> -->
       <div :class="$style.group">
         <div :class="$style.subGroup">
+          <button :class="[$style.btn, $style.wideBtn]" :disabled="!lyricInfo.musicInfo" @click="handleSearch">{{ $t('lyric_menu__search') }}</button>
+        </div>
+      </div>
+      <div :class="$style.group">
+        <div :class="$style.subGroup">
           <div :class="$style.title">{{ $t('lyric_menu__lrc_size', { size: appSetting['playDetail.style.fontSize'] }) }}</div>
           <button :class="[$style.btn, $style.titleBtn]" :disabled="appSetting['playDetail.style.fontSize'] == 100" ignore-tip :aria-label="$t('lyric_menu__size_reset')" @click="fontSizeReset">{{ $t('lyric_menu__size_reset') }}</button>
         </div>
@@ -50,6 +55,7 @@ import useMenuLocation from '@renderer/utils/compositions/useMenuLocation'
 import { debounce } from '@common/utils/common'
 import { saveLyricEdited, removeLyricEdited } from '@renderer/utils/ipc'
 import { appSetting, setPlayDetailLyricFont, setPlayDetailLyricAlign } from '@renderer/store/setting'
+import { getBinding, setBindingOffset } from '@renderer/core/lyrics/binding'
 
 const offsetTagRxp = /(?:^|\n)\s*\[offset:\s*(\S+(?:\d+)*)\s*\]/
 const offsetTagAllRxp = /(^|\n)\s*\[offset:\s*(\S+(?:\d+)*)\s*\]/g
@@ -59,6 +65,10 @@ const saveLyric = debounce((musicInfo, lyricInfo) => {
 })
 const removeLyric = debounce(musicInfo => {
   void removeLyricEdited(musicInfo)
+})
+// 已绑定歌词来源的歌曲：偏移写进绑定（绑定优先于已编辑歌词，写已编辑歌词下次会被忽略）
+const saveBindingOffset = debounce((musicInfo, offset) => {
+  void setBindingOffset(musicInfo, offset)
 })
 
 const getOffset = lrc => {
@@ -83,7 +93,7 @@ export default {
       required: true,
     },
   },
-  emits: ['updateLyric', 'update:modelValue'],
+  emits: ['updateLyric', 'update:modelValue', 'search'],
   setup(props, { emit }) {
     // const appSetting = useRefGetter('appSetting')
     // const playDetailSetting = useRefGetter('playDetailSetting')
@@ -93,6 +103,7 @@ export default {
     const offset = ref(0)
     const offsetDisabled = ref(true)
     const originOffset = ref(0)
+    const isBound = ref(false)
 
     const visible = computed(() => props.modelValue)
     const location = computed(() => props.xy)
@@ -137,7 +148,9 @@ export default {
 
       const musicInfo = 'progress' in props.lyricInfo.musicInfo ? props.lyricInfo.musicInfo.metadata.musicInfo : props.lyricInfo.musicInfo
 
-      if (offset == originOffset.value) {
+      if (isBound.value) {
+        saveBindingOffset(musicInfo, offset)
+      } else if (offset == originOffset.value) {
         removeLyric(musicInfo)
       } else {
         saveLyric(musicInfo, {
@@ -170,6 +183,18 @@ export default {
       offset.value = getOffset(props.lyricInfo.lyric)
       originOffset.value = getOffset(props.lyricInfo.rawlyric)
       offsetDisabled.value = !props.lyricInfo.lyric
+      isBound.value = false
+      const musicInfo = props.lyricInfo.musicInfo
+      if (musicInfo) {
+        void getBinding(musicInfo).then(binding => {
+          if (props.lyricInfo.musicInfo === musicInfo) isBound.value = !!binding
+        }).catch(() => {})
+      }
+    }
+
+    const handleSearch = () => {
+      onHide()
+      emit('search')
     }
 
 
@@ -201,6 +226,7 @@ export default {
       offsetReset,
       setFontAlign,
       offsetDisabled,
+      handleSearch,
     }
   },
 }
@@ -280,6 +306,10 @@ export default {
       background: none !important;
     }
   }
+}
+.wideBtn {
+  justify-content: flex-start;
+  color: var(--color-primary);
 }
 .titleBtn {
   flex: none;
