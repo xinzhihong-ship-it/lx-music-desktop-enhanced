@@ -80,11 +80,9 @@ class Vst3Chain {
     // A crashed helper cannot save; retain its last successful on-disk snapshot.
     if (!host || host.closed || !slot.enabled) return
     const snapshot = await this.snapshotSlot(slot, host)
-    if (slot.lastStateSnapshot === undefined) {
-      slot.lastStateSnapshot = snapshot
-      return
-    }
-    const isDirty = snapshot !== slot.lastStateSnapshot
+    // No known baseline (e.g. the initial snapshot after loading failed): the current state may
+    // already contain user edits, so write it instead of silently adopting it as the baseline.
+    const isDirty = slot.lastStateSnapshot === undefined || snapshot !== slot.lastStateSnapshot
     if (!isDirty) return
     await fs.mkdir(this.stateDirectory, { recursive: true })
     const target = path.join(this.stateDirectory, `${slot.id}.json`)
