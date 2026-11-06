@@ -151,6 +151,14 @@ const bundledMacMpvAppNames = getBundledMacMpvAppNames(
   process.arch,
 )
 
+/** 加载被更新的 loadUrl 顶替（快速切歌）。调用方（renderer）会按请求序号忽略这类旧请求的失败。 */
+export class MpvLoadSupersededError extends Error {
+  constructor() {
+    super('mpv load superseded by a newer request')
+    this.name = 'MpvLoadSupersededError'
+  }
+}
+
 export const resolveMpvPath = (): MpvPathInfo => {
   const customPath = global.lx.appSetting['player.mpv.path']
   log.info(`resolveMpvPath - player.mpv.path configured=${Boolean(customPath)}`)
@@ -583,7 +591,7 @@ export class MpvController {
         this.hasFileLoaded = true
         // loaded / duration 事件推迟到 loadUrl 完成所有初始化（pause、seek 0）后再发送，
         // 避免 renderer 在待恢复 seek 还没应用前就进入播放。
-        if (this.fileLoadedResolve) this.fileLoadedResolve()
+        this.currentLoad?.resolve()
         // AO 此时才真正打开：探测驱动类型，并把当前静音状态同步给驱动
         void this.syncMuteHintWithAudioDriver()
         break
@@ -612,7 +620,7 @@ export class MpvController {
         } else if (message.reason == 'error') {
           const detail = message.error ? `: ${message.error}` : ''
           const error = new Error(`mpv playback error${detail}`)
-          if (this.fileLoadedReject) this.fileLoadedReject(error)
+          if (this.currentLoad) this.currentLoad.reject(error)
           else this.sendEvent('error', { message: error.message })
         } else {
           this.sendEvent('stopped')
@@ -698,9 +706,18 @@ export class MpvController {
     })
   }
 
-  private fileLoadedResolve: (() => void) | null = null
-  private fileLoadedReject: ((err: Error) => void) | null = null
-  private fileLoadedPromise: Promise<void> | null = null
+  /**
+   * 当前这一次加载的 file-loaded 等待。每次 loadUrl 生成独立的 token：
+   * 新加载开始时，尚未完成的旧等待以 MpvLoadSupersededError 结束（不改动任何共享状态），
+   * file-loaded / end-file 事件和超时探测只作用于当前等待，旧请求不会串扰新请求。
+   */
+  private currentLoad: { token: number, url: string, resolve: () => void, reject: (err: Error) => void } | null = null
+  /** 最近一次 loadUrl 的序号；loadUrl 的各个异步步骤据此判断自己是否已被新加载顶替 */
+  private loadToken = 0
+
+  private assertLoadCurrent(token: number) {
+    if (token !== this.loadToken || this.isDestroyed) throw new MpvLoadSupersededError()
+  }
 
   private async isFileReady(url: string): Promise<boolean> {
     const [path, duration, idleActive] = await Promise.all([
@@ -720,50 +737,53 @@ export class MpvController {
     )
   }
 
-  private async waitForFileLoaded(url: string): Promise<void> {
+  private async waitForFileLoaded(url: string, token: number): Promise<void> {
+    // 新加载顶替旧加载：旧的等待立即结束，其后续步骤会在 assertLoadCurrent 处停下
+    this.currentLoad?.reject(new MpvLoadSupersededError())
     // 文件可能在注册等待前就已加载完成（file-loaded 与 loadfile 响应同块到达时被提前处理），
     // 此时直接返回，避免重复等待。
     if (this.hasFileLoaded) return
-    if (this.fileLoadedPromise) return this.fileLoadedPromise
-    this.fileLoadedPromise = new Promise((resolve, reject) => {
-      this.fileLoadedResolve = () => {
-        this.fileLoadedResolve = null
-        this.fileLoadedReject = null
-        this.fileLoadedPromise = null
-        resolve()
+    return new Promise<void>((resolve, reject) => {
+      const timers: NodeJS.Timeout[] = []
+      const settle = () => {
+        if (this.currentLoad !== load) return false
+        this.currentLoad = null
+        for (const timer of timers) clearTimeout(timer)
+        return true
       }
-      this.fileLoadedReject = (err: Error) => {
-        this.fileLoadedResolve = null
-        this.fileLoadedReject = null
-        this.fileLoadedPromise = null
-        this.isLoading = false
-        reject(err)
+      const load = {
+        token,
+        url,
+        resolve: () => { if (settle()) resolve() },
+        reject: (err: Error) => {
+          if (!settle()) return
+          // 被顶替时新加载正在进行，不能改动 isLoading；其他失败（超时 / 播放错误）才结束加载状态
+          if (!(err instanceof MpvLoadSupersededError)) this.isLoading = false
+          reject(err)
+        },
       }
-      const rejectOnTimeout = () => {
-        if (!this.fileLoadedReject) return
-        const timeoutErr = new Error('mpv file-load timeout')
-        this.fileLoadedReject(timeoutErr)
-      }
+      this.currentLoad = load
+      const isCurrent = () => this.currentLoad === load
       // 长视频/直播流可能先开始推进，再延迟发出 file-loaded；先用 MPV 的
-      // path + duration 确认同一 URL 已可播放，避免把真实播放误判成超时。
-      setTimeout(() => {
-        if (!this.fileLoadedReject) return
-        void this.isFileReady(url)
+      // path + duration 确认「本次」URL 已可播放，避免把真实播放误判成超时。
+      timers.push(setTimeout(() => {
+        if (!isCurrent()) return
+        const rejectOnTimeout = () => { if (isCurrent()) load.reject(new Error('mpv file-load timeout')) }
+        void this.isFileReady(load.url)
           .then((isReady) => {
-            if (!this.fileLoadedReject) return
+            if (!isCurrent()) return
             if (isReady) {
               this.hasFileLoaded = true
-              this.fileLoadedResolve?.()
+              load.resolve()
             } else {
-              setTimeout(rejectOnTimeout, 10000)
+              timers.push(setTimeout(rejectOnTimeout, 10000))
             }
           })
           .catch(() => {
-            if (this.fileLoadedReject) setTimeout(rejectOnTimeout, 10000)
+            if (isCurrent()) timers.push(setTimeout(rejectOnTimeout, 10000))
           })
-      }, 10000)
+      }, 10000))
     })
-    return this.fileLoadedPromise
   }
 
   private async waitForProperty<T>(
@@ -786,7 +806,9 @@ export class MpvController {
     url: string,
     options?: { emitLoaded?: boolean, audioUrl?: string },
   ): Promise<void> {
+    const token = ++this.loadToken
     await this.ensureStarted()
+    this.assertLoadCurrent(token)
     this.loadedUrl = url
     log.info(
       `[MpvController loadUrl] instance=${this.instanceId} url: ${sanitizeUrl(url)}`,
@@ -825,10 +847,14 @@ export class MpvController {
           ]
         : [],
     ]).catch((err) => log.warn('set http-header-fields failed:', err))
+    // 设置请求头期间若已有更新的加载，不能再发出本次的 loadfile（否则旧歌会顶掉新歌）
+    this.assertLoadCurrent(token)
     // 必须在发 loadfile 之前就注册 file-loaded 等待：两者在同一条 IPC 流上，
     // 若 file-loaded 与命令响应在同一个数据块到达，事件会在 promise 注册前被处理并丢弃，
     // 导致 waitForFileLoaded 把仍在播放的流误判为超时（表现为切歌偶发失败）。
-    const fileLoaded = this.waitForFileLoaded(url)
+    const fileLoaded = this.waitForFileLoaded(url, token)
+    // 等待可能在 loadfile 响应之前就被新加载顶替，先挂上空处理避免未处理的 rejection；下方 await 仍会抛出
+    fileLoaded.catch(() => {})
     try {
       await this.command(['loadfile', url, 'replace'])
     } catch (err: any) {
@@ -845,13 +871,15 @@ export class MpvController {
           `loadfile with replace failed (${msg}), retrying without flags`,
         )
         await new Promise((resolve) => setTimeout(resolve, 200))
+        this.assertLoadCurrent(token)
         await this.command(['loadfile', url])
       } else {
-        this.isLoading = false
+        if (token === this.loadToken) this.isLoading = false
         throw err
       }
     }
     await fileLoaded
+    this.assertLoadCurrent(token)
     if (this.isVideo && options?.audioUrl) {
       await this.command(['audio-add', options.audioUrl, 'select']).catch(
         (err) => log.warn('mpv video audio-add failed:', err),
@@ -864,6 +892,7 @@ export class MpvController {
     // 等待 pause=true 真正生效后再返回，避免 renderer 紧接着调用 play() 时
     // 与 pause=true 命令竞争，导致播放/暂停状态错乱。
     const paused = await this.waitForProperty('pause', true)
+    this.assertLoadCurrent(token)
     this.isPaused = paused
     this.isPlayingState = false
     this.stopPolling()
@@ -871,6 +900,7 @@ export class MpvController {
     // 否则紧接着的 play() 会把新文件 seek 到上一首的暂停位置。
     this.pausedAt = 0
     await this.command(['seek', 0, 'absolute', 'exact']).catch(() => {})
+    this.assertLoadCurrent(token)
     this.isLoading = false
     // restart 场景下由调用方在 play() 成功后再通知 renderer，
     // 避免 renderer 在切换期间误发 pause 覆盖新实例的播放命令。

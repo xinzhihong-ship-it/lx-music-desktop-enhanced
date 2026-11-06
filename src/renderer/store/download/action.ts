@@ -399,7 +399,18 @@ const checkStartTask = async() => {
  * 重置任务以便重新下载：清空进度与链接，回到等待队列
  * @param downloadInfo 下载列表里已有的任务
  */
-const resetTaskForRedownload = (downloadInfo: LX.Download.ListItem) => {
+const resetTaskForRedownload = (downloadInfo: LX.Download.ListItem, freshInfo: LX.Download.ListItem) => {
+  // 自动转换会把 fileName / ext / filePath 改写成转换产物（如 .mp3），
+  // 重新下载必须回到原始音频的文件名与扩展名：freshInfo 由 createDownloadInfo 按
+  // musicInfo + 音质 + 当前文件名模板重新生成（与任务 id 中的音质、扩展名一致）。
+  // metadata 为 markRaw 对象，整体替换以便列表刷新。
+  downloadInfo.metadata = markRaw({
+    ...downloadInfo.metadata,
+    fileName: freshInfo.metadata.fileName,
+    ext: freshInfo.metadata.ext,
+    quality: freshInfo.metadata.quality,
+    filePath: '',
+  })
   downloadInfo.progress = 0
   downloadInfo.downloaded = 0
   downloadInfo.total = 0
@@ -445,7 +456,7 @@ const filterTask = (list: LX.Download.ListItem[]) => {
     switch (existTask.status) {
       case DOWNLOAD_STATUS.COMPLETED:
       case DOWNLOAD_STATUS.ERROR:
-        resetTaskForRedownload(existTask)
+        resetTaskForRedownload(existTask, item)
         break
       default:
         existTasks.push(existTask)

@@ -35,15 +35,15 @@ const virtualModules = new Map([
   ['@renderer/utils/musicSdk/api-source', 'export const apis = (...args) => globalThis.__issue19Mocks.apis(...args)'],
   ['@common/utils/vueTools', 'export const onBeforeUnmount = callback => globalThis.__issue19Mocks.onBeforeUnmount(callback)'],
   ['@renderer/plugins/i18n', 'export const useI18n = () => globalThis.__issue19Mocks.translate'],
-  ['@renderer/store/player/state', 'export const musicInfo = globalThis.__issue19Mocks.playerState.musicInfo; export const playMusicInfo = globalThis.__issue19Mocks.playerState.playMusicInfo; export const isPlay = globalThis.__issue19Mocks.playerState.isPlay; export const playQuality = globalThis.__issue19Mocks.playerState.playQuality'],
+  ['@renderer/store/player/state', 'export const musicInfo = globalThis.__issue19Mocks.playerState.musicInfo; export const playMusicInfo = globalThis.__issue19Mocks.playerState.playMusicInfo; export const isPlay = globalThis.__issue19Mocks.playerState.isPlay; export const playQuality = globalThis.__issue19Mocks.playerState.playQuality; export const statusText = globalThis.__issue19Mocks.playerState.statusText ?? { value: "" }'],
   ['@renderer/plugins/player', 'export const setStop = (...args) => globalThis.__issue19Mocks.setStop(...args)'],
   ['@renderer/core/player', 'export const getShouldPlayAfterLoad = (...args) => globalThis.__issue19Mocks.getShouldPlayAfterLoad(...args); export const playNext = (...args) => globalThis.__issue19Mocks.playNext(...args); export const setMusicUrl = (...args) => globalThis.__issue19Mocks.setMusicUrl(...args); export const setShouldPlayAfterLoad = (...args) => globalThis.__issue19Mocks.setShouldPlayAfterLoad(...args)'],
   ['@renderer/store/player/action', 'export const setAllStatus = (...args) => globalThis.__issue19Mocks.setAllStatus(...args)'],
-  ['@renderer/core/player/errorStrategy', 'export const getPlayErrorActions = (...args) => globalThis.__issue19Mocks.getPlayErrorActions(...args); export const getPlayErrorApiSourceCount = (...args) => globalThis.__issue19Mocks.getPlayErrorApiSourceCount(...args); export const getPlayErrorRetryCount = (...args) => globalThis.__issue19Mocks.getPlayErrorRetryCount(...args); export const isPlayErrorHandlingEnabled = (...args) => globalThis.__issue19Mocks.isPlayErrorHandlingEnabled(...args)'],
+  ['@renderer/core/player/errorStrategy', 'export const getPlayErrorActions = (...args) => globalThis.__issue19Mocks.getPlayErrorActions(...args); export const getPlayErrorApiSourceCount = (...args) => globalThis.__issue19Mocks.getPlayErrorApiSourceCount(...args); export const getPlayErrorRetryCount = (...args) => globalThis.__issue19Mocks.getPlayErrorRetryCount(...args); export const isPlayErrorHandlingEnabled = (...args) => globalThis.__issue19Mocks.isPlayErrorHandlingEnabled(...args); export const isStrictPlayQualityEnabled = (...args) => globalThis.__issue19Mocks.isStrictPlayQualityEnabled?.(...args) ?? false'],
   ['@renderer/core/music/online', 'export const loadDetailedQuality = async() => {}'],
   ['@renderer/core/music/utils', 'export const getExactPlayQuality = (quality) => quality; export const getOtherSource = async() => []'],
   ['@renderer/store/player/biliVideo', 'export const isBiliVideoActive = (...args) => globalThis.__issue19Mocks.isBiliVideoActive(...args)'],
-  ['@renderer/core/apiSource', 'export const setUserApi = (...args) => globalThis.__issue19Mocks.setUserApi(...args)'],
+  ['@renderer/core/apiSource', 'export const setUserApi = (...args) => globalThis.__issue19Mocks.setUserApi(...args); export const getRequestedApiId = () => globalThis.__issue19Mocks.getRequestedApiId?.() ?? ""'],
 ])
 
 registerHooks({

@@ -1,5 +1,5 @@
 import { toRaw } from '@common/utils/vueTools'
-import { getWebDAVFilePath, hashSyncData, decideWebDAVSync } from '@common/utils/webdavSync'
+import { getWebDAVFilePath, hashSyncData, decideWebDAVSync, getWebDAVUploadSettings, pickWebDAVDownloadSettings } from '@common/utils/webdavSync'
 import { LIST_IDS } from '@common/constants'
 import { filterMusicList, fixNewMusicInfoQuality } from '@renderer/utils'
 import { getListMusics, overwriteListFull, reloadListData } from '@renderer/store/list/action'
@@ -221,15 +221,8 @@ export const downloadWebDAVLists = async() => {
   }
 }
 
-const getCloudSettings = () => {
-  const settings = createExportSetting(toRaw(appSetting)) as Partial<LX.AppSetting>
-  delete settings['network.gitcodeMusicAccessToken']
-  delete settings['sync.webdav.password']
-  delete settings['sync.webdav.lastListEtag']
-  delete settings['sync.webdav.lastListHash']
-  delete settings['sync.webdav.lastSyncTime']
-  return settings
-}
+// 不上传敏感信息、同步状态与平台专属设置（引擎、mpv 路径、输出设备、下载目录）
+const getCloudSettings = () => getWebDAVUploadSettings(createExportSetting(toRaw(appSetting))) as Partial<LX.AppSetting>
 
 export const uploadWebDAVSettings = async() => {
   if (syncLocks.size) throw new Error(t('setting__webdav_syncing'))
@@ -266,21 +259,9 @@ export const downloadWebDAVSettings = async() => {
 
     const parsed = JSON.parse(settingsRemote.content) as SettingsFile
     if (!parsed?.data || typeof parsed.data != 'object') throw new Error(t('setting__webdav_invalid_data'))
-    const protectedKeys = new Set([
-      'common.isAgreePact',
-      'network.gitcodeMusicAccessToken',
-      'sync.webdav.password',
-      'sync.webdav.enable',
-      'sync.webdav.autoSync',
-      'sync.webdav.url',
-      'sync.webdav.username',
-      'sync.webdav.path',
-      'sync.webdav.lastListEtag',
-      'sync.webdav.lastListHash',
-      'sync.webdav.lastSyncTime',
-    ])
+    // 受保护键（协议、WebDAV 连接配置、同步状态）与平台专属设置不覆盖本地
     const setting = preserveAgreement(
-      Object.fromEntries(Object.entries(parsed.data).filter(([key]) => key in appSetting && !protectedKeys.has(key))) as Partial<LX.AppSetting>,
+      pickWebDAVDownloadSettings(parsed.data as Record<string, unknown>, appSetting) as Partial<LX.AppSetting>,
       appSetting['common.isAgreePact'],
     )
     Object.assign(appSetting, setting)

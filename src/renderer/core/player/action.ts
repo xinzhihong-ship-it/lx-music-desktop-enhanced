@@ -30,13 +30,14 @@ import { qualityList } from '@renderer/store'
 import { buildSavePath } from '@renderer/store/download/utils'
 import { createDownloadInfo } from '@renderer/worker/download/utils'
 import { joinPath } from '@common/utils/nodejs'
-import { getPlayErrorActions, isPlayErrorHandlingEnabled } from './errorStrategy'
+import { isPlayErrorHandlingEnabled, isStrictPlayQualityEnabled } from './errorStrategy'
 import { getVideoUrl } from '@renderer/utils/musicSdk/bili/api'
 import { biliPlaybackMode, biliVideoQuality, isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { toOldMusicInfo } from '@renderer/utils'
 import { probeAudioSource } from '@renderer/utils/ipc'
 import { getPlaybackIntent, getPlaybackIntentRevision, setPlaybackIntent } from './playbackIntent'
 import { setCurrentPlaybackAttempt } from './playbackAttempt'
+import { getRequestedApiId } from '@renderer/core/apiSource'
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
 let gettingUrlId = ''
@@ -63,7 +64,11 @@ const getMusicQualityLabel = (musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   return quality ?? getPlayQuality(appSetting['player.playQuality'], musicInfo)
 }
 
-const probeAndSetActualQuality = async({ requestId, musicInfo, url, requested, sourceMusicInfo, strictQuality }: { requestId: number, musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, url: string, requested?: string, sourceMusicInfo?: LX.Music.MusicInfoOnline, strictQuality?: boolean }) => {
+/**
+ * 探测实际音质并显示在播放栏。只有 rejectDowngrade（用户开启严格音质）时，降质才视为播放失败；
+ * 否则只标记，不中断播放。
+ */
+const probeAndSetActualQuality = async({ requestId, musicInfo, url, requested, sourceMusicInfo, rejectDowngrade }: { requestId: number, musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, url: string, requested?: string, sourceMusicInfo?: LX.Music.MusicInfoOnline, rejectDowngrade?: boolean }) => {
   if (!url || 'progress' in musicInfo || musicInfo.source == 'local') return
   const intentRevision = getPlaybackIntentRevision()
   try {
@@ -73,7 +78,7 @@ const probeAndSetActualQuality = async({ requestId, musicInfo, url, requested, s
     if (!onlineInfo) return
     const actual = describeActualQuality({ probe, interval: onlineInfo.interval, requested: requested ?? null })
     setPlayQualityActual(actual.quality)
-    if (strictQuality && actual.downgraded && getPlaybackIntent() && intentRevision == getPlaybackIntentRevision()) {
+    if (rejectDowngrade && actual.downgraded && getPlaybackIntent() && intentRevision == getPlaybackIntentRevision()) {
       window.app_event.playerError()
     }
   } catch {
@@ -118,7 +123,7 @@ const diffCurrentMusicInfo = (curMusicInfo: LX.Music.MusicInfo | LX.Download.Lis
 }
 
 let cancelDelayRetry: (() => void) | null = null
-interface MusicUrlResult { url: string, quality: string, audioUrl?: string, isVideo?: boolean, sourceMusicInfo?: LX.Music.MusicInfoOnline, strictQuality?: boolean }
+interface MusicUrlResult { url: string, quality: string, audioUrl?: string, isVideo?: boolean, sourceMusicInfo?: LX.Music.MusicInfoOnline, rejectDowngrade?: boolean }
 interface SourceRequestResult { url: string, type?: string, audioUrl?: string }
 const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false, options: SetMusicUrlOptions & { requestId?: number } = {}): Promise<MusicUrlResult | null> => {
   // if (cancelDelayRetry) cancelDelayRetry()
@@ -166,8 +171,12 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
 
   const onlineMusicInfo = getOnlineMusicInfo(musicInfo)
   const isVideo = biliPlaybackMode.value === 'video' && onlineMusicInfo?.source === 'bili'
-  const actions = getPlayErrorActions()
-  const strictQuality = options.strictQuality ?? (!!onlineMusicInfo && !('progress' in musicInfo) && !isVideo && isPlayErrorHandlingEnabled() && actions.some(action => action != 'next'))
+  // 严格音质（用户明确开启）时：按设置音质精确取址，且实际降质视为失败。
+  // 默认不开启：沿用原版「取不到该档位则回落到可用最高档位」，降质只标记不中断。
+  const strictByDefault = !!onlineMusicInfo && !('progress' in musicInfo) && !isVideo && isStrictPlayQualityEnabled()
+  // strictQuality：精确请求指定档位（错误恢复的每个组合都需要）；rejectDowngrade：探测到降质时判为失败
+  const strictQuality = options.strictQuality ?? strictByDefault
+  const rejectDowngrade = !isVideo && (options.rejectDowngrade ?? strictByDefault)
   const targetQuality = quality ?? (strictQuality ? appSetting['player.playQuality'] : undefined)
   let resolvedQuality = targetQuality
   let resolvedMusicInfo = options.sourceMusicInfo ?? onlineMusicInfo ?? undefined
@@ -176,7 +185,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     if (window.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo) || (options.requestId != null && options.requestId != activeUrlRequest)) throw new Error(requestMsg.cancelRequest)
     if (!('progress' in sourceMusicInfo) && sourceMusicInfo.source != 'local') {
       resolvedMusicInfo = sourceMusicInfo
-      setCurrentPlaybackAttempt({ ownerId: musicInfo.id, requestId: options.requestId, apiId: appSetting['common.apiSource'], musicInfo: sourceMusicInfo, quality: targetQuality ?? getPlayQuality(appSetting['player.playQuality'], sourceMusicInfo) })
+      setCurrentPlaybackAttempt({ ownerId: musicInfo.id, requestId: options.requestId, apiId: getRequestedApiId() || appSetting['common.apiSource'], musicInfo: sourceMusicInfo, quality: targetQuality ?? getPlayQuality(appSetting['player.playQuality'], sourceMusicInfo) })
     }
     return getMusicUrl({
       musicInfo: sourceMusicInfo,
@@ -206,7 +215,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     const quality = result.type ?? (onlineMusicInfo
       ? (resolvedQuality ?? getPlayQuality(appSetting['player.playQuality'], onlineMusicInfo))
       : appSetting['player.playQuality'])
-    return { url: normalizeLocalPlayUrl(musicInfo, result.url), quality, audioUrl: result.audioUrl, isVideo, sourceMusicInfo: resolvedMusicInfo, strictQuality }
+    return { url: normalizeLocalPlayUrl(musicInfo, result.url), quality, audioUrl: result.audioUrl, isVideo, sourceMusicInfo: resolvedMusicInfo, rejectDowngrade }
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   }).catch(err => {
     // console.log('err', err.message)
@@ -226,6 +235,7 @@ interface SetMusicUrlOptions {
   forceToggleSource?: boolean
   sourceMusicInfo?: LX.Music.MusicInfoOnline
   strictQuality?: boolean
+  rejectDowngrade?: boolean
 }
 
 export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh?: boolean, options: SetMusicUrlOptions = {}) => {
@@ -256,7 +266,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       }
       return
     }
-    const { url, quality, audioUrl, isVideo, sourceMusicInfo, strictQuality } = result
+    const { url, quality, audioUrl, isVideo, sourceMusicInfo, rejectDowngrade } = result
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     // 记录当前播放音质，用于在主界面显示。
     if (musicInfo.id == playMusicInfo.musicInfo?.id) {
@@ -273,7 +283,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       const audirvanaFilePath = buildAudirvanaFilePath(musicInfo, sourceMusicInfo, quality as LX.Quality)
       try {
         await setResource(url, musicInfo as LX.Music.MusicInfo, audirvanaFilePath ?? undefined)
-        void probeAndSetActualQuality({ requestId, musicInfo, url, requested: quality, sourceMusicInfo, strictQuality })
+        void probeAndSetActualQuality({ requestId, musicInfo, url, requested: quality, sourceMusicInfo, rejectDowngrade })
         return
       } catch (err: any) {
         console.error('setResource failed', err)
@@ -288,7 +298,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
           if (refreshed && refreshed.url !== url) {
             try {
               await setResource(refreshed.url, musicInfo as LX.Music.MusicInfo, audirvanaFilePath ?? undefined)
-              void probeAndSetActualQuality({ requestId, musicInfo, url: refreshed.url, requested: refreshed.quality, sourceMusicInfo: refreshed.sourceMusicInfo, strictQuality: refreshed.strictQuality })
+              void probeAndSetActualQuality({ requestId, musicInfo, url: refreshed.url, requested: refreshed.quality, sourceMusicInfo: refreshed.sourceMusicInfo, rejectDowngrade: refreshed.rejectDowngrade })
               return
             } catch (err2: any) {
               console.error('[Audirvana] setResource retry failed', err2)
@@ -300,7 +310,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       }
     }
     await setResource(url, musicInfo as LX.Music.MusicInfo)
-    void probeAndSetActualQuality({ requestId, musicInfo, url, requested: quality, sourceMusicInfo, strictQuality })
+    void probeAndSetActualQuality({ requestId, musicInfo, url, requested: quality, sourceMusicInfo, rejectDowngrade })
   }).catch((err: any) => {
     if (requestId !== activeUrlRequest || musicInfo.id != playMusicInfo.musicInfo?.id) return
     console.log(err)

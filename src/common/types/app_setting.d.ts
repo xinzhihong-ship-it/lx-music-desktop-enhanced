@@ -355,6 +355,11 @@ declare global {
       'player.playErrorApiSourceCount': number
 
       /**
+       * 严格音质：实际音质低于请求音质时视为播放失败并进入错误恢复（默认关闭，仅标记实际音质）
+       */
+      'player.playErrorStrictQuality': boolean
+
+      /**
        * 点击相同列表内的歌曲切歌时是否清空已播放列表（随机模式下列表内所有歌曲会重新参与随机）
        */
       'player.isAutoCleanPlayedList': boolean

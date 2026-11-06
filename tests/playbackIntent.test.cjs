@@ -37,7 +37,7 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
   }
   const intent = load('src/renderer/core/player/playbackIntent.ts', {})
   const song = { id: 'song', source: 'kw', meta: {} }
-  const playerState = { musicInfo: { id: 'song' }, playMusicInfo: { musicInfo: song }, isPlay: { value: false }, playQuality: { value: '128k' }, playQualityActual: { value: '' }, playedList: [], tempPlayList: [], playInfo: { playerListId: 'list', playerPlayIndex: 0 } }
+  const playerState = { musicInfo: { id: 'song' }, playMusicInfo: { musicInfo: song }, isPlay: { value: false }, playQuality: { value: '128k' }, playQualityActual: { value: '' }, statusText: { value: '' }, playedList: [], tempPlayList: [], playInfo: { playerListId: 'list', playerPlayIndex: 0 } }
   const plugin = {
     isEmpty: () => state.empty,
     setPause: () => { playerState.isPlay.value = false; hub.pause() },
@@ -49,7 +49,7 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     createAudio: noop,
     applyAudioRoutingNow: async() => {},
   }
-  const strategy = { getPlayErrorActions: () => actions, getPlayErrorApiSourceCount: () => 2, getPlayErrorRetryCount: () => retryCount, isPlayErrorHandlingEnabled: () => true }
+  const strategy = { getPlayErrorActions: () => actions, getPlayErrorApiSourceCount: () => 2, getPlayErrorRetryCount: () => retryCount, isPlayErrorHandlingEnabled: () => true, isStrictPlayQualityEnabled: () => false }
   const deps = {
     '@common/utils/vueTools': { onBeforeUnmount: fn => state.unmount.push(fn), watch: noop },
     '@renderer/plugins/i18n': { useI18n: () => key => key },
@@ -67,7 +67,13 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     '@renderer/store/player/biliVideo': { isBiliVideoActive: () => false, biliPlaybackMode: { value: 'audio' } },
     '@common/utils/playErrorStrategy': { getNextApiSourceId: (_id, tried) => tried.has('b') ? undefined : 'b' },
     '@renderer/store': { userApi: { list: [{ id: 'a' }, { id: 'b' }] } },
-    '@renderer/core/apiSource': { setUserApi: async id => { await apiWait; deps['@renderer/store/setting'].appSetting['common.apiSource'] = id } },
+    '@renderer/core/apiSource': (() => {
+      let requested = ''
+      return {
+        getRequestedApiId: () => requested,
+        setUserApi: async(id, { persist = true } = {}) => { requested = id; await apiWait; if (persist) deps['@renderer/store/setting'].appSetting['common.apiSource'] = id },
+      }
+    })(),
     './playbackIntent': intent,
     '@renderer/core/player/playbackIntent': intent,
     './utils': { filterList: () => filterWait?.promise, setPowerSaveBlocker: noop },
