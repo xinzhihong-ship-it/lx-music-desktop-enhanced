@@ -1,4 +1,5 @@
-import { connect, send, close } from './scripts/lib/cdp-client.mjs'
+// 手动调试脚本，需先以 --inspect 启动应用，不参与自动化测试。
+import { connect, send, close } from '../lib/cdp-client.mjs'
 
 /**
  * CDP 连接测试示例：连接 inspector，启用 Runtime，

@@ -1,4 +1,5 @@
-import { connect, close } from './scripts/lib/cdp-client.mjs'
+// 手动调试脚本，需先以 --inspect 启动应用，不参与自动化测试。
+import { connect, close } from '../lib/cdp-client.mjs'
 import {
   openAccountModal,
   selectPlatform,
@@ -7,7 +8,7 @@ import {
   clickSendCode,
   readModalError,
   readModalBody,
-} from './scripts/lib/account-modal.mjs'
+} from '../lib/account-modal.mjs'
 
 /**
  * 账号登录弹窗 SMS 测试示例（酷狗音乐、QQ音乐）。
