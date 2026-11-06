@@ -51,8 +51,8 @@
             <div class="list-item-cell" style="flex: 0 0 10%;">{{ getTypeName(item.metadata.quality) }}</div>
             <div class="list-item-cell" style="flex: 0 0 13%; padding-left: 0; padding-right: 0;">
               <material-list-buttons
-                :index="index" :download-btn="false" :file-btn="item.status != downloadStatus.ERROR" remove-btn="remove-btn"
-                :start-btn="!item.isComplate && item.status != downloadStatus.WAITING && (item.status != downloadStatus.RUN)"
+                :index="index" :download-btn="false" :file-btn="item.status != downloadStatus.ERROR || item.isComplate" remove-btn="remove-btn"
+                :start-btn="(!item.isComplate || item.status == downloadStatus.ERROR) && item.status != downloadStatus.WAITING && (item.status != downloadStatus.RUN)"
                 :pause-btn="!item.isComplate && (item.status == downloadStatus.RUN || item.status == downloadStatus.WAITING)"
                 :list-add-btn="false" :play-btn="item.status == downloadStatus.COMPLETED"
                 :search-btn="item.status == downloadStatus.ERROR" @btn-click="handleListBtnClick"
