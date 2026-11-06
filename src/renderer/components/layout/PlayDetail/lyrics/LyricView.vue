@@ -80,11 +80,12 @@ const menuVisible = ref(false)
 const menuXY = reactive({ x: 0, y: 0 })
 const lyricInfo = reactive({ lyric: '', tlyric: '', rlyric: '', lxlyric: '', rawlyric: '', musicInfo: null })
 const handleShowMenu = event => {
-  lyricInfo.lyric = playerMusicInfo.lrc
-  lyricInfo.tlyric = playerMusicInfo.tlrc
-  lyricInfo.rlyric = playerMusicInfo.rlrc
-  lyricInfo.lxlyric = playerMusicInfo.lxlrc
-  lyricInfo.rawlyric = playerMusicInfo.rawlrc
+  // 歌词还没加载完时这些字段可能是 null，菜单会对它们做正则匹配
+  lyricInfo.lyric = playerMusicInfo.lrc ?? ''
+  lyricInfo.tlyric = playerMusicInfo.tlrc ?? ''
+  lyricInfo.rlyric = playerMusicInfo.rlrc ?? ''
+  lyricInfo.lxlyric = playerMusicInfo.lxlrc ?? ''
+  lyricInfo.rawlyric = playerMusicInfo.rawlrc ?? ''
   lyricInfo.musicInfo = playMusicInfo.musicInfo
   menuXY.x = event.pageX
   menuXY.y = event.pageY
@@ -99,7 +100,8 @@ const handleUpdateLyric = ({ lyric, tlyric, rlyric, lxlyric, offset }) => {
 
 <style lang="less" module>
 .right {
-  flex: 0 0 60%;
+  // 只收缩不伸展：左栏 40% + 间距 + 60% 会超出（固定 60% 时右侧被裁掉）；打开评论时页面把它压到 30%，不能再撑开
+  flex: 0 1 60%;
   position: relative;
   min-width: 0;
   transition: flex-basis .3s ease;
