@@ -55,7 +55,7 @@ jobs:
         os:
           - windows-latest
           - macos-15-intel
-          - macos-14
+          - macos-15
     runs-on: ${{ matrix.os }}
     needs: CheckCode
     steps:
