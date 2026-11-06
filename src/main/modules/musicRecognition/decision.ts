@@ -1,3 +1,14 @@
+const normalizeTitle = (value: string): string => value
+  .normalize('NFKC')
+  .toLowerCase()
+  .replace(/[（(【[].*?[）)】\]]/g, '')
+  .replace(/[^\p{L}\p{N}]/gu, '')
+
+export const isSameTitle = (a: string, b: string): boolean => {
+  const normalized = normalizeTitle(a)
+  return normalized !== '' && normalized === normalizeTitle(b)
+}
+
 export const selectConsensusKey = (keys: string[]): string | null => {
   const counts = new Map<string, number>()
   for (const key of keys) {
