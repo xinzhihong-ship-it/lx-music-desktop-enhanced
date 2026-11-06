@@ -2,6 +2,7 @@ import { mainHandle } from '@common/mainIpc'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { log } from '@common/utils'
 import { getMpvController, MpvController } from '../mpvController'
+import { cleanupOrphanMpvProcesses, installMpvExitHooks } from '../mpvOrphan'
 
 const notFoundMessage = '未找到 mpv，请安装 mpv、设置 mpv 路径，或放置内置 mpv'
 
@@ -14,7 +15,15 @@ const withMpvError = async<T>(handler: () => Promise<T>): Promise<T> => {
   }
 }
 
+let orphanGuardInstalled = false
+
 export default () => {
+  if (!orphanGuardInstalled) {
+    orphanGuardInstalled = true
+    // 主进程退出时结束 mpv 子进程；并在后台清理上次异常退出遗留的 mpv 进程（不阻塞启动）
+    installMpvExitHooks()
+    void cleanupOrphanMpvProcesses()
+  }
   mainHandle(WIN_MAIN_RENDERER_EVENT_NAME.mpv_init, async() => {
     return withMpvError(async() => getMpvController().ensureStarted())
   })

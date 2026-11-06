@@ -20,6 +20,8 @@ registerHooks({
   resolve(specifier, context, nextResolve) {
     const source = virtualModules.get(specifier)
     if (source != null) return { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true }
+    // 源码中的无扩展名相对导入（由 webpack 解析），测试中补上 .ts
+    if (specifier === './mpvOrphan') return { url: new URL('./mpvOrphan.ts', context.parentURL).href, shortCircuit: true }
     return nextResolve(specifier, context)
   },
   load(url, context, nextLoad) {

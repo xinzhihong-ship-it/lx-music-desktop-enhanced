@@ -14,6 +14,7 @@ import { isCoreAudioMappedDevice, resolveMpvAudioDevice } from '@common/utils/mp
 import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
 import { createAudioDeviceCache } from '@main/utils/audioDeviceCache'
 import { normalizeMpvAudioDevices, parseMpvAudioDevices } from '@common/utils/mpvDeviceList'
+import { trackMpvProcess } from './mpvOrphan'
 
 export type MpvPathSource =
   | 'custom'
@@ -340,6 +341,8 @@ export class MpvController {
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    // 登记子进程：主进程退出（含异常退出、终止信号）时同步结束，避免残留孤儿 mpv
+    trackMpvProcess(mpvProcess)
     this.process = mpvProcess
 
     mpvProcess.stdout?.on('data', (data) => {
@@ -1360,6 +1363,7 @@ export class MpvController {
           stdio: ['ignore', 'pipe', 'pipe'],
         },
       )
+      trackMpvProcess(proc)
       let output = ''
       let settled = false
       let timeout: ReturnType<typeof setTimeout> | null = null
