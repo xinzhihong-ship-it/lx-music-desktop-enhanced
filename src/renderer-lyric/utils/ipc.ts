@@ -42,6 +42,11 @@ export const onMainWindowInited = (listener: LX.IpcRendererEventListener): Remov
   }
 }
 
+/** 歌词岛：鼠标落在胶囊上时接收鼠标事件，离开后恢复穿透 */
+export const setIslandInteractive = (interactive: boolean) => {
+  rendererSend<boolean>(WIN_LYRIC_RENDERER_EVENT_NAME.island_set_interactive, interactive)
+}
+
 export const sendMouseEnterLeave = (isEnter: boolean) => {
   rendererSend(WIN_LYRIC_RENDERER_EVENT_NAME.mouse_enter_leave, isEnter)
 }

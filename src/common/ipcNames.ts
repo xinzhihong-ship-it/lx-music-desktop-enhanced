@@ -268,6 +268,8 @@ const modules = {
     request_main_window_channel: 'winLyric_request_main_window_channel',
     provide_main_window_channel: 'winLyric_provide_main_window_channel',
     mouse_enter_leave: 'winLyric_mouse_enter_leave',
+    /** 歌词岛：鼠标是否落在胶囊上（落在上面时接收鼠标，否则穿透） */
+    island_set_interactive: 'winLyric_island_set_interactive',
   },
   hotKey: {
     enable: 'hotKey_enable',

@@ -31,6 +31,7 @@ declare namespace LX {
       'desktopLyric.style.isFontWeightLine': LX.AppSetting['desktopLyric.style.isFontWeightLine']
       'desktopLyric.style.isFontWeightExtended': LX.AppSetting['desktopLyric.style.isFontWeightExtended']
       'desktopLyric.style.isZoomActiveLrc': LX.AppSetting['desktopLyric.style.isZoomActiveLrc']
+      'island.alwaysShow': LX.AppSetting['island.alwaysShow']
       'common.langId': LX.AppSetting['common.langId']
       'player.isShowLyricTranslation': LX.AppSetting['player.isShowLyricTranslation']
       'player.isShowLyricRoma': LX.AppSetting['player.isShowLyricRoma']
@@ -39,7 +40,11 @@ declare namespace LX {
       'player.playbackRate': LX.AppSetting['player.playbackRate']
     }
 
-    type WinMainActions = 'get_info' | 'get_status' | 'get_analyser_data_array'
+    /** 桌面歌词 / 歌词岛发给主窗口的请求；play_* 为歌词岛的播放控制 */
+    type WinMainActions = 'get_info' | 'get_status' | 'get_analyser_data_array' | 'play_toggle' | 'play_prev' | 'play_next'
+
+    /** 连接主窗口的客户端类型：桌面歌词窗口 / 顶部歌词岛 */
+    type ClientKind = 'lyric' | 'island'
 
     interface LyricActionBase <A> {
       action: A
@@ -58,7 +63,9 @@ declare namespace LX {
       tlrc: string | null
       rlrc: string | null
       lxlrc: string | null
-      // pic: string | null
+      pic?: string | null
+      /** 歌曲时长（秒） */
+      duration?: number
       isPlay: boolean
       line: number
       played_time: number
@@ -80,6 +87,8 @@ declare namespace LX {
     | LyricAction<'set_pause'>
     | LyricAction<'set_stop'>
     | LyricAction<'send_analyser_data_array', Uint8Array>
+    | LyricAction<'set_pic', string | null>
+    | LyricAction<'set_duration', number>
 
 
     interface NewBounds {

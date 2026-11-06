@@ -127,6 +127,8 @@ const defaultSetting: LX.AppSetting = {
   'desktopLyric.style.opacity': 95,
   'desktopLyric.style.ellipsis': false,
   'desktopLyric.style.isZoomActiveLrc': false,
+  'island.enable': false,
+  'island.alwaysShow': false,
   'desktopLyric.style.isFontWeightFont': true,
   'desktopLyric.style.isFontWeightLine': true,
   'desktopLyric.style.isFontWeightExtended': true,

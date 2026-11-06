@@ -1,6 +1,7 @@
 import { onProvideMainWindowChannel } from '@lyric/utils/ipc'
 import { onBeforeUnmount } from '@common/utils/vueTools'
 import { setMusicInfo, setIsPlay } from '../store/action'
+import { duration } from '../store/state'
 import { pause, play, setLyric, setLyricOffset, setPlaybackRate, stop } from './lyric'
 import { lyrics } from '@lyric/store/lyric'
 
@@ -20,7 +21,9 @@ const handleDesktopLyricMessage = (event: LX.DesktopLyric.LyricActions) => {
         singer: event.data.singer,
         name: event.data.name,
         album: event.data.album,
+        pic: event.data.pic ?? null,
       })
+      duration.value = event.data.duration ?? 0
       lyrics.lyric = event.data.lrc ?? ''
       lyrics.tlyric = event.data.tlrc
       lyrics.rlyric = event.data.rlrc
@@ -57,6 +60,12 @@ const handleDesktopLyricMessage = (event: LX.DesktopLyric.LyricActions) => {
     case 'set_play':
       setIsPlay(true)
       play(event.data)
+      break
+    case 'set_pic':
+      setMusicInfo({ pic: event.data })
+      break
+    case 'set_duration':
+      duration.value = event.data
       break
     case 'set_stop':
       setIsPlay(false)
@@ -109,3 +118,8 @@ export const getAnalyserDataArray = () => {
 export const getStatus = () => {
   sendDesktopLyricInfo('get_status')
 }
+
+// 歌词岛的播放控制
+export const playToggle = () => { sendDesktopLyricInfo('play_toggle') }
+export const playPrev = () => { sendDesktopLyricInfo('play_prev') }
+export const playNext = () => { sendDesktopLyricInfo('play_next') }

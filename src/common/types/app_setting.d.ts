@@ -550,6 +550,16 @@ declare global {
       'desktopLyric.style.isZoomActiveLrc': boolean
 
       /**
+       * 顶部歌词岛：屏幕顶部中央的歌词胶囊，悬停展开为迷你播放器
+       */
+      'island.enable': boolean
+
+      /**
+       * 顶部歌词岛常驻显示；关闭时平时隐藏，鼠标移到屏幕顶部中央才出现（不遮挡最大化窗口的标题栏）
+       */
+      'island.alwaysShow': boolean
+
+      /**
        * 是否加粗逐字歌词字体
        */
       'desktopLyric.style.isFontWeightFont': boolean

@@ -1095,8 +1095,9 @@ export const removeSyncServerDevice = (clientId: string) => {
  * @param listener
  * @returns
  */
-export const onNewDesktopLyricProcess = (listener: LX.IpcRendererEventListener): RemoveListener => {
-  rendererOn(WIN_MAIN_RENDERER_EVENT_NAME.process_new_desktop_lyric_client, listener)
+/** 桌面歌词 / 歌词岛连接主窗口；params 为客户端类型（旧版本不带，视为桌面歌词） */
+export const onNewDesktopLyricProcess = (listener: LX.IpcRendererEventListenerParams<LX.DesktopLyric.ClientKind | null>): RemoveListener => {
+  rendererOn<LX.DesktopLyric.ClientKind | null>(WIN_MAIN_RENDERER_EVENT_NAME.process_new_desktop_lyric_client, listener)
   return () => {
     rendererOff(WIN_MAIN_RENDERER_EVENT_NAME.process_new_desktop_lyric_client, listener)
   }

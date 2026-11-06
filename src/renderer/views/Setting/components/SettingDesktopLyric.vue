@@ -4,6 +4,12 @@ dd
   .gap-top
     base-checkbox(id="setting_desktop_lyric_enable" :model-value="appSetting['desktopLyric.enable']" :label="$t('setting__desktop_lyric_enable')" @update:model-value="updateSetting({ 'desktopLyric.enable': $event })")
   .gap-top
+    base-checkbox(id="setting_island_enable" :model-value="appSetting['island.enable']" :label="$t('setting__island_enable')" @update:model-value="updateSetting({ 'island.enable': $event })")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__island_enable_tip')")
+  .gap-top
+    base-checkbox(id="setting_island_always_show" :model-value="appSetting['island.alwaysShow']" :disabled="!appSetting['island.enable']" :label="$t('setting__island_always_show')" @update:model-value="updateSetting({ 'island.alwaysShow': $event })")
+    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__island_always_show_tip')")
+  .gap-top
     base-checkbox(id="setting_desktop_lyric_lock" :model-value="appSetting['desktopLyric.isLock']" :label="$t('setting__desktop_lyric_lock')" @update:model-value="updateSetting({ 'desktopLyric.isLock': $event })")
   .gap-top
     base-checkbox(id="setting_desktop_lyric_fullscreen_hide" :model-value="appSetting['desktopLyric.fullscreenHide']" :label="$t('setting__desktop_lyric_fullscreen_hide')" @update:model-value="updateSetting({ 'desktopLyric.fullscreenHide': $event })")

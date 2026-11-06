@@ -44,6 +44,9 @@ export const readLyricPosition = (now = performance.now()) => {
   return media + lyricDoc.value.offset + tempOffset.value
 }
 
+/** 当前播放位置（毫秒，不含歌词偏移），进度条用 */
+export const readMediaTime = (now = performance.now()) => clock.playing ? clock.time + Math.max(0, now - clock.at) * clock.rate : clock.time
+
 export const init = () => {
   clock.rate = setting['player.playbackRate'] || 1
 }

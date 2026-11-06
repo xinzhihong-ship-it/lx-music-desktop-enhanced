@@ -37,6 +37,7 @@ export const setting = shallowReactive<LX.DesktopLyric.Config>({
   'player.isSwapLyricTranslationAndRoma': false,
   'player.isPlayLxlrc': false,
   'player.playbackRate': 1,
+  'island.alwaysShow': false,
 })
 
 // export const themeList = markRaw([
@@ -92,9 +93,14 @@ export const musicInfo = shallowReactive<{
   name: string
   singer: string
   album: string | null
+  pic: string | null
 }>({
   id: null,
   name: '^',
   singer: '^',
   album: null,
+  pic: null,
 })
+
+/** 歌曲时长（秒），歌词岛的进度条用 */
+export const duration = ref(0)
