@@ -11,14 +11,19 @@ export const getWebDAVFilePath = (basePath: string, fileName: string): string =>
   return `${path == '/' ? '' : path}/${fileName}`
 }
 
-export const hashSyncData = (value: unknown): string => {
-  const text = JSON.stringify(value)
+const sortSyncObjectKeys = (_key: string, value: unknown): unknown => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, (value as Record<string, unknown>)[key]]))
+}
+
+export const hashSyncData = (value: unknown, legacy = false): string => {
+  const text = legacy ? JSON.stringify(value) : JSON.stringify(value, sortSyncObjectKeys)
   let hash = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i)
     hash = Math.imul(hash, 0x01000193)
   }
-  return (hash >>> 0).toString(16).padStart(8, '0')
+  return `${legacy ? '' : 'v2:'}${(hash >>> 0).toString(16).padStart(8, '0')}`
 }
 
 export const decideWebDAVSync = ({
@@ -35,10 +40,8 @@ export const decideWebDAVSync = ({
   remoteHash: string
 }): WebDAVSyncDecision => {
   if (!hasRemote) return 'upload'
-  if (!lastHash) {
-    if (localHash == remoteHash) return 'none'
-    return hasLocalData ? 'conflict' : 'download'
-  }
+  if (localHash == remoteHash) return 'none'
+  if (!lastHash) return hasLocalData ? 'conflict' : 'download'
 
   const localChanged = localHash != lastHash
   const remoteChanged = remoteHash != lastHash
