@@ -71,16 +71,28 @@ class Vst3Chain {
     next.then(pending.resolve, pending.reject)
   }
 
+  async snapshotSlot(slot, host) {
+    const { state } = await host.request({ command: 'save_state', plugin_id: slot.id })
+    return JSON.stringify({ path: slot.path, state })
+  }
+
   async saveSlot(slot, host = this.host) {
     // A crashed helper cannot save; retain its last successful on-disk snapshot.
     if (!host || host.closed || !slot.enabled) return
-    const { state } = await host.request({ command: 'save_state', plugin_id: slot.id })
+    const snapshot = await this.snapshotSlot(slot, host)
+    if (slot.lastStateSnapshot === undefined) {
+      slot.lastStateSnapshot = snapshot
+      return
+    }
+    const isDirty = snapshot !== slot.lastStateSnapshot
+    if (!isDirty) return
     await fs.mkdir(this.stateDirectory, { recursive: true })
     const target = path.join(this.stateDirectory, `${slot.id}.json`)
     const temporary = `${target}.${randomUUID()}.tmp`
     try {
-      await fs.writeFile(temporary, JSON.stringify({ path: slot.path, state }), { mode: 0o600, flag: 'wx' })
+      await fs.writeFile(temporary, snapshot, { mode: 0o600, flag: 'wx' })
       await fs.rename(temporary, target)
+      slot.lastStateSnapshot = snapshot
     } finally { await fs.unlink(temporary).catch(() => {}) }
   }
 
@@ -175,8 +187,15 @@ class Vst3Chain {
             host: entry.enabled ? nextHost : null,
             info: loaded?.info,
             latency: Number(loaded?.latency_samples) || 0,
+            lastStateSnapshot: undefined,
           }
         })
+        // Treat the freshly loaded state as clean, including plugins with no previous state file.
+        for (const slot of this.slots) {
+          if (slot.enabled && nextHost) {
+            slot.lastStateSnapshot = await this.snapshotSlot(slot, nextHost).catch(() => undefined)
+          }
+        }
         this.sampleRate = sampleRate
         this._loadedPlugins = null
         return this.status()
