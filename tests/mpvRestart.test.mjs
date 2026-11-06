@@ -16,8 +16,16 @@ const virtualModules = new Map([
   ['@common/utils/mpvCompatibility', 'export const getBundledMacMpvAppNames = () => []'],
   ['@common/utils/mpvAudioDevice', 'export const isCoreAudioMappedDevice = () => false; export const resolveMpvAudioDevice = d => d'],
 ])
+const SOURCE_ALIASES = {
+  '@common/utils/audioDeviceSelection': 'common/utils/audioDeviceSelection.ts',
+  '@common/utils/mpvDeviceList': 'common/utils/mpvDeviceList.ts',
+  '@main/utils/audioDeviceCache': 'main/utils/audioDeviceCache.ts',
+}
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    // beta 新增的无依赖纯函数模块（音频设备选择 / 设备列表 / 设备缓存）：加载真实源码
+    const sourcePath = SOURCE_ALIASES[specifier]
+    if (sourcePath) return { url: new URL(`../src/${sourcePath}`, import.meta.url).href, shortCircuit: true }
     const source = virtualModules.get(specifier)
     if (source != null) return { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true }
     // 源码中的无扩展名相对导入（由 webpack 解析），测试中补上 .ts

@@ -35,18 +35,21 @@ test('force refresh is validated and passed through the renderer and main IPC en
   })
   await renderer.listAudioDevices({ forceRefresh: true })
   assert.equal(ipc[0].options.forceRefresh, true)
-  const handlers = new Map(); const probes = []
+  const handlers = new Map(); const probes = []; const orphanGuard = { hooks: 0, cleanups: 0 }
   const main = load('src/main/modules/winMain/rendererEvent/mpv.ts', {
     '@common/mainIpc': { mainHandle: (name, handler) => handlers.set(name, handler) },
     '@common/ipcNames': { WIN_MAIN_RENDERER_EVENT_NAME: { mpv_listAudioDevices: 'list-outputs' } },
     '@common/utils': { log: { info() {} } },
     '../mpvController': { MpvController: { listAudioDevices: async options => { probes.push(options); return [] } } },
+    '../mpvOrphan': { installMpvExitHooks: () => { orphanGuard.hooks++ }, cleanupOrphanMpvProcesses: async() => { orphanGuard.cleanups++ } },
   })
   main.default()
   await handlers.get('list-outputs')({ params: { forceRefresh: true } })
   await handlers.get('list-outputs')({ params: { forceRefresh: 'true' } })
   assert.equal(probes[0].forceRefresh, true)
   assert.equal(probes[1].forceRefresh, false)
+  // 3.2.7 孤儿进程防护随 MPV 事件注册安装一次
+  assert.deepEqual(orphanGuard, { hooks: 1, cleanups: 1 })
 })
 
 test('MPV parsing keeps same-name hardware and full names with parentheses', () => {
