@@ -203,7 +203,9 @@ export const syncWebDAVLists = async(manual = true) => {
     }
     if (decision == 'upload') await uploadListData(localData, { etag: remote.etag })
     else if (decision == 'download') await applyListData(remoteFile.data, remote.etag, remoteFile.lastModified)
-    else if (manual || (savedHash && !savedHash.startsWith('v2:'))) saveSyncState(localData, remote.etag, remoteFile.lastModified)
+    // 'none' 时两端内容一致；基线与之不一致（旧版基线、两端做了相同修改）时自动同步也要更新基线，
+    // 否则之后任一端再修改都会被误判为冲突
+    else if (manual || savedHash !== localHash) saveSyncState(localData, remote.etag, remoteFile.lastModified)
     return decision
   } finally {
     syncLocks.delete(lock)

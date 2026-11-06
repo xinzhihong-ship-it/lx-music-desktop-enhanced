@@ -181,6 +181,37 @@ test('regression: a manual sync on the same conflict still asks which version to
   assert.ok(h.calls.actions.includes('upload'))
 })
 
+test('identical content on both sides refreshes a stale baseline, so a later one-sided edit is not a conflict', async() => {
+  const lists = { default: [{ id: 'same-song', source: 'kw', name: 'a', singer: 'b', meta: {} }] }
+  const h = harness({
+    lists,
+    remote: remoteFile(remoteLists([{ id: 'same-song', source: 'kw', name: 'a', singer: 'b', meta: {} }])),
+    appSettingOverrides: { 'sync.webdav.lastListHash': 'v2:00000000' }, // 两台设备做了相同修改后的旧基线
+  })
+  await h.sync.runWebDAVAutoSync()
+  assert.deepEqual(h.calls.actions, ['download'], 'nothing to transfer')
+  assert.notEqual(h.appSetting['sync.webdav.lastListHash'], 'v2:00000000', 'baseline refreshed')
+
+  // 之后只有本地修改：应正常上传，而不是冲突
+  lists.default = [{ id: 'new-song', source: 'kw', name: 'c', singer: 'd', meta: {} }]
+  await h.sync.runWebDAVAutoSync()
+  assert.deepEqual(h.calls.confirms, [])
+  assert.equal(h.sync.webdavAutoSyncNotice.value, null)
+  assert.deepEqual(h.calls.actions, ['download', 'download', 'upload'])
+})
+
+test('regression: an automatic sync with an up-to-date baseline does not rewrite the sync state', async() => {
+  const local = [{ id: 'same-song', source: 'kw', name: 'a', singer: 'b', meta: {} }]
+  const h = harness({ lists: { default: local }, remote: remoteFile(remoteLists(local)) })
+  await h.sync.runWebDAVAutoSync() // 无基线、两端一致 → 建立基线
+  const baseline = h.appSetting['sync.webdav.lastListHash']
+  assert.match(baseline, /^v2:/)
+  h.appSetting['sync.webdav.lastSyncTime'] = 123
+  await h.sync.runWebDAVAutoSync()
+  assert.equal(h.appSetting['sync.webdav.lastListHash'], baseline)
+  assert.equal(h.appSetting['sync.webdav.lastSyncTime'], 123, 'no redundant setting write')
+})
+
 test('#24 after the conflict is resolved manually, the next automatic sync is clean and clears the notice', async() => {
   const h = conflictHarness()
   await h.sync.runWebDAVAutoSync()
