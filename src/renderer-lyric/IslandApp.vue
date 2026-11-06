@@ -190,6 +190,10 @@ html, body, #root {
   overflow: hidden;
   background: transparent !important;
 }
+// 与桌面歌词共用一个渲染包：桌面歌词 App.vue 里的全局 body { opacity: .8 } 也会加载进来，歌词岛不需要
+body {
+  opacity: 1 !important;
+}
 </style>
 
 <style lang="less" module>
