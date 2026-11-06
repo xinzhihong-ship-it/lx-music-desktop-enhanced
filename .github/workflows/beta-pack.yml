@@ -268,7 +268,7 @@ jobs:
             runner: macos-15-intel
             package: pack:mac:dmg
           - arch: arm64
-            runner: macos-14
+            runner: macos-15
             package: pack:mac:dmg:arm64
     runs-on: ${{ matrix.runner }}
     needs: CheckCode
