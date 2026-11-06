@@ -188,7 +188,12 @@ export const syncWebDAVLists = async(manual = true) => {
       remoteHash,
     })
 
-    if (decision == 'conflict') decision = await confirmLocalOverwrite() ? 'upload' : 'download'
+    if (decision == 'conflict') {
+      // 自动同步遇到冲突：不弹确认框，保留本地版本——既不下载覆盖本地，也不上传覆盖云端（避免静默
+      // 丢掉另一台设备的修改）；同步基线保持不变，冲突会持续存在，直到用户手动同步并选择
+      if (!manual) return 'conflict'
+      decision = await confirmLocalOverwrite() ? 'upload' : 'download'
+    }
     if (decision == 'upload') await uploadListData(localData, { etag: remote.etag })
     else if (decision == 'download') await applyListData(remoteFile.data, remote.etag, remoteFile.lastModified)
     else if (manual) saveSyncState(localData, remote.etag, remoteFile.lastModified)
@@ -321,7 +326,11 @@ const reportAutoSyncProblem = (type: WebDAVAutoSyncNotice['type'], message: stri
 export const runWebDAVAutoSync = async() => {
   if (applyingRemote || !appSetting['sync.webdav.enable'] || !appSetting['sync.webdav.autoSync']) return
   try {
-    await syncWebDAVLists(false)
+    const decision = await syncWebDAVLists(false)
+    if (decision == 'conflict') {
+      reportAutoSyncProblem('conflict', t('setting__webdav_auto_sync_conflict_status'))
+      return
+    }
     // 成功：结束本轮问题，之后再出问题重新提示
     lastStatusNoticeAt.clear()
     webdavAutoSyncNotice.value = null

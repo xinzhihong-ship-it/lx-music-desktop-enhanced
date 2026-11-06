@@ -820,6 +820,7 @@
   "setting__webdav_syncing": "正在同步，请稍后",
   "setting__webdav_sync_failed": "WebDAV 操作失败",
   "setting__webdav_auto_sync_failed_status": "WebDAV 自动同步失败：{message}（将在歌单变更或回到窗口时自动重试）",
+  "setting__webdav_auto_sync_conflict_status": "WebDAV：本地与云端歌单都有修改，自动同步已保留本地版本（未覆盖云端），请在 设置 → 同步 中手动同步并选择要保留的版本",
   "setting__webdav_test_success": "WebDAV 连接成功",
   "setting__webdav_sync_success": "歌单同步完成",
   "setting__webdav_upload_success": "上传完成",
