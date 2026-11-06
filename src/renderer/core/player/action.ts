@@ -125,7 +125,7 @@ const diffCurrentMusicInfo = (curMusicInfo: LX.Music.MusicInfo | LX.Download.Lis
 let cancelDelayRetry: (() => void) | null = null
 interface MusicUrlResult { url: string, quality: string, audioUrl?: string, isVideo?: boolean, sourceMusicInfo?: LX.Music.MusicInfoOnline, rejectDowngrade?: boolean }
 interface SourceRequestResult { url: string, type?: string, audioUrl?: string }
-const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false, options: SetMusicUrlOptions & { requestId?: number } = {}): Promise<MusicUrlResult | null> => {
+const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false, options: SetMusicUrlOptions & { requestId?: number, isRetryed?: boolean } = {}): Promise<MusicUrlResult | null> => {
   // if (cancelDelayRetry) cancelDelayRetry()
   return new Promise<MusicUrlResult | null>((resolve, reject) => {
     const time = getRandom(2, 6)
@@ -164,7 +164,7 @@ const normalizeLocalPlayUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListI
   }
 }
 
-const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false, options: SetMusicUrlOptions & { requestId?: number } = {}): Promise<MusicUrlResult | null> => {
+const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, quality?: LX.Quality, forceToggleSource = false, options: SetMusicUrlOptions & { requestId?: number, isRetryed?: boolean } = {}): Promise<MusicUrlResult | null> => {
   // this.musicInfo.url = await getMusicPlayUrl(targetSong, type)
   setAllStatus(window.i18n.t('player__getting_url'))
   if (isPlayErrorHandlingEnabled()) addLoadTimeout()
@@ -225,6 +225,13 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
       err.message == requestMsg.cancelRequest) return null
 
     if (err.message == requestMsg.tooManyRequests) return delayRetry(musicInfo, isRefresh, quality, forceToggleSource, options)
+
+    // 与上游一致：非限流错误立即重试一次，避免瞬时网络错误直接停止播放。
+    // 仅在关闭「自动跳过 / 错误处理」时生效：开启时由错误恢复链按用户设置的重试次数处理，
+    // 这里再重试会让每个恢复组合都请求两次，并绕过用户设置的 0 次重试。
+    if (!options.isRetryed && !isPlayErrorHandlingEnabled()) {
+      return getMusicPlayUrl(musicInfo, isRefresh, quality, forceToggleSource, { ...options, isRetryed: true })
+    }
 
     throw err
   })
