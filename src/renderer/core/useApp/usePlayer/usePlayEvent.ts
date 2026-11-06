@@ -2,7 +2,7 @@ import { onBeforeUnmount } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
 import { musicInfo, playMusicInfo, playQuality, statusText } from '@renderer/store/player/state'
 import { setStop } from '@renderer/plugins/player'
-import { playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
+import { cancelPendingUrlRequests, playNext, setMusicUrl, setShouldPlayAfterLoad } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { getPlayErrorActions, getPlayErrorApiSourceCount, getPlayErrorRetryCount, isPlayErrorHandlingEnabled, isStrictPlayQualityEnabled } from '@renderer/core/player/errorStrategy'
@@ -49,6 +49,12 @@ export default () => {
     }
     return usedId
   }
+  /** 撤销超时未完成的音源切换：仍停留在该音源时立即切回用户音源，迟到的初始化结果不再生效 */
+  const abandonApiSwitch = (apiId: string) => {
+    if (getRequestedApiId() != apiId) return
+    if (tempApiId == apiId) tempApiId = null
+    void setUserApi(appSetting['common.apiSource']).catch(err => { console.warn('abandon api switch failed', err) })
+  }
   const showTempApiNotice = (usedId: string) => {
     const message = t('player__api_source_temp_used', { name: getApiName(usedId), original: getApiName(appSetting['common.apiSource']) })
     // 放到本轮 playing 事件处理之后，避免被其他 playing 监听清空
@@ -57,13 +63,20 @@ export default () => {
       setTimeout(() => { if (statusText.value == message) setAllStatus('') }, 6000)
     })
   }
-  const waitForRecovery = async<T>(task: () => Promise<T>): Promise<T> => {
+  /**
+   * 等待恢复步骤，最长 25 秒。超时只能结束等待，无法中止步骤本身，
+   * 因此超时时调用 onTimeout 让调用方主动撤销该步骤的副作用（如切回用户音源）。
+   */
+  const waitForRecovery = async<T>(task: () => Promise<T>, onTimeout?: () => void): Promise<T> => {
     let timer: NodeJS.Timeout
     let cancel: () => void
     return new Promise<T>((resolve, reject) => {
       cancel = () => { reject(new Error('playback recovery cancelled')) }
       cancelRecoveryWaits.add(cancel)
-      timer = setTimeout(() => { reject(new Error('playback recovery timeout')) }, 25000)
+      timer = setTimeout(() => {
+        onTimeout?.()
+        reject(new Error('playback recovery timeout'))
+      }, 25000)
       Promise.resolve().then(task).then(resolve, reject)
     }).finally(() => {
       clearTimeout(timer)
@@ -148,6 +161,8 @@ export default () => {
 
   const playNextAfterFailure = (generation: number) => {
     if (!isRecoveryCurrent(generation)) return
+    // 放弃当前歌曲：作废仍在进行的取址，避免迟到的结果在切到下一首前（或之后）又把它播放出来
+    cancelPendingUrlRequests()
     if (document.hidden) {
       console.warn('error skip to next')
       void playNext(true, () => isRecoveryCurrent(generation))
@@ -159,6 +174,8 @@ export default () => {
 
   /** 所有恢复手段均已失败、停留在当前歌曲：切回用户音源并提示 */
   const stopRecoveryWithError = () => {
+    // 恢复已放弃：作废仍在进行的取址，迟到的结果不能在提示「播放失败」之后自行开始播放
+    cancelPendingUrlRequests()
     restoreUserApiSource()
     setAllStatus(t('player__error_stopped'))
   }
@@ -255,7 +272,7 @@ export default () => {
             await setUserApi(combination.apiId, { persist: false })
             if (!isRecoveryCurrent(generation)) return false
             return window.lx.apiInitPromise[0]
-          })
+          }, () => { abandonApiSwitch(combination.apiId) })
           if (!isRecoveryCurrent(generation)) return
           if (!initialized || getActiveApiId() != combination.apiId) {
             failedApis.add(combination.apiId)

@@ -488,3 +488,40 @@ test('#5 enabled automatic recovery: no extra per-request retry (recovery retry 
   await h.start()
   assert.equal(requests(h).length, 1)
 })
+
+test('#4 a hung URL request cannot start playback after recovery has given up (error stopped)', async() => {
+  const hang = deferred()
+  const h = harness({ strategy: 'source', alternatives: [], request: () => hang.promise })
+  await h.start()
+  assert(h.fire(100000)) // 取址超时 → 错误恢复 → 无可用组合 → 停止
+  await flush()
+  assert.equal(h.player.statusText.value, 'player__error_stopped')
+  hang.resolve({ url: 'late-url', type: 'master' })
+  await flush()
+  assert.equal(lastResource(h), undefined, 'the late URL must not be loaded')
+})
+
+test('#4 a hung URL request of the failed song cannot load after recovery skipped to the next song', async() => {
+  const hang = deferred()
+  const h = harness({ strategy: 'next', request: () => hang.promise })
+  await h.start()
+  assert(h.fire(100000))
+  await flush()
+  hang.resolve({ url: 'late-url', type: 'master' })
+  await flush()
+  assert.equal(lastResource(h), undefined, 'the late URL of the failed song must not be loaded')
+})
+
+test('#4 a timed-out API switch is abandoned immediately (switched back to the user source)', async() => {
+  const neverB = deferred()
+  const neverC = deferred()
+  const h = harness({ apiIds: ['A', 'B', 'C'], apiCount: 2, order: ['apiSource', 'platform', 'quality'], alternatives: [], initApi: id => id === 'B' ? neverB.promise : id === 'C' ? neverC.promise : Promise.resolve(true), request: () => Promise.reject(new Error('unavailable')) })
+  await h.start()
+  const before = h.calls.filter(c => c.switchApi).map(c => `${c.switchApi}:${c.persist}`)
+  assert.deepEqual(before, ['B:false'])
+  assert(h.fire(25000)) // B 初始化超时
+  await flush()
+  const after = h.calls.filter(c => c.switchApi).map(c => `${c.switchApi}:${c.persist}`)
+  assert.equal(after[1], 'A:true', `timed-out switch must be reverted right away, got ${JSON.stringify(after)}`)
+  assert.equal(h.appSetting['common.apiSource'], 'A')
+})
