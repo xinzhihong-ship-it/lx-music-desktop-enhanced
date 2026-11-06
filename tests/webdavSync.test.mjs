@@ -46,12 +46,17 @@ test('chooses a safe playlist sync direction', () => {
   assert.equal(decide({}), 'none')
 })
 
-const platformKeys = ['player.playEngine', 'player.mpv.path', 'player.mediaDeviceId', 'download.savePath']
+const platformKeys = [
+  'player.playEngine', 'player.mpv.path', 'player.mpv.extraArgs', 'player.mediaDeviceId',
+  'player.vst3.directories', 'player.vst3.chain', 'download.savePath',
+]
 
 test('platform-specific settings are never uploaded to WebDAV', () => {
   assert.deepEqual([...WEBDAV_PLATFORM_SETTING_KEYS].sort(), [...platformKeys].sort())
   const local = {
     'player.playEngine': 'audirvana', 'player.mpv.path': '/opt/homebrew/bin/mpv', 'player.mediaDeviceId': 'coreaudio/BuiltIn', 'download.savePath': '/Users/me/Music',
+    'player.mpv.extraArgs': '--audio-device=coreaudio/BuiltIn',
+    'player.vst3.directories': ['/Users/me/VST3'], 'player.vst3.chain': [{ path: '/Users/me/VST3/Effect.vst3' }],
     'sync.webdav.password': 'secret', 'network.gitcodeMusicAccessToken': 'token', 'sync.webdav.lastListHash': 'abc',
     'player.playQuality': 'flac', 'common.theme': 'dark',
   }
@@ -64,10 +69,14 @@ test('platform-specific settings are never uploaded to WebDAV', () => {
 test('platform-specific settings from the cloud never overwrite local ones (incl. files uploaded by older versions)', () => {
   const local = {
     'player.playEngine': 'electron', 'player.mpv.path': 'C:\mpv\mpv.exe', 'player.mediaDeviceId': 'wasapi/{x}', 'download.savePath': 'D:\Music',
+    'player.mpv.extraArgs': '--audio-device=wasapi/{x}',
+    'player.vst3.directories': ['D:/VST3'], 'player.vst3.chain': [{ path: 'D:/VST3/Effect.vst3' }],
     'player.playQuality': '320k', 'common.isAgreePact': true, 'sync.webdav.url': 'https://dav.example/', 'common.theme': 'light',
   }
   const remote = {
     'player.playEngine': 'audirvana', 'player.mpv.path': '/opt/homebrew/bin/mpv', 'player.mediaDeviceId': 'coreaudio/BuiltIn', 'download.savePath': '/Users/me/Music',
+    'player.mpv.extraArgs': '--audio-device=coreaudio/BuiltIn',
+    'player.vst3.directories': ['/Users/me/VST3'], 'player.vst3.chain': [{ path: '/Users/me/VST3/Effect.vst3' }],
     'player.playQuality': 'flac', 'common.isAgreePact': false, 'sync.webdav.url': 'https://evil.example/', 'common.theme': 'dark', 'unknown.key': 1,
   }
   assert.deepEqual(pickWebDAVDownloadSettings(remote, local), { 'player.playQuality': 'flac', 'common.theme': 'dark' })
