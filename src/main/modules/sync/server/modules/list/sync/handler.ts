@@ -6,7 +6,7 @@
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
 import { getUserSpace } from '@main/modules/sync/server/user'
 import { handleRemoteListAction } from '@main/modules/sync/listEvent'
-import { filterListActionForMobile } from '../compatibility'
+import { adaptMobileListAction, toMobileListAction } from '../compatibility'
 // import { encryptMsg } from '@/utils/tools'
 
 // let wss: LX.SocketServer | null
@@ -150,20 +150,35 @@ import { filterListActionForMobile } from '../compatibility'
 const handler: LX.Sync.ServerSyncHandlerListActions<LX.Sync.Server.Socket> = {
   async onListSyncAction(socket, action) {
     if (!socket.moduleReadys.list) return
-    await handleRemoteListAction(action)
+    // 移动端看不到 B 站内容：先基于应用前的本地列表把操作换算成不会删除 B 站内容的等价操作
+    const actions = socket.keyInfo.isMobile ? await adaptMobileListAction(action) : [action]
+    for (const localAction of actions) await handleRemoteListAction(localAction)
     const userSpace = getUserSpace(socket.userInfo.name)
     const key = await userSpace.listManage.createSnapshot()
     userSpace.listManage.updateDeviceSnapshotKey(socket.keyInfo.clientId, key)
     const currentUserName = socket.userInfo.name
     const currentId = socket.keyInfo.clientId
+    const targets: LX.Sync.Server.Socket[] = []
     socket.broadcast((client) => {
       if (client.keyInfo.clientId == currentId || !client.moduleReadys?.list || client.userInfo.name != currentUserName) return
-      const clientAction = client.keyInfo.isMobile ? filterListActionForMobile(action) : action
-      if (!clientAction) {
+      targets.push(client)
+    })
+    if (!targets.length) return
+    // 其他端收到的是换算后的操作（与本地实际执行的一致），移动端版本按应用后的本地列表计算一次
+    const mobileActions = targets.some(client => client.keyInfo.isMobile)
+      ? await Promise.all(actions.map(async localAction => toMobileListAction(localAction)))
+      : []
+    for (const client of targets) {
+      const candidates: Array<LX.Sync.List.ActionList | null> = client.keyInfo.isMobile ? mobileActions : actions
+      const clientActions = candidates.filter((clientAction): clientAction is LX.Sync.List.ActionList => clientAction != null)
+      if (!clientActions.length) {
         void userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
-        return
+        continue
       }
-      void client.remoteQueueList.onListSyncAction(clientAction).then(async() => {
+      void clientActions.reduce<Promise<void>>(async(prev, clientAction) => {
+        await prev
+        await client.remoteQueueList.onListSyncAction(clientAction)
+      }, Promise.resolve()).then(async() => {
         return userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
       }).catch(err => {
         // TODO send status
@@ -171,7 +186,7 @@ const handler: LX.Sync.ServerSyncHandlerListActions<LX.Sync.Server.Socket> = {
         // client.moduleReadys.list = false
         console.log(err.message)
       })
-    })
+    }
   },
 }
 

@@ -3,7 +3,7 @@ import { removeSelectModeListener, sendCloseSelectMode, sendSelectMode } from '@
 import { getUserSpace, getUserConfig } from '../../../user'
 import { buildUserListInfoFull, getLocalListData, setLocalListData } from '@main/modules/sync/listEvent'
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
-import { filterListActionForMobile, filterListDataForMobile } from '../compatibility'
+import { filterListDataForMobile, restoreDesktopOnlyListData } from '../compatibility'
 // import { LIST_IDS } from '@common/constants'
 
 // type ListInfoType = LX.List.UserListInfoFull | LX.List.MyDefaultListInfoFull | LX.List.MyLoveListInfoFull
@@ -70,11 +70,7 @@ const overwriteRemoteListData = async(socket: LX.Sync.Server.Socket, listData: L
   const userSpace = getUserSpace(socket.userInfo.name)
   socket.broadcast((client) => {
     if (excludeIds.includes(client.keyInfo.clientId) || client.userInfo.name != socket.userInfo.name || !client.moduleReadys?.list) return
-    const clientAction = client.keyInfo.isMobile ? filterListActionForMobile(action) : action
-    if (!clientAction) {
-      tasks.push(userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key))
-      return
-    }
+    const clientAction = client.keyInfo.isMobile ? { ...action, data: filterListDataForMobile(action.data) } : action
     tasks.push(client.remoteQueueList.onListSyncAction(clientAction).then(async() => {
       return userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
     }).catch(err => {
@@ -234,6 +230,9 @@ const handleMergeListData = async(socket: LX.Sync.Server.Socket): Promise<[LX.Sy
     // case 'cancel':
     default: throw new Error('cancel')
   }
+  // 移动端数据不含 B 站内容：凡是要写回本地的结果，都把本地 B 站歌曲 / 歌单按原位置合并回去，
+  // 避免「远程覆盖本地」类模式删除桌面端独有内容。合并模式下结果已包含这些内容，此处为空操作。
+  if (socket.keyInfo.isMobile && requiredUpdateLocalListData) listData = restoreDesktopOnlyListData(listData, localListData)
   return [listData, requiredUpdateLocalListData, requiredUpdateRemoteListData]
 }
 

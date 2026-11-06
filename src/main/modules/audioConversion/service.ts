@@ -38,6 +38,14 @@ const getOutputPath = (
   }
 }
 
+/** 任务在执行中途被取消或移出队列，runNext 据此提前退出。 */
+class ConversionAbortedError extends Error {
+  constructor() {
+    super('已取消')
+    this.name = 'ConversionAbortedError'
+  }
+}
+
 export class AudioConversionService {
   private tasks: LX.AudioConversion.Task[] = []
   private running: ChildProcessWithoutNullStreams | null = null
@@ -143,6 +151,8 @@ export class AudioConversionService {
       const task = this.tasks.find((task) => task.id === id)
       if (!task || task.status === 'completed' || task.status === 'error') { continue }
       if (this.runningId === id) {
+        // 已被 runNext 占位的任务（可能还在 probe 阶段，尚未启动 FFmpeg）：
+        // 只打取消标记并终止可能已启动的子进程，由 runNext 在下一个检查点退出并统一 finish。
         task.status = 'canceled'
         task.error = '已取消'
         this.running?.kill('SIGTERM')
@@ -163,6 +173,8 @@ export class AudioConversionService {
     for (const id of ids) {
       const task = this.tasks.find((task) => task.id === id)
       if (!task || (task.status !== 'error' && task.status !== 'canceled')) { continue }
+      // 刚被取消、runNext 还没走到退出点的任务仍处于占位中，此时重置会被随后的 finish 覆盖。
+      if (this.runningId === id) continue
       task.status = 'waiting'
       task.progress = 0
       delete task.error
@@ -256,13 +268,32 @@ export class AudioConversionService {
   }
 
   private async runNext(): Promise<void> {
-    if (this.running) return
+    // runningId 在选中任务的同一个同步片段内写入，probe 等异步阶段也处于占位状态，
+    // 并发调用的 runNext（add / retry / finally）不会再选中同一个或另一个任务。
+    if (this.runningId !== null || this.running !== null) return
     const task = this.tasks.find((task) => task.status === 'waiting')
     if (!task) return
+    this.runningId = task.id
+    task.status = 'running'
+    task.progress = 0
+    this.persist()
+
+    // 任务在占位期间被取消（cancel 置为 canceled）或被移出队列（remove）时视为中止。
+    // 状态会被 cancel() 在别处改写，必须经函数读取，避免 TS 按上方赋值收窄为 'running'
+    const isCanceled = () => task.status === 'canceled'
+    const isAborted = () =>
+      isCanceled() ||
+      this.runningId !== task.id ||
+      !this.tasks.includes(task)
+    const throwIfAborted = () => {
+      if (isAborted()) throw new ConversionAbortedError()
+    }
+
     let ffmpeg: string
     try {
       ffmpeg = getBinaryPath('ffmpeg')
     } catch (error: any) {
+      this.runningId = null
       this.finish(task, 'error', error?.message || '未找到受控 FFmpeg')
       await this.runNext()
       return
@@ -270,11 +301,9 @@ export class AudioConversionService {
     const tempPath = `${task.outputPath}.lx-converting.${formatInfo[task.format].ext}`
     try {
       const input = await this.probe(task.inputPath)
+      throwIfAborted()
       await fs.rm(tempPath, { force: true })
-      task.status = 'running'
-      task.progress = 0
-      this.runningId = task.id
-      this.persist()
+      throwIfAborted()
       await new Promise<void>((resolve, reject) => {
         let stderr = ''
         const child = spawn(ffmpeg, [
@@ -314,22 +343,26 @@ export class AudioConversionService {
           )
         })
       })
+      throwIfAborted()
       await this.probe(tempPath)
+      // rename 是提交点：此前任何时刻取消都会丢弃临时文件、保留源文件。
+      throwIfAborted()
       await fs.rename(tempPath, task.outputPath)
       const deleteSource = shouldDeleteSource(
         task.deleteSource,
         task.useCurrentDownloadDeleteSetting,
         global.lx.appSetting['download.deleteSourceAfterConvert'],
       )
-      if (deleteSource) await fs.rm(task.inputPath, { force: true })
+      // rename 期间到达的取消请求：输出已生成，但不再删除源文件。
+      if (deleteSource && !isAborted()) await fs.rm(task.inputPath, { force: true })
       this.finish(task, 'completed')
     } catch (error: any) {
       await fs.rm(tempPath, { force: true }).catch(() => {})
-      this.finish(
-        task,
-        task.status === 'canceled' ? 'canceled' : 'error',
-        error?.message || '转换失败',
-      )
+      if (error instanceof ConversionAbortedError || isCanceled()) {
+        this.finish(task, 'canceled', '已取消')
+      } else {
+        this.finish(task, 'error', error?.message || '转换失败')
+      }
     } finally {
       this.running = null
       this.runningId = null
