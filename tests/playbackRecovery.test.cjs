@@ -464,3 +464,27 @@ test('#3 temporary API source is restored when recovery is abandoned (song toggl
   assert.equal(h.calls.filter(c => c.switchApi).at(-1).switchApi, 'A')
   assert.equal(h.appSetting['common.apiSource'], 'A')
 })
+
+test('#5 disabled automatic recovery: a transient URL error is retried once and playback continues', async() => {
+  let attempts = 0
+  const h = harness({ original: song('wy', ['flac']), settings: { 'player.autoSkipOnError': false }, request: c => ++attempts === 1 ? Promise.reject(new Error('network error')) : result(c) })
+  await h.start()
+  assert.deepEqual(requests(h).map(tuple), ['A/wy/flac', 'A/wy/flac'])
+  assert.equal(lastResource(h), 'A/wy/flac')
+  assert.equal(h.next.length, 0)
+})
+
+test('#5 disabled automatic recovery: a persistent error is retried only once, then stops without skipping', async() => {
+  const h = harness({ original: song('wy', ['flac']), settings: { 'player.autoSkipOnError': false }, request: () => Promise.reject(new Error('network error')) })
+  await h.start()
+  assert.equal(requests(h).length, 2)
+  assert.equal(lastResource(h), undefined)
+  assert.equal(h.next.length, 0)
+  assert.equal(h.calls.some(c => c.search || c.switchApi), false)
+})
+
+test('#5 enabled automatic recovery: no extra per-request retry (recovery retry count applies)', async() => {
+  const h = harness({ apiIds: ['A'], strategy: 'next', request: () => Promise.reject(new Error('network error')) })
+  await h.start()
+  assert.equal(requests(h).length, 1)
+})
