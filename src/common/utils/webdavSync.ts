@@ -60,6 +60,7 @@ export const WEBDAV_PLATFORM_SETTING_KEYS = [
   'player.playEngine',
   'player.mpv.path',
   'player.mpv.extraArgs',
+  'player.mpv.aoFallbackDevices',
   'player.mediaDeviceId',
   'player.vst3.directories',
   'player.vst3.chain',

@@ -47,7 +47,7 @@ test('chooses a safe playlist sync direction', () => {
 })
 
 const platformKeys = [
-  'player.playEngine', 'player.mpv.path', 'player.mpv.extraArgs', 'player.mediaDeviceId',
+  'player.playEngine', 'player.mpv.path', 'player.mpv.extraArgs', 'player.mpv.aoFallbackDevices', 'player.mediaDeviceId',
   'player.vst3.directories', 'player.vst3.chain', 'download.savePath',
 ]
 
@@ -56,6 +56,7 @@ test('platform-specific settings are never uploaded to WebDAV', () => {
   const local = {
     'player.playEngine': 'audirvana', 'player.mpv.path': '/opt/homebrew/bin/mpv', 'player.mediaDeviceId': 'coreaudio/BuiltIn', 'download.savePath': '/Users/me/Music',
     'player.mpv.extraArgs': '--audio-device=coreaudio/BuiltIn',
+    'player.mpv.aoFallbackDevices': ['coreaudio/BuiltIn'],
     'player.vst3.directories': ['/Users/me/VST3'], 'player.vst3.chain': [{ path: '/Users/me/VST3/Effect.vst3' }],
     'sync.webdav.password': 'secret', 'network.gitcodeMusicAccessToken': 'token', 'sync.webdav.lastListHash': 'abc',
     'player.playQuality': 'flac', 'common.theme': 'dark',
@@ -70,12 +71,14 @@ test('platform-specific settings from the cloud never overwrite local ones (incl
   const local = {
     'player.playEngine': 'electron', 'player.mpv.path': 'C:\mpv\mpv.exe', 'player.mediaDeviceId': 'wasapi/{x}', 'download.savePath': 'D:\Music',
     'player.mpv.extraArgs': '--audio-device=wasapi/{x}',
+    'player.mpv.aoFallbackDevices': ['wasapi/{x}'],
     'player.vst3.directories': ['D:/VST3'], 'player.vst3.chain': [{ path: 'D:/VST3/Effect.vst3' }],
     'player.playQuality': '320k', 'common.isAgreePact': true, 'sync.webdav.url': 'https://dav.example/', 'common.theme': 'light',
   }
   const remote = {
     'player.playEngine': 'audirvana', 'player.mpv.path': '/opt/homebrew/bin/mpv', 'player.mediaDeviceId': 'coreaudio/BuiltIn', 'download.savePath': '/Users/me/Music',
     'player.mpv.extraArgs': '--audio-device=coreaudio/BuiltIn',
+    'player.mpv.aoFallbackDevices': ['coreaudio/BuiltIn'],
     'player.vst3.directories': ['/Users/me/VST3'], 'player.vst3.chain': [{ path: '/Users/me/VST3/Effect.vst3' }],
     'player.playQuality': 'flac', 'common.isAgreePact': false, 'sync.webdav.url': 'https://evil.example/', 'common.theme': 'dark', 'unknown.key': 1,
   }
