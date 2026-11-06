@@ -180,10 +180,17 @@ export const syncWebDAVLists = async(manual = true) => {
     const remoteFile = parseListsFile(remote)
     const localHash = hashSyncData(localData)
     const remoteHash = hashSyncData(remoteFile.data)
+    const savedHash = appSetting['sync.webdav.lastListHash']
+    let lastHash = savedHash
+    // 旧基线按原有键顺序计算；匹配到当前任一端时，转换为对应的新哈希。
+    if (savedHash && !savedHash.startsWith('v2:') && localHash !== remoteHash) {
+      if (savedHash === hashSyncData(localData, true)) lastHash = localHash
+      else if (savedHash === hashSyncData(remoteFile.data, true)) lastHash = remoteHash
+    }
     let decision = decideWebDAVSync({
       hasRemote: true,
       hasLocalData: hasListData(localData),
-      lastHash: appSetting['sync.webdav.lastListHash'],
+      lastHash,
       localHash,
       remoteHash,
     })
@@ -196,7 +203,7 @@ export const syncWebDAVLists = async(manual = true) => {
     }
     if (decision == 'upload') await uploadListData(localData, { etag: remote.etag })
     else if (decision == 'download') await applyListData(remoteFile.data, remote.etag, remoteFile.lastModified)
-    else if (manual) saveSyncState(localData, remote.etag, remoteFile.lastModified)
+    else if (manual || (savedHash && !savedHash.startsWith('v2:'))) saveSyncState(localData, remote.etag, remoteFile.lastModified)
     return decision
   } finally {
     syncLocks.delete(lock)

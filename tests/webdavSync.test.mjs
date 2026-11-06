@@ -18,7 +18,11 @@ test('normalizes safe WebDAV paths', () => {
 })
 
 test('hash is deterministic and changes with synced data', () => {
-  assert.equal(hashSyncData({ list: [1, 2] }), hashSyncData({ list: [1, 2] }))
+  assert.equal(
+    hashSyncData({ name: 'test', list: [{ name: 'song', meta: { a: 1, b: 2 } }] }),
+    hashSyncData({ list: [{ meta: { b: 2, a: 1 }, name: 'song' }], name: 'test' }),
+  )
+  assert.notEqual(hashSyncData({ a: 1, b: 2 }, true), hashSyncData({ b: 2, a: 1 }, true))
   assert.notEqual(hashSyncData({ list: [1, 2] }), hashSyncData({ list: [2, 1] }))
 })
 
@@ -35,6 +39,7 @@ test('chooses a safe playlist sync direction', () => {
   assert.equal(decide({ lastHash: '', localHash: 'local', remoteHash: 'remote' }), 'conflict')
   assert.equal(decide({ lastHash: '', localHash: 'same', remoteHash: 'same' }), 'none')
   assert.equal(decide({ lastHash: '', hasLocalData: false, remoteHash: 'remote' }), 'download')
+  assert.equal(decide({ lastHash: 'legacy', localHash: 'same', remoteHash: 'same' }), 'none')
   assert.equal(decide({ localHash: 'local' }), 'upload')
   assert.equal(decide({ remoteHash: 'remote' }), 'download')
   assert.equal(decide({ localHash: 'local', remoteHash: 'remote' }), 'conflict')
