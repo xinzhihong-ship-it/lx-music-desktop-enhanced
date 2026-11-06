@@ -10,7 +10,8 @@ import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { onNewDesktopLyricProcess } from '@renderer/utils/ipc'
 import { createLyricDriftGuard } from './lyricDriftGuard'
 
-const getCurrentTime = () => {
+/** 播放器当前时间（毫秒，已扣除 VST3 处理延迟） */
+export const getCurrentTime = () => {
   const delay = vst3Runtime.active && appSetting['player.playEngine'] === 'electron' && !isBiliVideoActive()
     ? (vst3Runtime.latencyMs + vst3Runtime.bridgeMs) * appSetting['player.playbackRate'] : 0
   return Math.max(0, getPlayerCurrentTime() * 1000 - delay)

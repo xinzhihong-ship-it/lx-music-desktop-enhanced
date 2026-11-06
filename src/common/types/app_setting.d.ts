@@ -390,6 +390,26 @@ declare global {
       'playDetail.isDelayScroll': boolean
 
       /**
+       * 播放详情页-歌词视图：滚动歌词 / 舞台
+       */
+      'playDetail.lyricView': 'scroll' | 'stage'
+
+      /**
+       * 播放详情页-舞台风格：流动 / 阶梯 / 倾诉
+       */
+      'playDetail.stageStyle': 'flow' | 'steps' | 'tilt'
+
+      /**
+       * 播放详情页-舞台字词落定时迸出火花
+       */
+      'playDetail.stageSparks': boolean
+
+      /**
+       * 播放详情页-背景：跟随主题 / 封面主色
+       */
+      'playDetail.background': 'theme' | 'cover'
+
+      /**
        * 是否启用桌面歌词
        */
       'desktopLyric.enable': boolean

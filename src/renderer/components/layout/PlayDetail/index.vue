@@ -1,7 +1,8 @@
 <template lang="pug">
 transition(enter-active-class="animated slideInRight" leave-active-class="animated slideOutDown" @after-enter="handleAfterEnter" @after-leave="handleAfterLeave")
-  div(v-if="isShowPlayerDetail" :class="[$style.container, { fullscreen: isFullscreen, [$style.videoOnlyFullscreen]: isVideoOnlyFullscreen }]" @contextmenu="handleContextMenu")
-    div(:class="$style.bg")
+  div(v-if="isShowPlayerDetail" :class="[$style.container, { fullscreen: isFullscreen, [$style.videoOnlyFullscreen]: isVideoOnlyFullscreen, [$style.coverMode]: isCoverBackground }]" @contextmenu="handleContextMenu")
+    Backdrop(v-if="isCoverBackground" :pic="musicInfo.pic" @palette="handlePalette")
+    div(v-else :class="$style.bg")
     //- div(:class="$style.bg" :style="bgStyle")
     //- div(:class="$style.bg2")
     ControlBtnsLeftHeader(v-if="!isVideoOnlyFullscreen && appSetting['common.controlBtnPosition'] == 'left'")
@@ -26,7 +27,7 @@ transition(enter-active-class="animated slideInRight" leave-active-class="animat
 
       transition(enter-active-class="animated fadeIn" leave-active-class="animated fadeOut")
         VideoStage(v-if="isBiliVideo" :fullscreen="isVideoOnlyFullscreen" @toggle-fullscreen="toggleVideoFullscreen")
-        LyricPlayer(v-else-if="visibled")
+        LyricView(v-else-if="visibled" :accent="isCoverBackground ? coverAccent : ''")
       music-comment(v-if="visibled && !isVideoOnlyFullscreen" :class="$style.comment" :show="isShowPlayComment" :music-info="playMusicInfo.musicInfo" @close="hideComment")
     transition(enter-active-class="animated fadeIn" leave-active-class="animated fadeOut")
       play-bar(v-if="visibled" :class="isVideoOnlyFullscreen ? $style.videoFullscreenPlayBar : undefined")
@@ -50,7 +51,8 @@ import {
   setShowPlayComment,
   setShowPlayLrcSelectContentLrc,
 } from '@renderer/store/player/action'
-import LyricPlayer from './LyricPlayer.vue'
+import LyricView from './lyrics/LyricView.vue'
+import Backdrop from './lyrics/Backdrop.vue'
 import PlayBar from './PlayBar.vue'
 import MusicComment from './components/MusicComment/index.vue'
 import ControlBtnsLeftHeader from './ControlBtnsLeftHeader.vue'
@@ -70,7 +72,8 @@ export default {
   components: {
     ControlBtnsLeftHeader,
     ControlBtnsRightHeader,
-    LyricPlayer,
+    LyricView,
+    Backdrop,
     PlayBar,
     MusicComment,
     PlayQualityTag,
@@ -79,6 +82,10 @@ export default {
   },
   setup() {
     const visibled = ref(false)
+    // 封面主色背景（B 站视频全屏时不用）
+    const isCoverBackground = computed(() => appSetting['playDetail.background'] == 'cover' && !isVideoOnlyFullscreen.value)
+    const coverAccent = ref('')
+    const handlePalette = palette => { coverAccent.value = palette.accent }
     const isVideoOnlyFullscreen = ref(false)
     const canSwitchBiliMode = computed(() => isBiliMusic(playMusicInfo.musicInfo))
     const isBiliVideo = computed(() => isBiliVideoActive())
@@ -164,6 +171,9 @@ export default {
       handleAfterLeave,
       visibled,
       isVideoOnlyFullscreen,
+      isCoverBackground,
+      coverAccent,
+      handlePalette,
       isFullscreen,
       isBiliVideo,
       canSwitchBiliMode,
@@ -386,6 +396,16 @@ export default {
 
 
 .container { background-color: var(--ui-surface); }
+
+.coverMode {
+  background-color: #111;
+  --color-font: rgba(255, 255, 255, .94);
+  --color-font-label: rgba(255, 255, 255, .62);
+  --color-button-font: rgba(255, 255, 255, .86);
+  --color-button-font-selected: #fff;
+  --color-primary-alpha-900: rgba(255, 255, 255, .08);
+  --color-primary-alpha-700: rgba(255, 255, 255, .16);
+}
 .main { margin: 10px 38px 20px; gap: 22px; }
 .img { border-radius: 20px; box-shadow: var(--ui-shadow); opacity: 1; }
 .description { margin-top: 22px; p { line-height: 1.8; } }
