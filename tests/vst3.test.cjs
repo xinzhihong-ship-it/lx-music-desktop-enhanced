@@ -7,6 +7,90 @@ const { startHost, defaultDirectories, findPlugins, scanPlugins } = require('../
 const { Vst3Chain } = require('../native/vst3-host/chain.cjs')
 const { randomUUID } = require('node:crypto')
 
+test('VST3 state is written only after a change and retried after a failed write', async() => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lx-vst3-dirty-'))
+  const directory = path.join(root, 'state')
+  const id = randomUUID()
+  const pluginPath = path.join(root, 'Effect.vst3')
+  const file = path.join(directory, `${id}.json`)
+  const chain = new Vst3Chain('unused', directory)
+  let state = { gain: 0 }
+  chain.host = {
+    closed: false,
+    async request({ command }) {
+      if (command === 'load_chain') return { plugins: [{ id }] }
+      assert.equal(command, 'save_state')
+      return { state }
+    },
+    close() {},
+  }
+  try {
+    await chain.configure([{ id, path: pluginPath, enabled: true }], 48000, new Set([pluginPath]))
+    await chain.save()
+    await assert.rejects(fs.stat(directory), { code: 'ENOENT' })
+
+    state = { gain: 1 }
+    await fs.writeFile(directory, '')
+    await assert.rejects(chain.save())
+    await fs.unlink(directory)
+    await chain.save()
+    assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { path: pluginPath, state })
+
+    await fs.unlink(file)
+    await chain.save()
+    await chain.close()
+    await assert.rejects(fs.stat(file), { code: 'ENOENT' })
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('VST3 edits are persisted when the initial snapshot after loading failed', async() => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lx-vst3-nobaseline-'))
+  const directory = path.join(root, 'state')
+  const id = randomUUID()
+  const pluginPath = path.join(root, 'Effect.vst3')
+  const file = path.join(directory, `${id}.json`)
+  const chain = new Vst3Chain('unused', directory)
+  let state = { gain: 0 }
+  const setGain = gain => { state = { gain } }
+  let failNextSnapshot = true
+  chain.host = {
+    closed: false,
+    async request({ command }) {
+      if (command === 'load_chain') return { plugins: [{ id }] }
+      assert.equal(command, 'save_state')
+      if (failNextSnapshot) {
+        failNextSnapshot = false
+        throw new Error('plugin busy')
+      }
+      return { state }
+    },
+    close() {},
+  }
+  try {
+    await chain.configure([{ id, path: pluginPath, enabled: true }], 48000, new Set([pluginPath]))
+    assert.equal(chain.slots[0].lastStateSnapshot, undefined, 'initial snapshot failed')
+
+    // 用户在首次定时保存前修改了参数：改动必须写盘，而不是被当作基线吞掉
+    setGain(3)
+    await chain.save()
+    assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { path: pluginPath, state })
+
+    // 写盘后建立了基线：状态不变时不再重复写入
+    await fs.unlink(file)
+    await chain.save()
+    await assert.rejects(fs.stat(file), { code: 'ENOENT' })
+
+    // 之后的修改照常在关闭时写盘
+    setGain(5)
+    await chain.close()
+    assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { path: pluginPath, state })
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
 test('default directories are platform-specific', () => {
   assert.deepEqual(defaultDirectories('darwin', '/Users/test', {}), ['/Library/Audio/Plug-Ins/VST3', '/Users/test/Library/Audio/Plug-Ins/VST3'])
   assert.deepEqual(defaultDirectories('linux', '/home/test', {}), ['/home/test/.vst3', '/usr/lib/vst3', '/usr/local/lib/vst3'])

@@ -4,14 +4,14 @@ import { getSongKeyViewerHtml } from './songKeyViewerHtml'
 let songKeyWindow: BrowserWindow | null = null
 let cachedData: any = null
 
-export const createSongKeyWindow = (): BrowserWindow => {
+export const createSongKeyWindow = (onClosed: () => void): BrowserWindow => {
   if (songKeyWindow && !songKeyWindow.isDestroyed()) {
     songKeyWindow.show()
     songKeyWindow.focus()
     return songKeyWindow
   }
 
-  songKeyWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 440,
     height: 740,
     minWidth: 380,
@@ -27,19 +27,22 @@ export const createSongKeyWindow = (): BrowserWindow => {
     },
   })
 
-  void songKeyWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(getSongKeyViewerHtml())}`)
+  songKeyWindow = window
+  void window.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(getSongKeyViewerHtml())}`)
 
-  songKeyWindow.webContents.on('did-finish-load', () => {
-    if (cachedData && songKeyWindow && !songKeyWindow.isDestroyed()) {
+  window.webContents.on('did-finish-load', () => {
+    if (cachedData && songKeyWindow === window && !window.isDestroyed()) {
       syncSongKeyDataToWindow(cachedData)
     }
   })
 
-  songKeyWindow.on('closed', () => {
+  window.once('closed', () => {
+    if (songKeyWindow !== window) return
     songKeyWindow = null
+    onClosed()
   })
 
-  return songKeyWindow
+  return window
 }
 
 export const syncSongKeyDataToWindow = (data: any): boolean => {
@@ -58,7 +61,6 @@ export const closeSongKeyWindow = (): void => {
   if (songKeyWindow && !songKeyWindow.isDestroyed()) {
     songKeyWindow.close()
   }
-  songKeyWindow = null
 }
 
 export const isSongKeyWindowActive = (): boolean => {

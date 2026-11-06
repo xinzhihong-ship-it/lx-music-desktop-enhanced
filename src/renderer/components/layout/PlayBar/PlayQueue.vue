@@ -211,7 +211,7 @@ import { sourceNames } from '@renderer/store'
 import { dialog } from '@renderer/plugins/Dialog'
 import { useI18n } from '@renderer/plugins/i18n'
 import { LIST_IDS } from '@common/constants'
-import { loveList } from '@renderer/store/list/state'
+import { defaultList, loveList, userLists } from '@renderer/store/list/state'
 import SearchList from '@renderer/views/List/MusicList/components/SearchList.vue'
 import { filterMusicRows } from '@renderer/utils/filterMusicRows'
 
@@ -286,9 +286,38 @@ const collectSelected = () => {
   if (selectedQueueItems.value.length) void addListMusics(loveList.id, [...selectedQueueItems.value])
   clearQueueSelection()
 }
-const removeSelected = () => {
+// 播放队列展示的就是当前播放的歌单本身：移除 / 清空会直接删除该歌单里的歌曲，并经同步传播到其他设备。
+// 因此对真实歌单（试听列表、我的收藏、自建歌单）的删除一律二次确认，并在提示中写明歌单名；
+// 临时列表（在线歌单试听）不是用户数据，保持直接操作。
+const getQueueListName = listId => {
+  if (listId == defaultList.id) return t(defaultList.name)
+  if (listId == loveList.id) return t(loveList.name)
+  return userLists.find(list => list.id == listId)?.name ?? null
+}
+/** 确认从当前歌单删除歌曲；确认期间若用户已切换到其他歌单则放弃本次操作 */
+const confirmRemoveFromList = async(listId, count, isClear = false) => {
+  const name = listId == LIST_IDS.TEMP ? null : getQueueListName(listId)
+  if (name == null) {
+    if (!isClear) return true
+    return dialog.confirm({
+      message: t('player__queue_clear_all_tip', { len: count }),
+      cancelButtonText: t('cancel_button_text_2'),
+      confirmButtonText: t('confirm_button_text'),
+    })
+  }
+  const confirm = await dialog.confirm({
+    message: t(isClear ? 'player__queue_clear_list_confirm' : 'player__queue_remove_list_confirm', { name, num: count }),
+    cancelButtonText: t('cancel_button_text_2'),
+    confirmButtonText: t('confirm_button_text'),
+  })
+  return confirm && playInfo.playerListId == listId
+}
+const removeSelected = async() => {
   if (!canEditQueue.value || !selectedQueueItems.value.length) return
-  void removeListMusics({ listId: playInfo.playerListId, ids: selectedQueueItems.value.map(item => item.id) })
+  const listId = playInfo.playerListId
+  const ids = selectedQueueItems.value.map(item => item.id)
+  if (!await confirmRemoveFromList(listId, ids.length)) return
+  void removeListMusics({ listId, ids })
   clearQueueSelection()
 }
 const locateCurrent = () => {
@@ -319,21 +348,19 @@ const moveTempPlayList = (index, delta) => {
 const collectQueueItem = item => {
   if (item) void addListMusics(loveList.id, [item])
 }
-const removeQueueItem = index => {
+const removeQueueItem = async index => {
   if (!canEditQueue.value) return
   const item = queue.value[index]
   if (!item) return
-  void removeListMusics({ listId: playInfo.playerListId, ids: [getInfo(item).id] })
+  const listId = playInfo.playerListId
+  if (!await confirmRemoveFromList(listId, 1)) return
+  void removeListMusics({ listId, ids: [getInfo(item).id] })
 }
 const clearQueue = async() => {
   if (!canEditQueue.value || !queue.value.length) return
-  const confirm = await dialog.confirm({
-    message: t('player__queue_clear_all_tip', { len: queue.value.length }),
-    cancelButtonText: t('cancel_button_text_2'),
-    confirmButtonText: t('confirm_button_text'),
-  })
-  if (!confirm) return
-  void clearListMusics([playInfo.playerListId])
+  const listId = playInfo.playerListId
+  if (!await confirmRemoveFromList(listId, queue.value.length, true)) return
+  void clearListMusics([listId])
 }
 const handleShowLocator = () => {
   if (!props.show) return

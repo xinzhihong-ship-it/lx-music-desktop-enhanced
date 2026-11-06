@@ -1,5 +1,5 @@
-import { toRaw } from '@common/utils/vueTools'
-import { getWebDAVFilePath, hashSyncData, decideWebDAVSync } from '@common/utils/webdavSync'
+import { ref, toRaw } from '@common/utils/vueTools'
+import { getWebDAVFilePath, hashSyncData, decideWebDAVSync, getWebDAVUploadSettings, pickWebDAVDownloadSettings } from '@common/utils/webdavSync'
 import { LIST_IDS } from '@common/constants'
 import { filterMusicList, fixNewMusicInfoQuality } from '@renderer/utils'
 import { getListMusics, overwriteListFull, reloadListData } from '@renderer/store/list/action'
@@ -10,6 +10,8 @@ import { createExportSetting, preserveAgreement } from '@renderer/utils/exportSe
 import { getUserApiData, overwriteUserApiData, sendWebDAVAction } from '@renderer/utils/ipc'
 import { setUserApi } from '@renderer/core/apiSource'
 import { dialog } from '@renderer/plugins/Dialog'
+import { setAllStatus } from '@renderer/store/player/action'
+import { statusText } from '@renderer/store/player/state'
 
 interface ListsFile {
   version: '2'
@@ -178,18 +180,32 @@ export const syncWebDAVLists = async(manual = true) => {
     const remoteFile = parseListsFile(remote)
     const localHash = hashSyncData(localData)
     const remoteHash = hashSyncData(remoteFile.data)
+    const savedHash = appSetting['sync.webdav.lastListHash']
+    let lastHash = savedHash
+    // 旧基线按原有键顺序计算；匹配到当前任一端时，转换为对应的新哈希。
+    if (savedHash && !savedHash.startsWith('v2:') && localHash !== remoteHash) {
+      if (savedHash === hashSyncData(localData, true)) lastHash = localHash
+      else if (savedHash === hashSyncData(remoteFile.data, true)) lastHash = remoteHash
+    }
     let decision = decideWebDAVSync({
       hasRemote: true,
       hasLocalData: hasListData(localData),
-      lastHash: appSetting['sync.webdav.lastListHash'],
+      lastHash,
       localHash,
       remoteHash,
     })
 
-    if (decision == 'conflict') decision = await confirmLocalOverwrite() ? 'upload' : 'download'
+    if (decision == 'conflict') {
+      // 自动同步遇到冲突：不弹确认框，保留本地版本——既不下载覆盖本地，也不上传覆盖云端（避免静默
+      // 丢掉另一台设备的修改）；同步基线保持不变，冲突会持续存在，直到用户手动同步并选择
+      if (!manual) return 'conflict'
+      decision = await confirmLocalOverwrite() ? 'upload' : 'download'
+    }
     if (decision == 'upload') await uploadListData(localData, { etag: remote.etag })
     else if (decision == 'download') await applyListData(remoteFile.data, remote.etag, remoteFile.lastModified)
-    else if (manual) saveSyncState(localData, remote.etag, remoteFile.lastModified)
+    // 'none' 时两端内容一致；基线与之不一致（旧版基线、两端做了相同修改）时自动同步也要更新基线，
+    // 否则之后任一端再修改都会被误判为冲突
+    else if (manual || savedHash !== localHash) saveSyncState(localData, remote.etag, remoteFile.lastModified)
     return decision
   } finally {
     syncLocks.delete(lock)
@@ -221,15 +237,8 @@ export const downloadWebDAVLists = async() => {
   }
 }
 
-const getCloudSettings = () => {
-  const settings = createExportSetting(toRaw(appSetting)) as Partial<LX.AppSetting>
-  delete settings['network.gitcodeMusicAccessToken']
-  delete settings['sync.webdav.password']
-  delete settings['sync.webdav.lastListEtag']
-  delete settings['sync.webdav.lastListHash']
-  delete settings['sync.webdav.lastSyncTime']
-  return settings
-}
+// 不上传敏感信息、同步状态与平台专属设置（引擎、mpv 路径、输出设备、下载目录）
+const getCloudSettings = () => getWebDAVUploadSettings(createExportSetting(toRaw(appSetting))) as Partial<LX.AppSetting>
 
 export const uploadWebDAVSettings = async() => {
   if (syncLocks.size) throw new Error(t('setting__webdav_syncing'))
@@ -266,21 +275,9 @@ export const downloadWebDAVSettings = async() => {
 
     const parsed = JSON.parse(settingsRemote.content) as SettingsFile
     if (!parsed?.data || typeof parsed.data != 'object') throw new Error(t('setting__webdav_invalid_data'))
-    const protectedKeys = new Set([
-      'common.isAgreePact',
-      'network.gitcodeMusicAccessToken',
-      'sync.webdav.password',
-      'sync.webdav.enable',
-      'sync.webdav.autoSync',
-      'sync.webdav.url',
-      'sync.webdav.username',
-      'sync.webdav.path',
-      'sync.webdav.lastListEtag',
-      'sync.webdav.lastListHash',
-      'sync.webdav.lastSyncTime',
-    ])
+    // 受保护键（协议、WebDAV 连接配置、同步状态）与平台专属设置不覆盖本地
     const setting = preserveAgreement(
-      Object.fromEntries(Object.entries(parsed.data).filter(([key]) => key in appSetting && !protectedKeys.has(key))) as Partial<LX.AppSetting>,
+      pickWebDAVDownloadSettings(parsed.data as Record<string, unknown>, appSetting) as Partial<LX.AppSetting>,
       appSetting['common.isAgreePact'],
     )
     Object.assign(appSetting, setting)
@@ -308,14 +305,58 @@ export const downloadWebDAVUserApis = async() => {
   }
 }
 
+// ---- 自动同步：后台静默执行，问题只在状态栏提示，不弹阻塞对话框 ----
+
+export interface WebDAVAutoSyncNotice {
+  type: 'failed' | 'conflict'
+  message: string
+  time: number
+}
+/** 自动同步最近一次的问题，在 WebDAV 设置中持续展示；同步成功后清空 */
+export const webdavAutoSyncNotice = ref<WebDAVAutoSyncNotice | null>(null)
+
+/** 同一类问题连续出现时，状态栏最多每 5 分钟提示一次（断网时每次歌单变更 / 窗口获焦都会触发同步） */
+const STATUS_NOTICE_INTERVAL = 5 * 60_000
+const STATUS_NOTICE_DURATION = 8000
+const lastStatusNoticeAt = new Map<WebDAVAutoSyncNotice['type'], number>()
+
+const tp = (key: string, params: Record<string, string>) => (window.i18n.t as unknown as (key: string, params: Record<string, string>) => string)(key, params)
+
+const reportAutoSyncProblem = (type: WebDAVAutoSyncNotice['type'], message: string) => {
+  const now = Date.now()
+  webdavAutoSyncNotice.value = { type, message, time: now }
+  if (now - (lastStatusNoticeAt.get(type) ?? 0) < STATUS_NOTICE_INTERVAL) return
+  lastStatusNoticeAt.set(type, now)
+  setAllStatus(message)
+  setTimeout(() => { if (statusText.value == message) setAllStatus('') }, STATUS_NOTICE_DURATION)
+}
+
+/** 执行一次自动同步（歌单变更防抖后、窗口获焦、启动时）。失败不抛出、不弹窗。 */
+export const runWebDAVAutoSync = async() => {
+  if (applyingRemote || !appSetting['sync.webdav.enable'] || !appSetting['sync.webdav.autoSync']) return
+  try {
+    const decision = await syncWebDAVLists(false)
+    if (decision == 'conflict') {
+      reportAutoSyncProblem('conflict', t('setting__webdav_auto_sync_conflict_status'))
+      return
+    }
+    // 成功：结束本轮问题，之后再出问题重新提示
+    lastStatusNoticeAt.clear()
+    webdavAutoSyncNotice.value = null
+  } catch (error: any) {
+    const message = error?.message ?? String(error)
+    // 与手动同步或另一次自动触发重叠：不是失败，静默跳过
+    if (message == t('setting__webdav_syncing')) return
+    reportAutoSyncProblem('failed', tp('setting__webdav_auto_sync_failed_status', { message }))
+  }
+}
+
 const scheduleAutoSync = () => {
   if (applyingRemote || !appSetting['sync.webdav.enable'] || !appSetting['sync.webdav.autoSync']) return
   if (autoTimer) clearTimeout(autoTimer)
   autoTimer = setTimeout(() => {
     autoTimer = null
-    void syncWebDAVLists(false).catch(error => {
-      void dialog({ message: `${t('setting__webdav_sync_failed')}: ${error?.message ?? String(error)}` })
-    })
+    void runWebDAVAutoSync()
   }, 3000)
 }
 
@@ -323,10 +364,6 @@ export const initWebDAVSync = () => {
   if (initialized) return
   initialized = true
   window.app_event.on('myListUpdate', scheduleAutoSync)
-  window.app_event.on('focus', () => {
-    if (appSetting['sync.webdav.enable'] && appSetting['sync.webdav.autoSync']) void syncWebDAVLists(false).catch(() => {})
-  })
-  if (appSetting['sync.webdav.enable'] && appSetting['sync.webdav.autoSync']) {
-    void syncWebDAVLists(false).catch(() => {})
-  }
+  window.app_event.on('focus', () => { void runWebDAVAutoSync() })
+  void runWebDAVAutoSync()
 }

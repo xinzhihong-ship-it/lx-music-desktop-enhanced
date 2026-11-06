@@ -62,6 +62,7 @@ dd
       base-btn.btn(min :disabled="!!busy" @click="confirmRun('uploadLists', 'setting__webdav_upload_lists_confirm', uploadWebDAVLists, 'setting__webdav_upload_success')") {{ $t('setting__webdav_upload_lists') }}
       base-btn.btn(min :disabled="!!busy" @click="confirmRun('downloadLists', 'setting__webdav_download_lists_confirm', downloadWebDAVLists, 'setting__webdav_download_success')") {{ $t('setting__webdav_download_lists') }}
     .p.small {{ $t('setting__webdav_last_sync', { time: lastSyncTime }) }}
+    .p.small(v-if="webdavAutoSyncNotice" :class="$style.notice") {{ autoSyncNoticeText }}
     .p.small {{ $t('setting__webdav_security_tip') }}
 </template>
 
@@ -79,7 +80,12 @@ import {
   downloadWebDAVUserApis,
   uploadWebDAVLists,
   downloadWebDAVLists,
+  webdavAutoSyncNotice,
 } from '@renderer/core/webdavSync'
+
+const autoSyncNoticeText = computed(() => webdavAutoSyncNotice.value
+  ? `${dateFormat(new Date(webdavAutoSyncNotice.value.time), 'Y-M-D h:m:s')} ${webdavAutoSyncNotice.value.message}`
+  : '')
 
 const busy = ref('')
 const lastSyncTime = computed(() => appSetting['sync.webdav.lastSyncTime']
@@ -121,5 +127,8 @@ const confirmRun = async(name, confirmKey, action, successKey) => {
 .buttons {
   display: flex;
   gap: 8px;
+}
+.notice {
+  color: var(--color-font-label);
 }
 </style>

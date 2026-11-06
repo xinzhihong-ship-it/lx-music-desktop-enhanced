@@ -38,8 +38,21 @@ const getOutputPath = (
   }
 }
 
+/** ffprobe 单次检测的最长时间。 */
+const PROBE_TIMEOUT_MS = 30_000
+
+/** 任务在执行中途被取消或移出队列，runNext 据此提前退出。 */
+class ConversionAbortedError extends Error {
+  constructor() {
+    super('已取消')
+    this.name = 'ConversionAbortedError'
+  }
+}
+
 export class AudioConversionService {
   private tasks: LX.AudioConversion.Task[] = []
+  private isPersisting = false
+  private persistPending = false
   private running: ChildProcessWithoutNullStreams | null = null
   private runningId: string | null = null
   private readonly waiters = new Map<
@@ -143,6 +156,8 @@ export class AudioConversionService {
       const task = this.tasks.find((task) => task.id === id)
       if (!task || task.status === 'completed' || task.status === 'error') { continue }
       if (this.runningId === id) {
+        // 已被 runNext 占位的任务（可能还在 probe 阶段，尚未启动 FFmpeg）：
+        // 只打取消标记并终止可能已启动的子进程，由 runNext 在下一个检查点退出并统一 finish。
         task.status = 'canceled'
         task.error = '已取消'
         this.running?.kill('SIGTERM')
@@ -163,6 +178,8 @@ export class AudioConversionService {
     for (const id of ids) {
       const task = this.tasks.find((task) => task.id === id)
       if (!task || (task.status !== 'error' && task.status !== 'canceled')) { continue }
+      // 刚被取消、runNext 还没走到退出点的任务仍处于占位中，此时重置会被随后的 finish 覆盖。
+      if (this.runningId === id) continue
       task.status = 'waiting'
       task.progress = 0
       delete task.error
@@ -172,9 +189,22 @@ export class AudioConversionService {
   }
 
   private persist() {
+    if (this.isPersisting) {
+      this.persistPending = true
+      return
+    }
+    this.isPersisting = true
+    this.persistPending = false
+    const filePath = taskFilePath()
+    const tempPath = `${filePath}.tmp`
     void fs
-      .writeFile(taskFilePath(), JSON.stringify(this.tasks), 'utf8')
+      .writeFile(tempPath, JSON.stringify(this.tasks), 'utf8')
+      .then(async() => fs.rename(tempPath, filePath))
       .catch(() => {})
+      .finally(() => {
+        this.isPersisting = false
+        if (this.persistPending) this.persist()
+      })
   }
 
   private finish(
@@ -191,11 +221,27 @@ export class AudioConversionService {
     this.persist()
   }
 
+  /**
+   * 用 ffprobe 检测音频。子进程登记为当前运行进程，取消任务时随之被终止；
+   * 超过 PROBE_TIMEOUT_MS 未结束（如网络盘 / 已拔出的设备导致读取挂起）则强制终止并判定失败，
+   * 避免检测卡住使整个转换队列停滞。
+   */
   private async probe(filePath: string) {
     const binary = getBinaryPath('ffprobe')
-    return new Promise<{ duration: number }>((resolve, reject) => {
+    return new Promise<{ duration: number }>((_resolve, _reject) => {
       let output = ''
       let stderr = ''
+      let settled = false
+      let timer: NodeJS.Timeout | null = null
+      const settle = () => {
+        if (settled) return false
+        settled = true
+        if (timer) clearTimeout(timer)
+        if (this.running === child) this.running = null
+        return true
+      }
+      const resolve = (value: { duration: number }) => { if (settle()) _resolve(value) }
+      const reject = (error: Error) => { if (settle()) _reject(error) }
       const child = spawn(binary, [
         '-v',
         'error',
@@ -207,6 +253,11 @@ export class AudioConversionService {
         'json',
         filePath,
       ], { shell: false })
+      this.running = child
+      timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        reject(new Error(`ffprobe 检测音频超时（${PROBE_TIMEOUT_MS / 1000} 秒），请检查文件是否可正常读取`))
+      }, PROBE_TIMEOUT_MS)
       child.stdout.on('data', (chunk) => {
         output += chunk.toString()
       })
@@ -256,13 +307,32 @@ export class AudioConversionService {
   }
 
   private async runNext(): Promise<void> {
-    if (this.running) return
+    // runningId 在选中任务的同一个同步片段内写入，probe 等异步阶段也处于占位状态，
+    // 并发调用的 runNext（add / retry / finally）不会再选中同一个或另一个任务。
+    if (this.runningId !== null || this.running !== null) return
     const task = this.tasks.find((task) => task.status === 'waiting')
     if (!task) return
+    this.runningId = task.id
+    task.status = 'running'
+    task.progress = 0
+    this.persist()
+
+    // 任务在占位期间被取消（cancel 置为 canceled）或被移出队列（remove）时视为中止。
+    // 状态会被 cancel() 在别处改写，必须经函数读取，避免 TS 按上方赋值收窄为 'running'
+    const isCanceled = () => task.status === 'canceled'
+    const isAborted = () =>
+      isCanceled() ||
+      this.runningId !== task.id ||
+      !this.tasks.includes(task)
+    const throwIfAborted = () => {
+      if (isAborted()) throw new ConversionAbortedError()
+    }
+
     let ffmpeg: string
     try {
       ffmpeg = getBinaryPath('ffmpeg')
     } catch (error: any) {
+      this.runningId = null
       this.finish(task, 'error', error?.message || '未找到受控 FFmpeg')
       await this.runNext()
       return
@@ -270,13 +340,12 @@ export class AudioConversionService {
     const tempPath = `${task.outputPath}.lx-converting.${formatInfo[task.format].ext}`
     try {
       const input = await this.probe(task.inputPath)
+      throwIfAborted()
       await fs.rm(tempPath, { force: true })
-      task.status = 'running'
-      task.progress = 0
-      this.runningId = task.id
-      this.persist()
+      throwIfAborted()
       await new Promise<void>((resolve, reject) => {
-        let stderr = ''
+        const stderrLimit = 64 * 1024
+        let stderr = Buffer.alloc(0)
         const child = spawn(ffmpeg, [
           '-hide_banner',
           '-nostdin',
@@ -292,9 +361,10 @@ export class AudioConversionService {
           tempPath,
         ], { shell: false })
         this.running = child
-        child.stderr.on('data', (chunk) => {
+        child.stderr.on('data', (chunk: Buffer) => {
           const text = chunk.toString()
-          stderr += text
+          const output = Buffer.concat([stderr, chunk])
+          stderr = output.length > stderrLimit ? Buffer.from(output.subarray(-stderrLimit)) : output
           const elapsed = parseFfmpegTime(text)
           if (elapsed != null) {
             task.progress = Math.min(
@@ -310,26 +380,30 @@ export class AudioConversionService {
             return
           }
           reject(
-            new Error(stderr.trim().split('\n').at(-1) ?? 'FFmpeg 转换失败'),
+            new Error(stderr.toString().trim().split('\n').at(-1) ?? 'FFmpeg 转换失败'),
           )
         })
       })
+      throwIfAborted()
       await this.probe(tempPath)
+      // rename 是提交点：此前任何时刻取消都会丢弃临时文件、保留源文件。
+      throwIfAborted()
       await fs.rename(tempPath, task.outputPath)
       const deleteSource = shouldDeleteSource(
         task.deleteSource,
         task.useCurrentDownloadDeleteSetting,
         global.lx.appSetting['download.deleteSourceAfterConvert'],
       )
-      if (deleteSource) await fs.rm(task.inputPath, { force: true })
+      // rename 期间到达的取消请求：输出已生成，但不再删除源文件。
+      if (deleteSource && !isAborted()) await fs.rm(task.inputPath, { force: true })
       this.finish(task, 'completed')
     } catch (error: any) {
       await fs.rm(tempPath, { force: true }).catch(() => {})
-      this.finish(
-        task,
-        task.status === 'canceled' ? 'canceled' : 'error',
-        error?.message || '转换失败',
-      )
+      if (error instanceof ConversionAbortedError || isCanceled()) {
+        this.finish(task, 'canceled', '已取消')
+      } else {
+        this.finish(task, 'error', error?.message || '转换失败')
+      }
     } finally {
       this.running = null
       this.runningId = null

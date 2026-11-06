@@ -36,7 +36,7 @@ function harness(options = {}) {
   const alternatives = options.alternatives ?? [song('tx'), song('kg')]
   const player = {
     musicInfo: { id: original.id }, playMusicInfo: { musicInfo: original },
-    isPlay: { value: false }, playQuality: { value: '' }, playQualityActual: { value: '' }, playSource: { value: null },
+    isPlay: { value: false }, playQuality: { value: '' }, playQualityActual: { value: '' }, playSource: { value: null }, statusText: { value: '' },
   }
   const appSetting = {
     'player.playQuality': 'master', 'player.playEngine': options.engine ?? 'electron',
@@ -48,12 +48,13 @@ function harness(options = {}) {
     ...options.settings,
   }
   const declared = api => options.declared?.[api] ?? { wy: tiers, tx: tiers, kg: tiers }
+  const api = { requested: appSetting['common.apiSource'] }
   const qualityList = { value: declared('A') }
   const win = { lx: { isPlayedStop: false, apiInitPromise: [Promise.resolve(true)] }, app_event: hub, i18n: { t: key => key } }
   const sdk = { findMusic: async() => { calls.push({ search: true }); return options.search ? options.search() : alternatives } }
   for (const source of ['wy', 'tx', 'kg', 'bili']) sdk[source] = {
     getMusicUrl(info, quality) {
-      const attempt = { source, id: info.id, quality, apiId: appSetting['common.apiSource'] }
+      const attempt = { source, id: info.id, quality, apiId: api.requested } // 请求由运行时加载的音源处理
       calls.push(attempt)
       return { promise: Promise.resolve().then(() => options.request ? options.request(attempt) : Promise.reject(new Error('unavailable'))) }
     },
@@ -85,7 +86,7 @@ function harness(options = {}) {
     '@renderer/plugins/i18n': { useI18n: () => key => key },
     '@renderer/store/player/state': player,
     '@renderer/store/player/action': {
-      setAllStatus: noop, setPlayQuality: q => { player.playQuality.value = q },
+      setAllStatus: v => { player.statusText.value = v }, setPlayQuality: q => { player.playQuality.value = q },
       setPlayQualityActual: q => { player.playQualityActual.value = q },
       setPlaySource: source => { player.playSource.value = source },
     },
@@ -101,11 +102,14 @@ function harness(options = {}) {
         hub.emit('playerPlaying')
       },
     },
+    // 与真实实现一致：记录运行时请求的音源；persist=false（错误恢复临时换源）时不写回设置
     '@renderer/core/apiSource': {
-      setUserApi: async id => {
-        calls.push({ switchApi: id })
+      getRequestedApiId: () => api.requested,
+      setUserApi: async(id, { persist = true } = {}) => {
+        calls.push({ switchApi: id, persist })
+        api.requested = id
         const initialized = options.initApi ? await options.initApi(id) : true
-        appSetting['common.apiSource'] = id
+        if (persist) appSetting['common.apiSource'] = id
         qualityList.value = declared(id)
         win.lx.apiInitPromise[0] = Promise.resolve(initialized)
       },
@@ -186,7 +190,7 @@ test('all six priorities cover every playable combination in the configured orde
 test('source B / QQ / mother tape is reached before lowering quality', async() => {
   const h = harness({ request: c => c.apiId === 'B' && c.source === 'tx' && c.quality === 'master' ? result(c) : Promise.reject(new Error('unavailable')) })
   await h.start()
-  assert.equal(h.calls.at(-1).resource, 'B/tx/master')
+  assert.equal(lastResource(h), 'B/tx/master')
   assert(requests(h).every(c => c.quality === 'master'))
   assert.equal(h.next.length, 0)
   assert.equal(h.player.playSource.value, 'tx')
@@ -196,7 +200,7 @@ test('source B / QQ / mother tape is reached before lowering quality', async() =
 test('audio load failure continues to the next platform, rather than consuming platform recovery', async() => {
   const h = harness({ request: c => c.source === 'wy' ? Promise.reject(new Error('unavailable')) : result(c), load: async url => { if (url.includes('/tx/')) throw new Error('decode failure') } })
   await h.start()
-  assert.equal(h.calls.at(-1).resource, 'A/kg/master')
+  assert.equal(lastResource(h), 'A/kg/master')
   assert.equal(h.calls.some(c => c.switchApi), false)
   assert.equal(h.next.length, 0)
 })
@@ -204,22 +208,35 @@ test('audio load failure continues to the next platform, rather than consuming p
 test('a late engine error resumes after the current successful combination', async() => {
   const h = harness({ request: c => c.source === 'wy' ? Promise.reject(new Error('unavailable')) : result(c) })
   await h.start()
-  assert.equal(h.calls.at(-1).resource, 'A/tx/master')
+  assert.equal(lastResource(h), 'A/tx/master')
   h.hub.playerError()
   await flush()
-  assert.equal(h.calls.at(-1).resource, 'A/kg/master')
+  assert.equal(lastResource(h), 'A/kg/master')
   assert.equal(requests(h).filter(c => c.source === 'tx').length, 1)
 })
 
-test('missing preferred quality tries other platforms/sources before playing lower quality', async() => {
-  const h = harness({ original: song('wy', ['flac']), alternatives: [song('tx', ['master'])], request: result })
+// 最后一次加载的资源（错误恢复成功后还会有一次切回用户音源的调用，不能直接取最后一个调用）
+const lastResource = h => h.calls.filter(c => c.resource).at(-1)?.resource
+
+const STRICT = { 'player.playErrorStrictQuality': true }
+
+test('strict quality: missing preferred quality tries other platforms/sources before playing lower quality', async() => {
+  const h = harness({ original: song('wy', ['flac']), alternatives: [song('tx', ['master'])], request: result, settings: STRICT })
   await h.start()
   assert.deepEqual(requests(h).map(tuple), ['A/tx/master'])
   assert.equal(h.player.playQuality.value, 'master')
 })
 
-test('unsupported source tiers are skipped and a different source can supply the preferred tier', async() => {
-  const h = harness({ declared: { A: { wy: ['flac'], tx: ['flac'], kg: ['flac'] }, B: { wy: tiers, tx: tiers, kg: tiers } }, request: result })
+test('default (non-strict): missing preferred quality plays the best available tier on the original platform', async() => {
+  const h = harness({ original: song('wy', ['flac']), alternatives: [song('tx', ['master'])], request: result })
+  await h.start()
+  assert.equal(h.calls.filter(c => c.resource).at(-1).resource, 'A/wy/flac')
+  assert.equal(h.calls.some(c => c.search || c.switchApi), false)
+  assert.equal(h.next.length, 0)
+})
+
+test('strict quality: unsupported source tiers are skipped and a different source can supply the preferred tier', async() => {
+  const h = harness({ declared: { A: { wy: ['flac'], tx: ['flac'], kg: ['flac'] }, B: { wy: tiers, tx: tiers, kg: tiers } }, request: result, settings: STRICT })
   await h.start()
   assert.deepEqual(requests(h).map(tuple), ['B/wy/master'])
 })
@@ -231,9 +248,18 @@ test('quality-first may play lower quality on the original platform without swit
   assert.equal(h.calls.some(c => c.search || c.switchApi), false)
 })
 
-test('confirmed silent downgrade triggers recovery; inconclusive probes do not', async() => {
+test('default (non-strict): a confirmed silent downgrade is only marked, playback is not interrupted', async() => {
+  const h = harness({ request: result, probe: async url => url.includes('/wy/') ? { format: 'flac', sampleRate: 44100, bitsPerSample: 16, bytesRead: 4096 } : { error: 'HTTP 403', bytesRead: 0 } })
+  await h.start()
+  assert.equal(h.calls.filter(c => c.resource).at(-1).resource, 'A/wy/master')
+  assert.equal(h.calls.filter(c => c.resource).length, 1)
+  assert.notEqual(h.player.playQualityActual.value, '')
+  assert.equal(h.next.length, 0)
+})
+
+test('strict quality: confirmed silent downgrade triggers recovery; inconclusive probes do not', async() => {
   for (const confirmed of [true, false]) {
-    const h = harness({ request: result, probe: async url => confirmed && url.includes('/wy/') ? { format: 'flac', sampleRate: 44100, bitsPerSample: 16, bytesRead: 4096 } : { error: 'HTTP 403', bytesRead: 0 } })
+    const h = harness({ settings: STRICT, request: result, probe: async url => confirmed && url.includes('/wy/') ? { format: 'flac', sampleRate: 44100, bitsPerSample: 16, bytesRead: 4096 } : { error: 'HTTP 403', bytesRead: 0 } })
     await h.start()
     assert.equal(h.calls.filter(c => c.resource).at(-1).resource, confirmed ? 'A/tx/master' : 'A/wy/master')
     assert.equal(h.next.length, 0)
@@ -243,8 +269,8 @@ test('confirmed silent downgrade triggers recovery; inconclusive probes do not',
 test('failed API initialization skips that source without looping, while respecting the source limit', async() => {
   const h = harness({ apiIds: ['A', 'B', 'C', 'D'], apiCount: 2, initApi: async id => id !== 'B', request: c => c.apiId === 'C' ? result(c) : Promise.reject(new Error('unavailable')) })
   await h.start()
-  assert.deepEqual(h.calls.filter(c => c.switchApi).map(c => c.switchApi), ['B', 'C'])
-  assert.equal(h.calls.at(-1).resource, 'C/wy/master')
+  assert.deepEqual(h.calls.filter(c => c.switchApi && c.persist === false).map(c => c.switchApi), ['B', 'C'])
+  assert.equal(lastResource(h), 'C/wy/master')
   assert.equal(requests(h).some(c => c.apiId === 'D' || c.apiId === 'B'), false)
 })
 
@@ -267,7 +293,7 @@ test('refresh retries the actual platform and quality, then advances without res
   assert.deepEqual(requests(h).map(tuple), ['A/wy/master', 'A/wy/master', 'A/tx/master'])
   h.hub.playerError()
   await flush()
-  assert.equal(h.calls.at(-1).resource, 'A/kg/master')
+  assert.equal(lastResource(h), 'A/kg/master')
 })
 
 test('paused/stopped/changed songs cancel recovery waiting on platform search', async() => {
@@ -324,7 +350,7 @@ test('detailed quality data is loaded before discarding a platform for missing p
 test('platform search failures still allow trying sources and lowering quality on the original song', async() => {
   const h = harness({ search: async() => { throw new Error('search timeout') }, request: c => c.apiId === 'B' && c.quality === 'flac' ? result(c) : Promise.reject(new Error('unavailable')) })
   await h.start()
-  assert.equal(h.calls.at(-1).resource, 'B/wy/flac')
+  assert.equal(lastResource(h), 'B/wy/flac')
   assert.equal(h.next.length, 0)
 })
 
@@ -334,7 +360,7 @@ test('URL load timeout advances and a late URL cannot replace the new combinatio
   await h.start()
   assert(h.fire(100000))
   await flush()
-  assert.equal(h.calls.at(-1).resource, 'A/tx/master')
+  assert.equal(lastResource(h), 'A/tx/master')
   wait.resolve({ url: 'late-original-url', type: 'master' })
   await flush()
   assert.equal(h.calls.some(c => c.resource === 'late-original-url'), false)
@@ -346,7 +372,7 @@ test('a timed-out API initialization advances to another source', async() => {
   await h.start()
   assert(h.fire(25000))
   await flush()
-  assert.equal(h.calls.at(-1).resource, 'C/wy/master')
+  assert.equal(lastResource(h), 'C/wy/master')
   assert.equal(h.next.length, 0)
 })
 
@@ -363,7 +389,7 @@ test('duplicate old engine/probe failures cannot skip a new source during initia
   init.resolve(true)
   await flush()
   assert.deepEqual(requests(h).map(tuple), ['A/wy/master', 'B/wy/master'])
-  assert.equal(h.calls.at(-1).resource, 'B/wy/master')
+  assert.equal(lastResource(h), 'B/wy/master')
   assert.equal(h.next.length, 0)
 })
 
@@ -381,7 +407,7 @@ test('MPV and Audirvana use the same complete recovery sequence', async() => {
   for (const engine of ['mpv', 'audirvana']) {
     const h = harness({ engine, request: c => c.apiId === 'B' && c.source === 'tx' ? result(c) : Promise.reject(new Error('unavailable')) })
     await h.start()
-    assert.equal(h.calls.at(-1).resource, 'B/tx/master')
+    assert.equal(lastResource(h), 'B/tx/master')
     assert.equal(h.player.playSource.value, 'tx')
     assert.equal(h.next.length, 0)
   }
@@ -411,4 +437,91 @@ test('synchronous quality-detail errors do not prevent lower-tier recovery', asy
   await h.start()
   assert.deepEqual(requests(h).map(tuple), ['A/wy/flac'])
   assert.equal(h.next.length, 0)
+})
+
+test('#3 temporary API source: recovery never persists the switch and restores the user source after playback starts', async() => {
+  const h = harness({ request: c => c.apiId === 'B' ? result(c) : Promise.reject(new Error('unavailable')) })
+  const setting = h.appSetting
+  await h.start()
+  assert.equal(lastResource(h), 'B/wy/master')
+  // 临时切到 B 时不写回设置；开始播放后自动切回 A（写回为 A，设置值不变）
+  const switches = h.calls.filter(c => c.switchApi).map(c => `${c.switchApi}:${c.persist}`)
+  assert.deepEqual(switches, ['B:false', 'A:true'])
+  assert.equal(setting['common.apiSource'], 'A')
+  // 提示在本轮 playing 处理之后显示，6 秒后自动清除
+  assert.equal(h.fire(undefined), true)
+  assert.equal(h.player.statusText.value, 'player__api_source_temp_used')
+  assert.equal(h.fire(6000), true)
+  assert.equal(h.player.statusText.value, '')
+})
+
+test('#3 temporary API source is restored when recovery is abandoned (song toggled before success)', async() => {
+  const h = harness({ apiIds: ['A', 'B'], apiCount: 1, request: () => Promise.reject(new Error('unavailable')) })
+  await h.start()
+  assert.ok(h.calls.some(c => c.switchApi === 'B' && c.persist === false), 'recovery should temporarily try B')
+  h.hub.emit('musicToggled')
+  await flush()
+  assert.equal(h.calls.filter(c => c.switchApi).at(-1).switchApi, 'A')
+  assert.equal(h.appSetting['common.apiSource'], 'A')
+})
+
+test('#5 disabled automatic recovery: a transient URL error is retried once and playback continues', async() => {
+  let attempts = 0
+  const h = harness({ original: song('wy', ['flac']), settings: { 'player.autoSkipOnError': false }, request: c => ++attempts === 1 ? Promise.reject(new Error('network error')) : result(c) })
+  await h.start()
+  assert.deepEqual(requests(h).map(tuple), ['A/wy/flac', 'A/wy/flac'])
+  assert.equal(lastResource(h), 'A/wy/flac')
+  assert.equal(h.next.length, 0)
+})
+
+test('#5 disabled automatic recovery: a persistent error is retried only once, then stops without skipping', async() => {
+  const h = harness({ original: song('wy', ['flac']), settings: { 'player.autoSkipOnError': false }, request: () => Promise.reject(new Error('network error')) })
+  await h.start()
+  assert.equal(requests(h).length, 2)
+  assert.equal(lastResource(h), undefined)
+  assert.equal(h.next.length, 0)
+  assert.equal(h.calls.some(c => c.search || c.switchApi), false)
+})
+
+test('#5 enabled automatic recovery: no extra per-request retry (recovery retry count applies)', async() => {
+  const h = harness({ apiIds: ['A'], strategy: 'next', request: () => Promise.reject(new Error('network error')) })
+  await h.start()
+  assert.equal(requests(h).length, 1)
+})
+
+test('#4 a hung URL request cannot start playback after recovery has given up (error stopped)', async() => {
+  const hang = deferred()
+  const h = harness({ strategy: 'source', alternatives: [], request: () => hang.promise })
+  await h.start()
+  assert(h.fire(100000)) // 取址超时 → 错误恢复 → 无可用组合 → 停止
+  await flush()
+  assert.equal(h.player.statusText.value, 'player__error_stopped')
+  hang.resolve({ url: 'late-url', type: 'master' })
+  await flush()
+  assert.equal(lastResource(h), undefined, 'the late URL must not be loaded')
+})
+
+test('#4 a hung URL request of the failed song cannot load after recovery skipped to the next song', async() => {
+  const hang = deferred()
+  const h = harness({ strategy: 'next', request: () => hang.promise })
+  await h.start()
+  assert(h.fire(100000))
+  await flush()
+  hang.resolve({ url: 'late-url', type: 'master' })
+  await flush()
+  assert.equal(lastResource(h), undefined, 'the late URL of the failed song must not be loaded')
+})
+
+test('#4 a timed-out API switch is abandoned immediately (switched back to the user source)', async() => {
+  const neverB = deferred()
+  const neverC = deferred()
+  const h = harness({ apiIds: ['A', 'B', 'C'], apiCount: 2, order: ['apiSource', 'platform', 'quality'], alternatives: [], initApi: id => id === 'B' ? neverB.promise : id === 'C' ? neverC.promise : Promise.resolve(true), request: () => Promise.reject(new Error('unavailable')) })
+  await h.start()
+  const before = h.calls.filter(c => c.switchApi).map(c => `${c.switchApi}:${c.persist}`)
+  assert.deepEqual(before, ['B:false'])
+  assert(h.fire(25000)) // B 初始化超时
+  await flush()
+  const after = h.calls.filter(c => c.switchApi).map(c => `${c.switchApi}:${c.persist}`)
+  assert.equal(after[1], 'A:true', `timed-out switch must be reverted right away, got ${JSON.stringify(after)}`)
+  assert.equal(h.appSetting['common.apiSource'], 'A')
 })

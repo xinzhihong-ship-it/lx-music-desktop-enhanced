@@ -265,11 +265,24 @@ const handleError = (downloadInfo: LX.Download.ListItem, message?: string) => {
   void checkStartTask()
 }
 
+/**
+ * 下载已完成、转换失败：把 isComplate 置为 true（该字段随任务持久化，表示「下载本身已完成」），
+ * 状态仍为 ERROR。重试时据此只重新转换、复用已下载的源文件，不再重复下载。
+ */
+const handleConvertError = (downloadInfo: LX.Download.ListItem, message?: string) => {
+  downloadInfo.isComplate = true
+  const failed = window.i18n.t('download_status_convert_failed')
+  handleError(downloadInfo, message && message != failed ? `${failed}：${message}` : failed)
+}
+
+/** 下载已完成但转换失败的任务（可仅重新转换） */
+export const isConvertFailedTask = (downloadInfo: LX.Download.ListItem) => downloadInfo.isComplate && downloadInfo.status != DOWNLOAD_STATUS.COMPLETED
+
 const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
   downloadInfo.progress = 100
   if (appSetting['download.autoConvert'] && !['128k', '192k', '320k'].includes(downloadInfo.metadata.quality)) {
     const format = appSetting['download.convertFormat']
-    setStatusText(downloadInfo, '正在转换')
+    setStatusText(downloadInfo, window.i18n.t('download_status_converting'))
     try {
       const tasks = await addAudioConversionTasks({
         filePaths: [downloadInfo.metadata.filePath],
@@ -279,12 +292,12 @@ const handleCompletedTask = async(downloadInfo: LX.Download.ListItem) => {
         useCurrentDownloadDeleteSetting: true,
       })
       const [task] = await waitAudioConversionTasks(tasks.map(task => task.id))
-      if (task.status !== 'completed') throw new Error(task.error || '转换失败')
+      if (task.status !== 'completed') throw new Error(task.error || window.i18n.t('download_status_convert_failed'))
       downloadInfo.metadata.filePath = task.outputPath
       downloadInfo.metadata.fileName = path.basename(task.outputPath)
       downloadInfo.metadata.ext = path.extname(task.outputPath).slice(1) as LX.Download.FileExt
     } catch (error: any) {
-      handleError(downloadInfo, error?.message || '转换失败')
+      handleConvertError(downloadInfo, error?.message)
       return
     }
   }
@@ -368,10 +381,28 @@ const handleStartTask = async(downloadInfo: LX.Download.ListItem) => {
     }
   }), getProxy())
 }
+/**
+ * 仅重新转换：源文件仍在则直接进入转换（复用已下载文件）；源文件已被删除则回退为完整重新下载。
+ */
+const handleReconvertTask = async(downloadInfo: LX.Download.ListItem) => {
+  if (await window.lx.worker.download.fileExists(downloadInfo.metadata.filePath)) {
+    await handleCompletedTask(downloadInfo)
+    return
+  }
+  downloadInfo.isComplate = false
+  downloadInfo.progress = 0
+  downloadInfo.downloaded = 0
+  downloadInfo.total = 0
+  downloadInfo.metadata.url = null
+  await handleStartTask(downloadInfo)
+}
+
 const startTask = async(downloadInfo: LX.Download.ListItem) => {
   setStatus(downloadInfo, DOWNLOAD_STATUS.RUN)
   runingTask.set(downloadInfo.id, downloadInfo)
-  void handleStartTask(downloadInfo)
+  // startTask 只会针对 ERROR / PAUSE / WAITING 的任务调用，此时 isComplate 为 true 只可能是「转换失败」
+  if (downloadInfo.isComplate) void handleReconvertTask(downloadInfo)
+  else void handleStartTask(downloadInfo)
 }
 
 const getStartTask = (list: LX.Download.ListItem[]): LX.Download.ListItem | null => {
@@ -399,7 +430,18 @@ const checkStartTask = async() => {
  * 重置任务以便重新下载：清空进度与链接，回到等待队列
  * @param downloadInfo 下载列表里已有的任务
  */
-const resetTaskForRedownload = (downloadInfo: LX.Download.ListItem) => {
+const resetTaskForRedownload = (downloadInfo: LX.Download.ListItem, freshInfo: LX.Download.ListItem) => {
+  // 自动转换会把 fileName / ext / filePath 改写成转换产物（如 .mp3），
+  // 重新下载必须回到原始音频的文件名与扩展名：freshInfo 由 createDownloadInfo 按
+  // musicInfo + 音质 + 当前文件名模板重新生成（与任务 id 中的音质、扩展名一致）。
+  // metadata 为 markRaw 对象，整体替换以便列表刷新。
+  downloadInfo.metadata = markRaw({
+    ...downloadInfo.metadata,
+    fileName: freshInfo.metadata.fileName,
+    ext: freshInfo.metadata.ext,
+    quality: freshInfo.metadata.quality,
+    filePath: '',
+  })
   downloadInfo.progress = 0
   downloadInfo.downloaded = 0
   downloadInfo.total = 0
@@ -445,7 +487,7 @@ const filterTask = (list: LX.Download.ListItem[]) => {
     switch (existTask.status) {
       case DOWNLOAD_STATUS.COMPLETED:
       case DOWNLOAD_STATUS.ERROR:
-        resetTaskForRedownload(existTask)
+        resetTaskForRedownload(existTask, item)
         break
       default:
         existTasks.push(existTask)

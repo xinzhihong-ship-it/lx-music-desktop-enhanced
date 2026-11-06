@@ -86,7 +86,8 @@ export default () => {
 
   // 独立基调窗口打开/关闭/同步
   mainOn(WIN_MAIN_RENDERER_EVENT_NAME.open_song_key_window, () => {
-    createSongKeyWindow()
+    createSongKeyWindow(() => { sendEvent(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_active, false) })
+    sendEvent(WIN_MAIN_RENDERER_EVENT_NAME.song_key_window_active, true)
   })
 
   mainOn(WIN_MAIN_RENDERER_EVENT_NAME.close_song_key_window, () => {

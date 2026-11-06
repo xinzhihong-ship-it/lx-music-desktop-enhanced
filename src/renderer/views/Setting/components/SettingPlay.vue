@@ -56,6 +56,8 @@ dd
       :model-value="appSetting['player.playErrorStrategy']" :list="errorStrategyList"
       item-key="id" item-name="label"
       @update:model-value="updateSetting({'player.playErrorStrategy': $event})")
+  .gap-top(v-if="appSetting['player.autoSkipOnError'] && appSetting['player.playErrorStrategy'] != 'next'")
+    base-checkbox(id="setting_player_play_error_strict_quality" :model-value="appSetting['player.playErrorStrictQuality']" :label="$t('setting__play_error_strict_quality')" @update:model-value="updateSetting({'player.playErrorStrictQuality': $event})")
   div(v-show="appSetting['player.autoSkipOnError'] && appSetting['player.playErrorStrategy'] == 'auto'")
     .gap-top(:class="$style.errorSettingRow")
       span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_retry_count') }}
@@ -317,7 +319,7 @@ export default {
       } catch (err) {
         console.error('[SettingPlay] restart failed:', err)
         showTip({
-          message: 'MPV 重建失败：' + (err?.message ?? err),
+          message: t('setting__play_mpv_restart_failed', { message: String(err?.message ?? err) }),
           position: { top: 80, left: window.innerWidth / 2 },
           autoCloseTime: 3000,
         }, { beforeClose: () => {} })

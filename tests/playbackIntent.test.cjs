@@ -13,7 +13,7 @@ const deferred = () => {
 }
 const drain = async() => { await new Promise(resolve => setImmediate(resolve)) }
 
-function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = Promise.resolve(), filterWait } = {}) {
+function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = Promise.resolve(), filterWait, probeWait } = {}) {
   const hub = new EventEmitter()
   const timers = new Map()
   const state = { plays: 0, stops: 0, loads: 0, skips: 0, empty: false, resources: [], unmount: [] }
@@ -35,7 +35,7 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
   }
   const intent = load('src/renderer/core/player/playbackIntent.ts', {})
   const song = { id: 'song', source: 'kw', meta: {} }
-  const playerState = { musicInfo: { id: 'song' }, playMusicInfo: { musicInfo: song }, isPlay: { value: false }, playQuality: { value: '128k' }, playQualityActual: { value: '' }, playedList: [], tempPlayList: [], playInfo: { playerListId: 'list', playerPlayIndex: 0 } }
+  const playerState = { musicInfo: { id: 'song' }, playMusicInfo: { musicInfo: song }, isPlay: { value: false }, playQuality: { value: '128k' }, playQualityActual: { value: '' }, statusText: { value: '' }, playedList: [], tempPlayList: [], playInfo: { playerListId: 'list', playerPlayIndex: 0 } }
   const plugin = {
     isEmpty: () => state.empty,
     setPause: () => { playerState.isPlay.value = false; hub.pause() },
@@ -44,15 +44,17 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     setResource: async(src) => { state.resources.push(src) },
     createAudio: noop, applyAudioRoutingNow: async() => {},
   }
-  const strategy = { getPlayErrorActions: () => actions, getPlayErrorApiSourceCount: () => 2, getPlayErrorRetryCount: () => retryCount, isPlayErrorHandlingEnabled: () => true }
+  const strategy = { getPlayErrorActions: () => actions, getPlayErrorApiSourceCount: () => 2, getPlayErrorRetryCount: () => retryCount, isPlayErrorHandlingEnabled: () => true, isStrictPlayQualityEnabled: () => false }
   const deps = {
     '@common/utils/vueTools': { onBeforeUnmount: fn => state.unmount.push(fn), watch: noop },
     '@renderer/plugins/i18n': { useI18n: () => key => key },
     '@renderer/store/player/state': playerState,
     '@renderer/plugins/player': plugin,
-    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlayQualityActual: noop, setPlaySource: noop, setPlay:value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
+    '@renderer/store/player/action': { setAllStatus: noop, setPlayQuality: noop, setPlayQualityActual: quality => { playerState.playQualityActual.value = quality }, setPlaySource: noop, setPlay:value => { playerState.isPlay.value = value }, getList: () => [song], setPlayMusicInfo: (listId, song) => { playerState.playMusicInfo.musicInfo = song; playerState.musicInfo.id = song.id; hub.emit('musicToggled') } },
     '@renderer/store/setting': { appSetting: { 'player.playEngine': 'electron', 'common.apiSource': 'a', 'player.togglePlayMethod': 'listLoop' } },
     '@renderer/core/player/errorStrategy': strategy, './errorStrategy': strategy,
+    '@renderer/utils/ipc': { probeAudioSource: () => probeWait?.promise },
+    './actualQuality': { describeActualQuality: ({ probe }) => probe },
     './playbackAttempt': load('src/renderer/core/player/playbackAttempt.ts', {}),
     '@common/utils/playbackRecovery': load('src/common/utils/playbackRecovery.ts', {}),
     '@renderer/core/music/online': { loadDetailedQuality: async() => {} },
@@ -61,7 +63,13 @@ function harness({ hidden = true, actions = ['next'], retryCount = 0, apiWait = 
     '@renderer/store/player/biliVideo': { isBiliVideoActive: () => false, biliPlaybackMode: { value: 'audio' } },
     '@common/utils/playErrorStrategy': { getNextApiSourceId: (_id, tried) => tried.has('b') ? undefined : 'b' },
     '@renderer/store': { userApi: { list: [{ id: 'a' }, { id: 'b' }] } },
-    '@renderer/core/apiSource': { setUserApi: async id => { await apiWait; deps['@renderer/store/setting'].appSetting['common.apiSource'] = id } },
+    '@renderer/core/apiSource': (() => {
+      let requested = ''
+      return {
+        getRequestedApiId: () => requested,
+        setUserApi: async(id, { persist = true } = {}) => { requested = id; await apiWait; if (persist) deps['@renderer/store/setting'].appSetting['common.apiSource'] = id },
+      }
+    })(),
     './playbackIntent': intent, '@renderer/core/player/playbackIntent': intent,
     './utils': { filterList: () => filterWait?.promise, setPowerSaveBlocker: noop },
     '@renderer/utils': { setTitle: noop },
@@ -213,6 +221,26 @@ test('pause cancels URL timeout and discards an in-flight URL response', async()
   h.urlWait.resolve('https://example.invalid/song.mp3'); await drain()
   assert.deepEqual(h.state.resources, [])
   assert.equal(h.action.getShouldPlayAfterLoad(), false)
+})
+
+test('ordinary pause preserves an in-flight quality probe, while stop discards it', async() => {
+  for (const operation of ['pause', 'stop']) {
+    const probeWait = deferred()
+    const h = harness({ probeWait })
+    h.action.play()
+    h.action.setMusicUrl(h.playerState.playMusicInfo.musicInfo, false, { rejectDowngrade: true })
+    h.urlWait.resolve('https://example.invalid/song.mp3')
+    await drain()
+    assert.equal(h.state.resources.length, 1)
+
+    let errors = 0
+    h.hub.on('playerError', () => { errors++ })
+    h.action[operation]()
+    probeWait.resolve({ quality: '128k', downgraded: true })
+    await drain()
+    assert.equal(h.playerState.playQualityActual.value, operation === 'pause' ? '128k' : '')
+    assert.equal(errors, 0)
+  }
 })
 
 test('explicit play during an existing URL request preserves autoplay intent', async() => {

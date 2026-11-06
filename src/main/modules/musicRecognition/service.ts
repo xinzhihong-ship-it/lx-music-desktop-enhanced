@@ -6,19 +6,13 @@ import { recognizeNetease } from './wyRecognizer'
 import { getAcrcloudConfig, setAcrcloudConfig } from './configStore'
 import { addHistory, clearHistory, getHistory, removeHistory, replaceHistory } from './historyStore'
 import { throwIfAborted } from './abort'
-import { isAmbiguousRecognition, promoteRecognitionCandidate, selectAlternativeCandidates } from './decision'
+import { isAmbiguousRecognition, isSameTitle, promoteRecognitionCandidate, selectAlternativeCandidates } from './decision'
 
 const MAX_ALTERNATIVES = 8
 
 const resultKey = (result: LX.MusicRecognition.Result): string => {
   return `${result.provider}:${result.providerTrackId}`
 }
-
-const normalizeTitle = (value: string): string => value
-  .normalize('NFKC')
-  .toLowerCase()
-  .replace(/[（(【[].*?[）)】\]]/g, '')
-  .replace(/[^\p{L}\p{N}]/gu, '')
 
 const artistTokens = (value: string): string[] => value
   .normalize('NFKC')
@@ -28,7 +22,7 @@ const artistTokens = (value: string): string[] => value
   .filter(Boolean)
 
 const isSameTrack = (seed: LX.MusicRecognition.Result, candidate: LX.MusicRecognition.Result): boolean => {
-  if (normalizeTitle(seed.title) !== normalizeTitle(candidate.title)) return false
+  if (!isSameTitle(seed.title, candidate.title)) return false
   const seedArtists = artistTokens(seed.artist)
   const candidateArtists = new Set(artistTokens(candidate.artist))
   return seedArtists.length === 0 || candidateArtists.size === 0 || seedArtists.some(artist => candidateArtists.has(artist))
@@ -67,7 +61,7 @@ const selectMatch = (
     : undefined
   if (exactProviderTrack) return exactProviderTrack
 
-  const titleMatches = candidates.filter(candidate => normalizeTitle(candidate.title) === normalizeTitle(hint.title))
+  const titleMatches = candidates.filter(candidate => isSameTitle(candidate.title, hint.title))
   const metadataMatch = titleMatches.find(candidate => hasSameArtist(candidate.artist, hint.artist))
   if (metadataMatch) return metadataMatch
 
@@ -205,7 +199,7 @@ const runRecognition = async(
   ])
   const match = selectMatch(defaultMatch, candidates, hint)
   const hintSupportsMatch = !!hint &&
-    normalizeTitle(match.title) === normalizeTitle(hint.title) &&
+    isSameTitle(match.title, hint.title) &&
     hasSameArtist(match.artist, hint.artist)
   const matchedEngines = fulfilled
     .filter(({ output }) => output.match)
@@ -224,7 +218,7 @@ const runRecognition = async(
     resultKey,
     (selected, candidate) => {
       if (isSameTrack(selected, candidate)) return 0
-      if (normalizeTitle(selected.title) === normalizeTitle(candidate.title)) return 1
+      if (isSameTitle(selected.title, candidate.title)) return 1
       return 2
     },
     MAX_ALTERNATIVES,

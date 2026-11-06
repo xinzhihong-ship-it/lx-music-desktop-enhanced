@@ -1,8 +1,10 @@
-import { connect, send, close } from './scripts/lib/cdp-client.mjs'
+// 手动调试脚本，需先以 --inspect 启动应用，不参与自动化测试。
+import { connect, send, close } from '../lib/cdp-client.mjs'
 
 /**
- * CDP 连接测试示例：连接 inspector，启用 Runtime，
- * 在 main process 中通过 BrowserWindow 在 renderer 中执行一段 JS。
+ * 在仓库根目录运行 npm run dev，等待应用主窗口打开（主进程监听 127.0.0.1:5858）。
+ * 在另一个终端从仓库根目录运行 node scripts/dev/cdp-connect.mjs。
+ * 脚本会连接主进程的 inspector，并输出主窗口的标题、URL 和部分 window 属性。
  */
 
 async function main() {

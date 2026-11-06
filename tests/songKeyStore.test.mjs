@@ -34,12 +34,13 @@ const virtualModules = new Map([
     export const getResourceSongId = () => globalThis.__skSrcSongId ?? null
     export const getResourceVersion = () => globalThis.__skVersion
     export const getCurrentTime = () => globalThis.__skTime ?? 0
-    export const onTimeupdate = () => () => {}
+    export const onTimeupdate = callback => { globalThis.__skTimeupdate = callback }
   `],
   ['@renderer/utils/ipc', `
     export const openNativeSongKeyWindow = () => {}
     export const closeNativeSongKeyWindow = () => {}
     export const syncNativeSongKeyData = async () => true
+    export const onSongKeyWindowActive = callback => { globalThis.__skWindowActive = callback }
     export const onSongKeyWindowSaveAction = () => () => {}
     export const onSongKeyWindowResetAction = () => () => {}
     export const onSongKeyWindowReanalyzeAction = () => () => {}
@@ -388,11 +389,39 @@ test('没有时间轴的歌，播放进度也要跟着走（弹窗的"当前位�
   await updateCurrentSongKey()
   assert.equal(songKeyInfo.value.timeline, undefined, '曲库结果不应带时间轴')
 
-  // 让轮询跑起来
   globalThis.__skTime = 42.7
-  await new Promise((resolve) => setTimeout(resolve, 700))
+  globalThis.__skTimeupdate()
 
   assert.equal(playbackSeconds.value, 42, '即使没有时间轴，播放进度也必须更新（取整到秒）')
+})
+
+test('基调窗口只在打开期间轮询播放进度，关闭后仍响应播放事件', (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  globalThis.window = {}
+  try {
+    globalThis.__skTime = 10
+    globalThis.__skWindowActive(true)
+    assert.equal(playbackSeconds.value, 10)
+
+    globalThis.__skTime = 20
+    t.mock.timers.tick(500)
+    assert.equal(playbackSeconds.value, 20)
+
+    globalThis.__skWindowActive(false)
+    globalThis.__skTime = 30
+    t.mock.timers.tick(1000)
+    assert.equal(playbackSeconds.value, 20)
+    globalThis.__skTimeupdate()
+    assert.equal(playbackSeconds.value, 30)
+
+    globalThis.__skWindowActive(true)
+    globalThis.__skTime = 40
+    t.mock.timers.tick(500)
+    assert.equal(playbackSeconds.value, 40)
+  } finally {
+    globalThis.__skWindowActive(false)
+    delete globalThis.window
+  }
 })
 
 test('isPluginSyncEnabled 是全局设置，开启后对所有歌曲持久生效', async() => {

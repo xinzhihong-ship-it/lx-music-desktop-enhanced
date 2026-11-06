@@ -110,7 +110,16 @@ export default () => {
     await chain?.close()
   })
   mainHandle(WIN_MAIN_RENDERER_EVENT_NAME.vst3_reset, async() => { await chain?.reset() })
-  // Persist editor changes even when the native window was closed using its title bar.
-  const saveTimer = setInterval(() => { void chain?.save().catch((err: Error) => { log.warn('VST3 state save failed:', err.message) }) }, 5000)
+  // 定期检查原生编辑器的状态，只保存有变化的插件。
+  let saving = false
+  const saveTimer = setInterval(() => {
+    if (!chain || saving) return
+    saving = true
+    void chain.save().catch((err: Error) => {
+      log.warn('VST3 state save failed:', err.message)
+    }).finally(() => {
+      saving = false
+    })
+  }, 5000)
   saveTimer.unref()
 }
