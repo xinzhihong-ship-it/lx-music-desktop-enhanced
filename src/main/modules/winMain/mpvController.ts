@@ -999,6 +999,15 @@ export class MpvController {
     })
   }
 
+  /**
+   * 重启时新实例继承旧实例的音量与静音（启动后由 start() 写入 mpv）。
+   * 否则新实例用 mpv 默认的 100% 音量，切换输出设备后音量会突然变成最大、与音量条不一致。
+   */
+  inheritAudioState(from: MpvController): void {
+    this.cachedVolume = from.cachedVolume
+    this.cachedMute = from.cachedMute
+  }
+
   async setVolume(volume: number): Promise<void> {
     this.cachedVolume = volume
     // 静音期间只记住音量，不写 mpv（与 renderer 侧的约定一致），避免静音被意外解除
@@ -1482,6 +1491,7 @@ const doRestartMpvController = async(
 ): Promise<void> => {
   const oldController = activeMpvController
   const newController = new MpvController()
+  newController.inheritAudioState(oldController)
   // renderer 端的 currentUrl 可能因 HMR 等原因丢失，优先使用 main process 记录的 URL
   let url =
     state.url && state.url.length > 0 ? state.url : oldController.loadedUrl
