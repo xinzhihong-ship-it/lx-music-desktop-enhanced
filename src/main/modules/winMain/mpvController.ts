@@ -27,6 +27,17 @@ export type MpvPathSource =
   | 'system'
   | 'common-path'
 
+/**
+ * macOS：随包的 mpv.app 打包时已在 Info.plist 标记 LSUIElement（后台辅助程序，不进程序坞）。
+ * 启动参数里的激活策略与之保持一致（accessory），运行中不再切换应用类型——切换类型会让整个程序坞闪一下。
+ * 只对随包的 mpv（0.39）加：用户自己指定的旧版 mpv 可能不认识这个选项而直接退出。
+ */
+export const macActivationPolicyArgs = (source: MpvPathSource): string[] => {
+  if (process.platform != 'darwin') return []
+  if (source == 'custom' || source == 'system' || source == 'common-path') return []
+  return ['--macos-app-activation-policy=accessory']
+}
+
 export interface MpvPathInfo {
   path: string
   source: MpvPathSource
@@ -332,7 +343,7 @@ export class MpvController {
     this.isDestroyed = false
     this.startError = null
     const mpvPath = resolveMpvPath()
-    const args = this.buildArgs()
+    const args = [...this.buildArgs(), ...macActivationPolicyArgs(mpvPath.source)]
     log.info(
       `MpvController starting mpv instance=${this.instanceId} source=${mpvPath.source} path=${mpvPath.path}`,
     )
@@ -1376,6 +1387,7 @@ export class MpvController {
           '--no-config',
           '--no-video',
           '--force-window=no',
+          ...macActivationPolicyArgs(mpvPath.source),
           '--audio-device=help',
         ],
         {

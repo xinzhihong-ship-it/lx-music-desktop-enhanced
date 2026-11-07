@@ -3,9 +3,9 @@ const path = require('path')
 const { execFile } = require('child_process')
 const { promisify } = require('util')
 const { Arch } = require('electron-builder')
-const { validateMacMpvRuntimes } = require('./mpv-runtime')
+const { getRequiredMacMpvPaths, validateMacMpvRuntimes } = require('./mpv-runtime')
 const { getVst3HostPlan, validateVst3HostBinary } = require('./build-vst3-host')
-const { removeAppleDoubleFiles } = require('./mac-bundle-metadata')
+const { removeAppleDoubleFiles, markAgentApp } = require('./mac-bundle-metadata')
 
 const execFileAsync = promisify(execFile)
 
@@ -111,6 +111,11 @@ module.exports = async(context) => {
     },
   } = context.packager.appInfo
   validateMacMpvRuntimes(path.join(resPath, 'bin'), targetArch)
+  // mpv.app 标记为后台辅助程序，切歌时程序坞不再闪（必须在外层签名之前）
+  for (const relativePath of getRequiredMacMpvPaths(targetArch)) {
+    const appBundle = path.join(resPath, 'bin', relativePath.split(path.sep)[0])
+    if (await markAgentApp(appBundle, (cmd, args) => execFileAsync(cmd, args))) console.log(`[mac] marked ${appBundle} as LSUIElement`)
+  }
 
   // 创建APP语言包文件
   await Promise.all(
