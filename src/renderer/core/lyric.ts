@@ -224,8 +224,9 @@ export const setLyric = () => {
       },
     })
   }
+  // 歌词内容变化时由上面的 watch(lyricDoc) 强制刷新当前行；这里只按当前位置复查
   if (isPlay.value) setTimeout(() => { playAt(getCurrentTime()) })
-  else retrack(true)
+  else retrack()
 }
 
 export const play = () => {
