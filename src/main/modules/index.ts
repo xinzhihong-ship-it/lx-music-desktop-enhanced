@@ -4,6 +4,7 @@ import registerHotKey from './hotKey'
 import registerTray from './tray'
 import registerAppMenu from './appMenu'
 import registerWinLyric from './winLyric'
+import registerWinIsland from './winIsland'
 import registerCommonRenderers from './commonRenderers'
 import registerAccount from './account'
 import registerMusicRecognition from './musicRecognition'
@@ -19,6 +20,7 @@ export default () => {
   registerTray()
   registerAppMenu()
   registerWinLyric()
+  registerWinIsland()
   registerAccount()
   registerMusicRecognition()
 }

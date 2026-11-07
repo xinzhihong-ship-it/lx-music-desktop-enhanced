@@ -12,7 +12,9 @@ import {
   downloadList,
 } from './state'
 import { markRaw, toRaw } from '@common/utils/vueTools'
-import { getMusicUrl, getPicUrl, getLyricInfo } from '@renderer/core/music/online'
+import { getMusicUrl, getPicUrl } from '@renderer/core/music/online'
+// 歌词与播放共用：用户绑定的歌词 → 所属来源 → 跨平台自动匹配
+import { getLyricInfo } from '@renderer/core/music'
 import { appSetting } from '../setting'
 import { qualityList } from '..'
 import { proxyCallback } from '@renderer/worker/utils'

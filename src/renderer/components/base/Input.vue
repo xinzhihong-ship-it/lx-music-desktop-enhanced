@@ -89,40 +89,12 @@ export default {
 
 
 <style lang="less" module>
-@import '@renderer/assets/styles/layout.less';
-
-.input {
-  display: inline-block;
-  border: none;
-  border-radius: @form-radius;
-  padding: 7px 8px;
-  color: var(--color-button-font);
-  outline: none;
-  transition: background-color 0.2s ease;
-  background-color: var(--color-primary-background);
-  font-size: 13.3px;
-
-  &::-webkit-outer-spin-button,
-  &::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-
-  &[disabled] {
-    opacity: .4;
-  }
-
-  &:hover, &:focus {
-    background-color: var(--color-primary-background-hover);
-  }
-  &:active {
-    background-color: var(--color-primary-background-active);
-  }
+.input { display: inline-block; min-height: 32px; box-sizing: border-box; padding: 7px 11px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-small); background: var(--ui-canvas); color: var(--ui-text); font-size: 12px; transition: border-color .2s ease, box-shadow .2s ease;
+  &::placeholder { color: var(--ui-muted); }
+  &:hover:not(:disabled) { border-color: var(--color-primary-alpha-600); }
+  &:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--ui-selected); }
+  &:disabled { opacity: .4; }
+  &::-webkit-outer-spin-button, &::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 }
-
-.min {
-  padding: 3px 8px;
-  font-size: 12px;
-}
-
+.min { min-height: 26px; padding: 4px 8px; font-size: 11px; }
 </style>

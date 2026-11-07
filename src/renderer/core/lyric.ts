@@ -1,131 +1,207 @@
-import Lyric from '@common/utils/lyric-font-player'
-import { getAnalyser, getCurrentTime as getPlayerCurrentTime } from '@renderer/plugins/player'
-import { lyric, setLines, setOffset, setTempOffset, setText } from '@renderer/store/player/lyric'
+// 主窗口的歌词“行跟踪”与对外同步：
+//   - 按新歌词数据（lyrics/engine 的 LyricDoc）跟踪当前行：更新状态栏歌词、播放器状态（托盘 / 开放 API 用）、
+//     lyricLinePlay 事件。只在换行时刻唤醒一次（setTimeout 到下一行开始），不逐帧运行。
+//   - 把歌词原文与播放 / 暂停 / 跳转时间同步给桌面歌词与顶部歌词岛（各自按收到的时间锚定时钟）。
+//   - 播放器卡住却不上报暂停时（MPV 缓存耗尽等），漂移防护让客户端暂停，恢复后按真实时间继续。
+// 播放详情页的歌词视图自己按帧读取位置（engine.readLyricPosition），不依赖这里。
+import { findLineIndex } from '@common/utils/lyrics'
+import { getAnalyser } from '@renderer/plugins/player'
+import { lyric, setText } from '@renderer/store/player/lyric'
 import { isPlay, musicInfo } from '@renderer/store/player/state'
+import { playProgress } from '@renderer/store/player/playProgress'
 import { setStatusText } from '@renderer/store/player/action'
-import { markRawList, watch } from '@common/utils/vueTools'
+import { watch } from '@common/utils/vueTools'
 import { vst3Runtime } from '@renderer/plugins/player/vst3'
 import { appSetting } from '@renderer/store/setting'
-import { isBiliVideoActive } from '@renderer/store/player/biliVideo'
 import { onNewDesktopLyricProcess } from '@renderer/utils/ipc'
+import { lyricDoc, readLyricPosition } from './lyrics/engine'
+import { getCurrentTime } from './lyrics/time'
+import { createLyricDriftGuard } from './lyricDriftGuard'
 
-const getCurrentTime = () => {
-  const delay = vst3Runtime.active && appSetting['player.playEngine'] === 'electron' && !isBiliVideoActive()
-    ? (vst3Runtime.latencyMs + vst3Runtime.bridgeMs) * appSetting['player.playbackRate'] : 0
-  return Math.max(0, getPlayerCurrentTime() * 1000 - delay)
+export { getCurrentTime }
+
+// ---- 当前行跟踪 ----
+// 是否在播放：由 play / pause / stop 维护，不读 store 的 isPlay ——
+// 'play' 事件里本模块的处理先于 store 置为播放，读 isPlay 会以为还停着，跟踪器就只走一行（菜单栏歌词不动）
+let playing = false
+/** 跟踪器最长多久复查一次（跳转、倍速变化、时钟误差都在下一次复查时纠正） */
+const MAX_TICK = 1000
+let tickTimer: ReturnType<typeof setTimeout> | null = null
+// 上次发出的当前行（行号 + 文本 + 翻译 / 罗马音）：内容没变就不重复通知
+let lastKey = ''
+const clearTick = () => {
+  if (tickTimer) clearTimeout(tickTimer)
+  tickTimer = null
+}
+const emitLine = (index: number) => {
+  const line = lyricDoc.value.lines[index]
+  const text = line?.text ?? ''
+  const key = `${index}\u0000${text}\u0000${line?.translation ?? ''}\u0000${line?.roma ?? ''}`
+  if (key == lastKey) return
+  lastKey = key
+  setText(text, Math.max(index, 0))
+  setStatusText(text)
+  window.app_event.lyricLinePlay(text, index)
+}
+const tick = () => {
+  tickTimer = null
+  const lines = lyricDoc.value.lines
+  const pos = readLyricPosition()
+  const index = findLineIndex(lines, pos)
+  emitLine(index)
+  if (!playing) return
+  const next = lines[index + 1]
+  const rate = appSetting['player.playbackRate'] || 1
+  const delay = next ? Math.max(16, (next.start - pos) / rate) : MAX_TICK
+  tickTimer = setTimeout(tick, Math.min(delay, MAX_TICK))
+}
+/** 立即按当前位置重新判断当前行，并在播放中继续跟踪 */
+const retrack = () => {
+  clearTick()
+  tick()
 }
 
-let lrc: Lyric
-watch(() => [vst3Runtime.active, vst3Runtime.latencyMs, vst3Runtime.bridgeMs], () => {
-  if (!lrc || !isPlay.value) return
+// ---- 漂移防护：播放器卡住时让客户端暂停，恢复后从真实时间继续 ----
+const driftGuard = createLyricDriftGuard()
+const DRIFT_CHECK_INTERVAL = 500
+let driftTimer: ReturnType<typeof setInterval> | null = null
+const stopDriftCheck = () => {
+  driftGuard.stop()
+  if (driftTimer) {
+    clearInterval(driftTimer)
+    driftTimer = null
+  }
+}
+const checkDrift = () => {
+  if (!playing) {
+    stopDriftCheck()
+    return
+  }
   const time = getCurrentTime()
-  lrc.play(time)
+  switch (driftGuard.check(time, performance.now())) {
+    case 'stall':
+      sendDesktopLyricInfo({ action: 'set_pause' })
+      break
+    case 'resume':
+    case 'resync':
+      sendDesktopLyricInfo({ action: 'set_play', data: time })
+      retrack()
+      break
+    default:
+      break
+  }
+}
+/** 从 time 开始：通知客户端、重新跟踪当前行、以此为基准检查漂移 */
+const playAt = (time: number) => {
   sendDesktopLyricInfo({ action: 'set_play', data: time })
+  retrack()
+  driftGuard.start(time, performance.now(), appSetting['player.playbackRate'])
+  driftTimer ??= setInterval(checkDrift, DRIFT_CHECK_INTERVAL)
+}
+watch(() => [vst3Runtime.active, vst3Runtime.latencyMs, vst3Runtime.bridgeMs], () => {
+  if (playing) playAt(getCurrentTime())
 })
-let desktopLyricPort: Electron.IpcRendererEvent['ports'][0] | null = null
+// 歌词内容变化（换歌词、翻译 / 罗马音 / 点亮方式开关）后重新判断当前行
+watch(lyricDoc, () => { retrack() })
+
+// ---- 桌面歌词 / 歌词岛 ----
+type ClientPort = Electron.IpcRendererEvent['ports'][0]
+// 连接主窗口的客户端（桌面歌词、顶部歌词岛），每种一个端口；窗口重开时新端口替换旧端口
+const clientPorts = new Map<LX.DesktopLyric.ClientKind, ClientPort>()
 const analyserTools: {
-  dataArray: Uint8Array
   bufferLength: number
   analyser: AnalyserNode | null
-  sendDataArray: () => void
+  sendDataArray: (port: ClientPort) => void
 } = {
-  dataArray: new Uint8Array(),
   bufferLength: 0,
   analyser: null,
-  sendDataArray() {
+  sendDataArray(port) {
     if (this.analyser == null) {
       this.analyser = getAnalyser()
-      // console.log(this.analyser)
       if (!this.analyser) return
       this.bufferLength = this.analyser.frequencyBinCount
     }
     const dataArray = new Uint8Array(this.bufferLength)
     this.analyser.getByteFrequencyData(dataArray)
-    sendDesktopLyricInfo({
-      action: 'send_analyser_data_array',
-      data: dataArray,
-    }, [dataArray.buffer])
+    // 频谱数据转移所有权，只发给请求方
+    port.postMessage({ action: 'send_analyser_data_array', data: dataArray }, [dataArray.buffer])
   },
 }
 
-export const sendDesktopLyricInfo = (info: LX.DesktopLyric.LyricActions, transferList?: Transferable[]) => {
-  if (desktopLyricPort == null) return
-  if (transferList) desktopLyricPort.postMessage(info, transferList)
-  else desktopLyricPort.postMessage(info)
+/** 发给所有已连接的客户端 */
+export const sendDesktopLyricInfo = (info: LX.DesktopLyric.LyricActions) => {
+  for (const port of clientPorts.values()) port.postMessage(info)
 }
-const handleDesktopLyricMessage = (action: LX.DesktopLyric.WinMainActions) => {
+const buildInfo = (): LX.DesktopLyric.LyricActions => ({
+  action: 'set_info',
+  data: {
+    id: musicInfo.id,
+    singer: musicInfo.singer,
+    name: musicInfo.name,
+    album: musicInfo.album,
+    lrc: musicInfo.lrc,
+    tlrc: musicInfo.tlrc,
+    rlrc: musicInfo.rlrc,
+    lxlrc: musicInfo.lxlrc,
+    pic: musicInfo.pic,
+    duration: playProgress.maxPlayTime,
+    isPlay: isPlay.value,
+    line: lyric.line,
+    played_time: getCurrentTime(),
+  },
+})
+const handleDesktopLyricMessage = (action: LX.DesktopLyric.WinMainActions, port: ClientPort, data?: unknown) => {
   switch (action) {
     case 'get_info':
-      sendDesktopLyricInfo({
-        action: 'set_info',
-        data: {
-          id: musicInfo.id,
-          singer: musicInfo.singer,
-          name: musicInfo.name,
-          album: musicInfo.album,
-          lrc: musicInfo.lrc,
-          tlrc: musicInfo.tlrc,
-          rlrc: musicInfo.rlrc,
-          lxlrc: musicInfo.lxlrc,
-          // pic: musicInfo.pic,
-          isPlay: isPlay.value,
-          line: lyric.line,
-          played_time: getCurrentTime(),
-        },
-      })
+      port.postMessage(buildInfo())
       break
     case 'get_status':
-      sendDesktopLyricInfo({
+      port.postMessage({
         action: 'set_status',
         data: {
           isPlay: isPlay.value,
           line: lyric.line,
           played_time: getCurrentTime(),
         },
-      })
+      } satisfies LX.DesktopLyric.LyricActions)
       break
     case 'get_analyser_data_array':
-      analyserTools.sendDataArray()
+      analyserTools.sendDataArray(port)
+      break
+    // 歌词岛的播放控制（按需加载播放器操作，避免模块循环依赖）
+    case 'play_toggle':
+      void import('@renderer/core/player/action').then(({ togglePlay }) => { togglePlay() })
+      break
+    case 'play_prev':
+      void import('@renderer/core/player/action').then(({ playPrev }) => playPrev())
+      break
+    // 歌词岛拖动进度条：data 为目标位置（秒）
+    case 'seek':
+      if (typeof data == 'number' && Number.isFinite(data) && data >= 0) window.app_event.setProgress(data)
+      break
+    case 'play_next':
+      void import('@renderer/core/player/action').then(({ playNext }) => playNext())
+      break
+    // 桌面歌词工具栏调整偏移：与播放详情页右键菜单相同的改写与保存
+    case 'offset_adjust':
+      if (typeof data == 'number' && Number.isFinite(data)) void import('./lyrics/offsetControl').then(async({ adjustCurrentLyricOffset }) => adjustCurrentLyricOffset(data))
+      break
+    case 'offset_reset':
+      void import('./lyrics/offsetControl').then(async({ resetCurrentLyricOffset }) => resetCurrentLyricOffset())
       break
     default:
       break
   }
 }
 export const init = () => {
-  lrc = new Lyric({
-    shadowContent: false,
-    onPlay(line, text) {
-      setText(text, Math.max(line, 0))
-      setStatusText(text)
-      window.app_event.lyricLinePlay(text, line)
-      // console.log(line, text)
-    },
-    onSetLyric(lines, offset) { // listening lyrics seting event
-      // console.log(lines) // lines is array of all lyric text
-      setLines(markRawList([...lines]))
-      setText(lines[0] ?? '', 0)
-      setOffset(offset) // 歌词延迟
-      setTempOffset(0) // 重置临时延迟
-    },
-    onUpdateLyric(lines) {
-      setLines(markRawList([...lines]))
-      setText(lines[0] ?? '', 0)
-    },
-    rate: appSetting['player.playbackRate'],
-    // offset: 80,
-  })
-
-  onNewDesktopLyricProcess(({ event }) => {
-    console.log('onNewDesktopLyricProcess')
+  onNewDesktopLyricProcess(({ event, params }) => {
+    const kind: LX.DesktopLyric.ClientKind = params == 'island' ? 'island' : 'lyric'
     const [port] = event.ports
-    desktopLyricPort = port
+    clientPorts.get(kind)?.close()
+    clientPorts.set(kind, port)
 
     port.onmessage = ({ data }) => {
-      handleDesktopLyricMessage(data.action)
-      // The event data can be any serializable object (and the event could even
-      // carry other MessagePorts with it!)
-      // const result = doWork(event.data)
-      // port.postMessage(result)
+      handleDesktopLyricMessage(data.action, port, data.data)
     }
 
     port.onmessageerror = (event) => {
@@ -134,50 +210,21 @@ export const init = () => {
   })
 }
 
-export const setLyricOffset = (offset: number) => {
-  const tempOffset = offset - lyric.offset
-  setTempOffset(tempOffset)
-  lrc.setOffset(tempOffset)
-  sendDesktopLyricInfo({
-    action: 'set_offset',
-    data: tempOffset,
-  })
-
-  if (isPlay.value) {
-    setTimeout(() => {
-      const time = getCurrentTime()
-      sendDesktopLyricInfo({
-        action: 'set_play',
-        data: time,
-      })
-      lrc.play(time)
-    })
-  }
+/**
+ * 歌词偏移已写进歌词原文的 [offset:] 标签（播放详情页菜单负责改写）：
+ * 主窗口的歌词数据随之更新，这里把新原文发给客户端并重新同步位置。
+ */
+export const setLyricOffset = (_offset?: number) => {
+  setLyric()
 }
 
-export const setPlaybackRate = (rate: number) => {
-  lrc.setPlaybackRate(rate)
-
-  if (isPlay.value) {
-    setTimeout(() => {
-      const time = getCurrentTime()
-      lrc.play(time)
-    })
-  }
+export const setPlaybackRate = (_rate: number) => {
+  if (playing) setTimeout(() => { playAt(getCurrentTime()) })
 }
 
 export const setLyric = () => {
   if (!musicInfo.id) return
   if (musicInfo.lrc) {
-    const extendedLyrics = []
-    if (appSetting['player.isShowLyricRoma'] && musicInfo.rlrc) extendedLyrics.push(musicInfo.rlrc)
-    if (appSetting['player.isShowLyricTranslation'] && musicInfo.tlrc) extendedLyrics.push(musicInfo.tlrc)
-    if (appSetting['player.isSwapLyricTranslationAndRoma']) extendedLyrics.reverse()
-
-    lrc.setLyric(
-      appSetting['player.isPlayLxlrc'] && musicInfo.lxlrc ? musicInfo.lxlrc : musicInfo.lrc,
-      extendedLyrics,
-    )
     sendDesktopLyricInfo({
       action: 'set_lyric',
       data: {
@@ -188,66 +235,39 @@ export const setLyric = () => {
       },
     })
   }
-
-  if (isPlay.value) {
-    setTimeout(() => {
-      const time = getCurrentTime()
-      sendDesktopLyricInfo({ action: 'set_play', data: time })
-      lrc.play(time)
-    })
-  }
+  // 播放器状态（托盘 / 开放 API）在 lyricUpdated 时会清空当前行文本：
+  // 等所有 lyricUpdated 处理完再重新发出当前行（清掉去重记录，即使行没变也要发）
+  setTimeout(() => {
+    lastKey = ''
+    if (playing) playAt(getCurrentTime())
+    else retrack()
+  })
 }
-
-export const setDisabledAutoPause = (disabledAutoPause: boolean) => {
-  lrc.setDisabledAutoPause(disabledAutoPause)
-}
-
-let sources = new Map<string, boolean>()
-let prevDisabled = false
-export const setDisableAutoPauseBySource = (disabled: boolean, source: string) => {
-  sources.set(source, disabled)
-  const currentDisabled = Array.from(sources.values()).some(e => e)
-  if (prevDisabled == currentDisabled) return
-  prevDisabled = currentDisabled
-  setDisabledAutoPause(currentDisabled)
-}
-
 
 export const play = () => {
-  // if (!musicInfo.lrc) return
-  const currentTime = getCurrentTime()
-  lrc.play(currentTime)
-  sendDesktopLyricInfo({ action: 'set_play', data: currentTime })
+  playing = true
+  playAt(getCurrentTime())
 }
 
 export const pause = () => {
-  lrc.pause()
+  playing = false
+  stopDriftCheck()
+  clearTick()
   sendDesktopLyricInfo({ action: 'set_pause' })
+  // 暂停时按停下的位置更新一次当前行（跳转后暂停也能显示正确的行）
+  tick()
 }
 
 export const stop = () => {
-  lrc.setLyric('')
+  playing = false
+  stopDriftCheck()
+  clearTick()
+  lastKey = ''
   sendDesktopLyricInfo({ action: 'set_stop' })
-  // setLines([])
   setText('', 0)
+  setStatusText('')
 }
 
 export const sendInfo = () => {
-  sendDesktopLyricInfo({
-    action: 'set_info',
-    data: {
-      id: musicInfo.id,
-      singer: musicInfo.singer,
-      name: musicInfo.name,
-      album: musicInfo.album,
-      lrc: musicInfo.lrc,
-      tlrc: musicInfo.tlrc,
-      rlrc: musicInfo.rlrc,
-      lxlrc: musicInfo.lxlrc,
-      // pic: musicInfo.pic,
-      isPlay: isPlay.value,
-      line: lyric.line,
-      played_time: getCurrentTime(),
-    },
-  })
+  sendDesktopLyricInfo(buildInfo())
 }

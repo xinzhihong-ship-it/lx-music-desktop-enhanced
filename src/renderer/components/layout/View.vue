@@ -2,7 +2,7 @@
   <div :class="$style.view">
     <router-view v-slot="{ Component }">
       <!-- <transition enter-active-class="animated-fast fadeIn" leave-active-class="animated-fast fadeOut"> -->
-      <component :is="Component" class="view-container" />
+      <component :is="Component" class="view-container" :data-view="$route.meta.name" />
       <!-- </transition> -->
     </router-view>
   </div>

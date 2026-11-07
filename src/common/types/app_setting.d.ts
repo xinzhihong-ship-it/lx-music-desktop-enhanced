@@ -177,6 +177,13 @@ declare global {
        */
       'player.mediaDeviceId': string
 
+      /** 同一输出设备在不同播放引擎中的名称与 ID */
+      'player.mediaDeviceLabel': string
+      'player.mediaDeviceLabel.electron': string
+      'player.mediaDeviceLabel.mpv': string
+      'player.mediaDeviceId.electron': string
+      'player.mediaDeviceId.mpv': string
+
       /**
        * 是否在音频输出设备更改时暂停播放
        */
@@ -202,10 +209,6 @@ declare global {
        */
       'player.isS2t': boolean
 
-      /**
-       * 是否播放卡拉OK歌词
-       */
-      'player.isPlayLxlrc': boolean
 
       /**
        * 启动软件时是否恢复上次播放进度
@@ -357,15 +360,6 @@ declare global {
        */
       'player.isAutoCleanPlayedList': boolean
 
-      /**
-       * 播放详情页-是否缩放当前播放的歌词行
-       */
-      'playDetail.isZoomActiveLrc': boolean
-
-      /**
-       * 播放详情页-是否允许通过歌词调整播放进度
-       */
-      'playDetail.isShowLyricProgressSetting': boolean
 
       /**
        * 播放详情页-歌词字体大小
@@ -377,10 +371,26 @@ declare global {
        */
       'playDetail.style.align': 'center' | 'left' | 'right'
 
+
       /**
-       * 播放详情页-是否延迟桌面歌词滚动
+       * 播放详情页-歌词视图：滚动歌词 / 舞台
        */
-      'playDetail.isDelayScroll': boolean
+      'playDetail.lyricView': 'scroll' | 'stage'
+
+      /**
+       * 播放详情页-舞台风格：流动 / 阶梯 / 倾诉
+       */
+      'playDetail.stageStyle': 'flow' | 'steps' | 'tilt'
+
+      /**
+       * 播放详情页-舞台字词落定时迸出火花
+       */
+      'playDetail.stageSparks': boolean
+
+      /**
+       * 播放详情页-背景：跟随主题 / 封面主色
+       */
+      'playDetail.background': 'theme' | 'cover'
 
       /**
        * 是否启用桌面歌词
@@ -447,15 +457,6 @@ declare global {
        */
       'desktopLyric.isLockScreen': boolean
 
-      /**
-       * 是否延迟桌面歌词滚动
-       */
-      'desktopLyric.isDelayScroll': boolean
-
-      /**
-       * 歌词滚动位置
-       */
-      'desktopLyric.scrollAlign': 'top' | 'center'
 
       /**
        * 是否在鼠标划过桌面歌词窗口时降低歌词透明度
@@ -502,10 +503,6 @@ declare global {
        */
       'desktopLyric.style.lyricShadowColor': string
 
-      /**
-       * 桌面歌词加粗字体
-       */
-      // 'desktopLyric.style.fontWeight': boolean
 
       /**
        * 桌面歌词字体透明度
@@ -517,25 +514,39 @@ declare global {
        */
       'desktopLyric.style.ellipsis': boolean
 
-      /**
-       * 是否缩放当前正在播放的桌面歌词
-       */
-      'desktopLyric.style.isZoomActiveLrc': boolean
 
       /**
-       * 是否加粗逐字歌词字体
+       * 桌面歌词显示方式：single 单行；double 双行交替（酷狗 / 网易云式）；extended 当前句 + 翻译 / 罗马音（排版同双行，没有翻译时按双行交替）；
+       * flow / steps / tilt 与播放详情页相同的三种舞台风格
        */
-      'desktopLyric.style.isFontWeightFont': boolean
+      'desktopLyric.lineMode': 'single' | 'double' | 'extended' | 'flow' | 'steps' | 'tilt'
 
       /**
-       * 是否加粗逐行歌词字体
+       * 歌词点亮方式（播放详情页、桌面歌词、歌词岛）：word 逐字（有逐字时间时）；line 整句一起点亮
        */
-      'desktopLyric.style.isFontWeightLine': boolean
+      'player.lyricHighlight': 'word' | 'line'
 
       /**
-       * 是否加粗翻译、罗马音字体
+       * 桌面歌词舞台风格下显示火花
        */
-      'desktopLyric.style.isFontWeightExtended': boolean
+      'desktopLyric.stageSparks': boolean
+
+      /**
+       * 歌词岛常驻展开为迷你播放器（关闭时为胶囊，鼠标停留才展开）
+       */
+      'island.expanded': boolean
+
+      /**
+       * 顶部歌词岛：屏幕顶部中央的歌词胶囊，悬停展开为迷你播放器
+       */
+      'island.enable': boolean
+
+      /**
+       * 歌词岛被拖到的位置（窗口左上角，屏幕坐标）；null 表示停靠在屏幕顶部中央
+       */
+      'island.x': number | null
+      'island.y': number | null
+
 
       /**
        * 是否启用双击列表里的歌曲时自动切换到当前列表播放（仅对歌单、排行榜有效）

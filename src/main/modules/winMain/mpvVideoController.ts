@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { log } from '@common/utils'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
+import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
 import { sendEvent, getBrowserWindow } from './main'
 import { MpvController, MpvLoadSupersededError } from './mpvController'
 import * as accountSessions from '@main/modules/account/sessions'
@@ -49,7 +50,7 @@ type VideoEventName =
 const isBiliCdn = (url: string) =>
   /^https?:\/\/[^/]*\.bilivideo\.(?:com|cn)(?::\d+)?\//i.test(url)
 const normalizeAudioDevice = (device: string | undefined) => {
-  const value = String(device ?? '').trim()
+  const value = getAudioDeviceForEngine(String(device ?? '').trim(), getAudioDevicePreference(global.lx.appSetting), 'mpv')
   return value && !['default', 'Default', 'communications'].includes(value)
     ? value
     : 'auto'
@@ -378,6 +379,7 @@ export const loadUrl = async(videoUrl: string, audioUrl?: string) => {
     )
   } catch (error) {
     log.warn('[MpvVideoController] set audio device failed', error)
+    throw error
   }
   const cookie = isBiliCdn(videoUrl) ? getBiliCookie() : ''
   player.load({
@@ -408,6 +410,7 @@ export const setAudioDevice = (device: string) => {
     return
   }
   if (!native || !initialized) return
+  // Native video has no audio-driver failure recovery; keep the verified AO.
   native.setAudioDevice(normalizedDevice)
 }
 

@@ -231,90 +231,12 @@ export default {
 
 
 <style lang="less" module>
-@import '@renderer/assets/styles/layout.less';
-
-.container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1001;
-}
-
-.modal {
-  width: 100%;
-  height: 100%;
-  // background-color: rgba(0, 0, 0, .2);
-  // background-color: rgba(255, 255, 255, .6);
-  // background-color: var(--color-primary-light-600-alpha-900);
-  // backdrop-filter: blur(4px);
-  // backdrop-filter: grayscale(70%);
-  display: grid;
-  align-items: center;
-  justify-items: center;
-  // will-change: transform;
-
-  &.filter {
-    backdrop-filter: grayscale(70%);
-  }
-
-  // &:before {
-  //   .mixin-after();
-  //   position: absolute;
-  //   left: 0;
-  //   top: 0;
-  //   width: 100%;
-  //   height: 100%;
-  //   background-color: var(--color-000);
-  //   opacity: .6;
-  // }
-}
-
-.content {
-  position: relative;
-  border-radius: 4px;
-  box-shadow: 0 0 4px rgba(0, 0, 0, .25);
-  overflow: hidden;
-  // max-height: 80%;
-  // max-width: 76%;
-  min-width: 220px;
-  position: relative;
-  display: flex;
-  flex-flow: column nowrap;
-  z-index: 100;
-  background-color: var(--color-content-background);
-}
-
-.header {
-  flex: none;
-  background-color: var(--color-primary-light-100-alpha-100);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  height: 18px;
-
-  button {
-    border: none;
-    cursor: pointer;
-    padding: 4px 7px;
-    background-color: transparent;
-    color: var(--color-primary-dark-500-alpha-500);
-    outline: none;
-    transition: background-color 0.2s ease;
-    line-height: 0;
-
-    svg {
-      height: .7em;
-    }
-
-    &:hover {
-      background-color: var(--color-primary-dark-100-alpha-600);
-    }
-    &:active {
-      background-color: var(--color-primary-dark-200-alpha-600);
-    }
+.container { position: absolute; inset: 0; z-index: 1001; }
+.modal { width: 100%; height: 100%; display: grid; align-items: center; justify-items: center; background: rgba(15, 25, 18, .2); &.filter { backdrop-filter: blur(4px); } }
+.content { position: relative; display: flex; flex-direction: column; min-width: 220px; border: 1px solid var(--ui-border); border-radius: 18px; box-shadow: var(--ui-shadow); overflow: hidden; z-index: 100; background: var(--ui-surface); }
+.header { flex: none; display: flex; align-items: center; justify-content: flex-end; height: 30px; padding: 4px 7px; box-sizing: border-box;
+  button { display: flex; justify-content: center; align-items: center; width: 24px; height: 24px; border: 0; border-radius: 50%; padding: 7px; background: transparent; color: var(--ui-muted); cursor: pointer;
+    svg { width: 100%; height: 100%; } &:hover { color: var(--ui-text); background: var(--ui-hover); }
   }
 }
-
 </style>

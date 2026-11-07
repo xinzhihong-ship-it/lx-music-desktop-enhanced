@@ -5,6 +5,7 @@ import { i18nPlugin } from './plugins/i18n'
 import mountComponents from './components'
 
 import App from './App.vue'
+import IslandApp from './IslandApp.vue'
 
 import '@root/common/error'
 import { getSetting, onMainWindowInited, onSettingChanged, sendConnectMainWindowEvent } from './utils/ipc'
@@ -34,7 +35,9 @@ void getSetting().then((setting) => {
   })
   initMainWindowChannel()
 
-  const app = createApp(App)
+  // 同一个渲染包：mode=island 时挂载顶部歌词岛
+  const isIsland = new URLSearchParams(location.search).get('mode') == 'island'
+  const app = createApp(isIsland ? IslandApp : App)
   app.use(i18nPlugin)
   mountComponents(app)
   app.mount('#root')

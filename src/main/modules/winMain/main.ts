@@ -225,8 +225,27 @@ export const setWindowBounds = (options: Partial<Electron.Rectangle>) => {
   if (!browserWindow) return
   browserWindow.setBounds(options)
 }
+// macOS 的进度条画在程序坞图标上：切歌时会先归零 / 隐藏、马上又出现，看起来像程序坞闪了一下。
+// 归零 / 隐藏的更新延后一会儿，期间来了新进度就直接用新进度，不再中间闪一次
+const PROGRESS_RESET_DELAY = 1500
+let lastProgress = -1
+let resetTimer: NodeJS.Timeout | null = null
 export const setProgressBar = (progress: number, options?: Electron.ProgressBarOptions) => {
   if (!browserWindow) return
+  if (resetTimer) {
+    clearTimeout(resetTimer)
+    resetTimer = null
+  }
+  const isReset = progress <= 0.01
+  if (process.platform == 'darwin' && isReset && lastProgress > 0.01) {
+    resetTimer = setTimeout(() => {
+      resetTimer = null
+      lastProgress = progress
+      browserWindow?.setProgressBar(progress, options)
+    }, PROGRESS_RESET_DELAY)
+    return
+  }
+  lastProgress = progress
   browserWindow.setProgressBar(progress, options)
 }
 export const setIgnoreMouseEvents = (ignore: boolean, options?: Electron.IgnoreMouseEventsOptions) => {

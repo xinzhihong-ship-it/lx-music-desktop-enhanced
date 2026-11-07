@@ -5,8 +5,10 @@
         <tag-list :source="source" :tag-id="tagId" :sort-id="sortId" />
         <sort-tab :source="source" :tag-id="tagId" :sort-id="sortId" />
       </div>
-      <base-btn :class="$style.btn" outline min @click="visibleOpenSongListModal = true">{{ $t('songlist__import_input_show_btn') }}</base-btn>
-      <base-selection :model-value="source" :class="$style.select" :list="sourceList" item-key="id" item-name="name" @update:model-value="handleToggleSource" />
+      <div :class="$style.actions">
+        <base-btn :class="$style.btn" outline min @click="visibleOpenSongListModal = true">{{ $t('songlist__import_input_show_btn') }}</base-btn>
+        <base-selection :model-value="source" :class="$style.select" :list="sourceList" item-key="id" item-name="name" @update:model-value="handleToggleSource" />
+      </div>
     </div>
     <list-view :source="source" :tag-id="tagId" :sort-id="sortId" :page="page" />
     <open-list-modal v-model="visibleOpenSongListModal" :source-list="sourceList" />
@@ -127,20 +129,32 @@ export default {
 }
 .header {
   flex: none;
-  width: 100%;
   display: flex;
-  flex-flow: row nowrap;
-  // padding-right: 5px;
-  // box-sizing: border-box;
-  padding-bottom: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ui-border);
 }
 .left {
-  flex: auto;
+  flex: 1;
+  min-width: 0;
   display: flex;
-  flex-flow: row nowrap;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .btn {
+  flex: none;
+  height: 32px;
+  padding: 4px 12px;
   color: var(--color-font);
   transition: color @transition-fast;
   background: none !important;
@@ -151,10 +165,9 @@ export default {
 
 
 .select {
+  --selection-width: 128px;
   font-size: 12px;
-  width: auto;
   flex: none;
-  padding: 0 5px;
 
   &:hover {
     :global(.icon) {
@@ -170,7 +183,7 @@ export default {
       color: var(--color-font);
       // line-height: 38px;
       // height: 38px;
-      border-radius: 0;
+      border-radius: @form-radius;
       &:hover {
         // background: none !important;
         color: var(--color-primary-font-hover);

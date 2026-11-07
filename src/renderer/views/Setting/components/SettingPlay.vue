@@ -42,12 +42,6 @@ dd
     base-checkbox(id="setting_player_auto_clean_played_list" :model-value="appSetting['player.isAutoCleanPlayedList']" :label="$t('setting__play_auto_clean_played_list')" @update:model-value="updateSetting({'player.isAutoCleanPlayedList': $event})")
     svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_auto_clean_played_list_tip')" :title="$t('setting__play_auto_clean_played_list_tip')")
   .gap-top
-    base-checkbox(id="setting_player_lyric_transition" :model-value="appSetting['player.isShowLyricTranslation']" :label="$t('setting__play_lyric_transition')" @update:model-value="updateSetting({'player.isShowLyricTranslation': $event})")
-  .gap-top
-    base-checkbox(id="setting_player_lyric_roma" :model-value="appSetting['player.isShowLyricRoma']" :label="$t('setting__play_lyric_roma')" @update:model-value="updateSetting({'player.isShowLyricRoma': $event})")
-  .gap-top
-    base-checkbox(id="setting_player_awap_lyric_trans_roma" :model-value="appSetting['player.isSwapLyricTranslationAndRoma']" :label="$t('setting__player_swap_lyric_trans_roma')" @update:model-value="updateSetting({'player.isSwapLyricTranslationAndRoma': $event})")
-  .gap-top
     base-checkbox(id="setting_player_auto_skip_on_error" :model-value="appSetting['player.autoSkipOnError']" :label="$t('setting__play_auto_skip_on_error')" @update:model-value="updateSetting({'player.autoSkipOnError': $event})")
   .gap-top(v-if="appSetting['player.autoSkipOnError']" :class="$style.errorSettingRow")
     span(:class="$style.errorSettingLabel") {{ $t('setting__play_error_strategy') }}
@@ -107,15 +101,7 @@ dd
             :aria-label="$t('setting__play_error_strategy_move_down', { name: item.label })"
             @click="moveErrorStrategy(index, index + 1)") ↓
   .gap-top
-    base-checkbox(id="setting_player_lyric_s2t" :model-value="appSetting['player.isS2t']" :label="$t('setting__play_lyric_s2t')" @update:model-value="updateSetting({'player.isS2t': $event})")
-  .gap-top
-    base-checkbox(id="setting_player_lyric_play_lxlrc" :model-value="appSetting['player.isPlayLxlrc']" :label="$t('setting__play_lyric_lxlrc')" @update:model-value="updateSetting({'player.isPlayLxlrc': $event})")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_lyric_lxlrc_tip')" :title="$t('setting__play_lyric_lxlrc_tip')")
-  .gap-top
     base-checkbox(id="setting_player_showTaskProgess" :model-value="appSetting['player.isShowTaskProgess']" :label="$t('setting__play_task_bar')" @update:model-value="updateSetting({'player.isShowTaskProgess': $event})")
-  .gap-top(v-if="isMac")
-    base-checkbox(id="setting_player_showStatusBarLyric" :model-value="appSetting['player.isShowStatusBarLyric']" :label="$t('setting__play_statusbar_lyric')" @update:model-value="updateSetting({'player.isShowStatusBarLyric': $event})")
-    svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__play_statusbar_lyric_tip')" :title="$t('setting__play_statusbar_lyric_tip')")
   .gap-top
     base-checkbox(id="setting_player_isMaxOutputChannelCount" :model-value="isMaxOutputChannelCount" :label="$t('setting__play_max_output_channel_count')" @update:model-value="handleUpdateMaxOutputChannelCount")
   .gap-top
@@ -133,18 +119,12 @@ dd
 dd(:aria-label="$t('setting__play_mediaDevice_title')")
   h3#play_mediaDevice {{ $t('setting__play_mediaDevice') }}
   div
-    template(v-if="playEngine == 'mpv'")
-      // MPV 模式下 base-selection 下拉框有渲染问题，先用原生 select 保证功能可用
-      select(v-model="mediaDeviceId" :class="$style.mpvDeviceSelect" @change="handleMediaDeviceIdChnage")
-        option(v-for="item in mediaDevices" :key="item.deviceId" :value="item.deviceId") {{ item.label }}
-    template(v-else-if="playEngine == 'audirvana'")
-      p(:class="$style.audirvanaDeviceTip") {{ $t('setting__play_audirvana_device_tip') }}
-    template(v-else)
-      base-selection.gap-left(v-model="mediaDeviceId" :list="mediaDevices" item-key="deviceId" item-name="label" @change="handleMediaDeviceIdChnage")
+    p(v-if="playEngine == 'audirvana'" :class="$style.audirvanaDeviceTip") {{ $t('setting__play_audirvana_device_tip') }}
+    base-selection(v-else v-model="mediaDeviceId" :class="$style.deviceSelect" :list="mediaDevices" item-key="deviceId" item-name="label" :aria-label="$t('setting__play_mediaDevice')" @change="handleMediaDeviceIdChnage")
 </template>
 
 <script>
-import { ref, onBeforeUnmount, onMounted, watch, computed } from '@common/utils/vueTools'
+import { ref, onMounted, watch, computed } from '@common/utils/vueTools'
 import * as mpvPlayer from '@renderer/plugins/player/mpv'
 import * as mpvVideoPlayer from '@renderer/plugins/player/mpvVideo'
 import { dialog } from '@renderer/plugins/Dialog'
@@ -158,6 +138,7 @@ import { platformQualityTip } from '@renderer/core/quality/labels'
 import { isMac, log } from '@common/utils'
 import useDrag from '@renderer/utils/compositions/useDrag'
 import SettingVst3 from './SettingVst3.vue'
+import useAudioDevices from '@renderer/utils/compositions/useAudioDevices'
 import {
   movePlayErrorAction,
   normalizePlayErrorApiSourceCount,
@@ -226,7 +207,10 @@ export default {
       ...(isMac ? [{ id: 'audirvana', label: t('setting__play_engine_audirvana') }] : []),
     ]
     const playEngine = ref(appSetting['player.playEngine'])
+    const { mediaDevices, mediaDeviceId, prepareEngineChange, selectMediaDevice } = useAudioDevices()
+    let engineChangeVersion = 0
     const handlePlayEngineChange = async() => {
+      const version = ++engineChangeVersion
       const newEngine = playEngine.value
       const oldEngine = appSetting['player.playEngine']
       if (newEngine == oldEngine) return
@@ -237,14 +221,21 @@ export default {
           cancelButtonText: t('cancel_button_text'),
           confirmButtonText: t('confirm_button_text'),
         })
+        if (version !== engineChangeVersion) return
         if (!confirm) {
           playEngine.value = oldEngine
           return
         }
-        window.app_event.stop()
       }
 
-      updateSetting({ 'player.playEngine': newEngine })
+      const deviceSetting = await prepareEngineChange(newEngine)
+      if (version !== engineChangeVersion || playEngine.value !== newEngine || appSetting['player.playEngine'] !== oldEngine) return
+      if (!deviceSetting) {
+        playEngine.value = appSetting['player.playEngine']
+        return
+      }
+      if (isPlay.value) window.app_event.stop()
+      updateSetting({ ...deviceSetting, 'player.playEngine': newEngine })
 
       // 切换到 Audirvana 无需重启应用：播放器事件订阅通过
       // watch(player.playEngine) 自动切换到 audirvana 实现（usePlayerEvent / usePlayProgress），
@@ -329,69 +320,10 @@ export default {
       updateSetting({ 'player.mpv.bitPerfectMode': val })
       void restartMpvForSettingChange()
     }
-    const mediaDevices = ref([])
-    const getMediaDevice = async() => {
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      let audioDevices = devices.filter(device => device.kind === 'audiooutput')
-      mediaDevices.value = audioDevices
-    }
-    void getMediaDevice()
-
-    navigator.mediaDevices.addEventListener('devicechange', getMediaDevice)
-    onBeforeUnmount(() => {
-      navigator.mediaDevices.removeEventListener('devicechange', getMediaDevice)
-    })
-
-    const mediaDeviceId = ref(appSetting['player.mediaDeviceId'])
     const isMpvEngine = () => appSetting['player.playEngine'] == 'mpv'
-
-    // mpv 设备列表（从 main process 获取）
-    const mpvAudioDevices = ref([])
-    const loadMpvAudioDevices = async() => {
-      try {
-        log.info('[SettingPlay] loading mpv audio devices...')
-        const devices = await mpvPlayer.listAudioDevices()
-        log.info('[SettingPlay] mpv audio devices:', devices)
-        mpvAudioDevices.value = devices
-        // 如果当前保存的 ID 不在 MPV 设备列表里（比如旧配置残留），重置为默认
-        const ids = devices.map(d => d.id)
-        if (!ids.includes(mediaDeviceId.value)) {
-          mediaDeviceId.value = 'default'
-          updateSetting({ 'player.mediaDeviceId': 'default' })
-        }
-      } catch (err) {
-        log.error('[SettingPlay] load mpv audio devices failed:', err)
-      }
-    }
-
-    // 当前引擎对应的设备列表：MPV 模式用 mpv 自己的设备 ID，内置模式用 Web Audio 设备
-    const currentMediaDevices = computed(() => {
-      if (isMpvEngine()) {
-        // 保持 player.mediaDeviceId='default' 在下拉框中有对应项，避免切到 MPV 后显示为空
-        const list = [{ deviceId: 'default', label: t('setting__play_mediaDevice_default') ?? '默认设备' }]
-        for (const d of mpvAudioDevices.value) {
-          if (d.id !== 'auto') list.push({ deviceId: d.id, label: d.name })
-        }
-        return list
-      }
-      return mediaDevices.value
-    })
-
-    // 引擎切换时加载对应设备列表；切换到 MPV 时若当前 ID 不在 MPV 列表则重置为默认
-    watch(() => appSetting['player.playEngine'], async(val, oldVal) => {
-      if (val == 'mpv') {
-        await loadMpvAudioDevices()
-        const ids = mpvAudioDevices.value.map(d => d.id)
-        if (!ids.includes(mediaDeviceId.value)) {
-          mediaDeviceId.value = 'default'
-          updateSetting({ 'player.mediaDeviceId': 'default' })
-        }
-      }
-    })
     // 设置项可能在组件 setup 之后才合并完成，因此在挂载后统一加载一次。
     onMounted(() => {
       errorStrategyDrag.setDisabled(false)
-      if (isMpvEngine()) void loadMpvAudioDevices()
       // 清理旧配置里被错误拆分的 --audio-device 参数
       const cleaned = cleanExtraArgs(appSetting['player.mpv.extraArgs'].join(' '))
       if (cleaned.length !== appSetting['player.mpv.extraArgs'].length) {
@@ -400,10 +332,17 @@ export default {
     })
 
     const handleMediaDeviceIdChnage = async() => {
+      try {
+        await selectMediaDevice(mediaDeviceId.value)
+      } catch (err) {
+        mediaDeviceId.value = appSetting['player.mediaDeviceId']
+        log.error('[SettingPlay] output selection failed:', err)
+        showTip({ message: err?.message ?? String(err), position: { top: 80, left: window.innerWidth / 2 }, autoCloseTime: 3000 }, { beforeClose: () => {} })
+        return
+      }
       // mpv 模式：直接保存 mpv 设备 ID，由主进程在启动 mpv 时拼接 --audio-device，不再污染 extraArgs
       if (isMpvEngine()) {
         log.info('[SettingPlay] mediaDeviceId changed to:', mediaDeviceId.value, 'isPlay:', isPlay.value)
-        updateSetting({ 'player.mediaDeviceId': mediaDeviceId.value })
         if (!mpvVideoPlayer.isEmpty()) {
           void mpvVideoPlayer.setAudioDevice(mediaDeviceId.value).catch(err => {
             log.error('[SettingPlay] video audio device update failed:', err)
@@ -417,16 +356,9 @@ export default {
             log.error('[SettingPlay] mpv restart failed:', err)
           })
         }
-        return
       }
-      // Electron 模式：AudioContext 与 <audio> 一起重定向到所选设备（Chromium 110+），
-      // 高级音频功能激活时不再锁定默认设备。
-      appSetting['player.mediaDeviceId'] = mediaDeviceId.value
+      // Electron output binding and persistence were completed by selectMediaDevice.
     }
-
-    watch(() => appSetting['player.mediaDeviceId'], val => {
-      mediaDeviceId.value = val
-    })
 
     const handleUpdatePowerSaveBlocker = (enabled) => {
       if (enabled) {
@@ -447,7 +379,7 @@ export default {
     return {
       appSetting,
       updateSetting,
-      mediaDevices: currentMediaDevices,
+      mediaDevices,
       mediaDeviceId,
       handleMediaDeviceIdChnage,
       handleUpdatePowerSaveBlocker,
@@ -630,17 +562,8 @@ export default {
     grid-template-columns: repeat(2, minmax(135px, 1fr));
   }
 }
-.mpvDeviceSelect {
-  width: 100%;
-  max-width: 300px;
-  height: 28px;
-  padding: 0 8px;
-  font-size: 12px;
-  color: var(--color-button-font);
-  background-color: var(--color-button-background);
-  border: none;
-  border-radius: @form-radius;
-  outline: none;
-  cursor: pointer;
+.deviceSelect {
+  --selection-width: 300px;
+  max-width: 100%;
 }
 </style>

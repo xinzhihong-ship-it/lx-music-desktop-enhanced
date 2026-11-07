@@ -12,7 +12,7 @@ export const createLyricQueryStatement = () => {
   return db.prepare<[string]>(`
     SELECT "type", "text", "source"
     FROM "main"."lyric"
-    WHERE "id"=?
+    WHERE "id"=? AND "source" IN ('${RAW_LYRIC}', '${EDITED_LYRIC}')
     `)
 }
 

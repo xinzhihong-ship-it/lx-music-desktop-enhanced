@@ -3,8 +3,9 @@ const path = require('path')
 const { execFile } = require('child_process')
 const { promisify } = require('util')
 const { Arch } = require('electron-builder')
-const { validateMacMpvRuntimes } = require('./mpv-runtime')
+const { getRequiredMacMpvPaths, validateMacMpvRuntimes } = require('./mpv-runtime')
 const { getVst3HostPlan, validateVst3HostBinary } = require('./build-vst3-host')
+const { removeAppleDoubleFiles, markAgentApp } = require('./mac-bundle-metadata')
 
 const execFileAsync = promisify(execFile)
 
@@ -37,6 +38,8 @@ const signMpvNativeFiles = async(appPath) => {
 }
 
 const signMacAppForLocalUse = async(appPath, vst3HostPath = null) => {
+  const removed = await removeAppleDoubleFiles(appPath)
+  if (removed) console.log(`[mac] removed ${removed} AppleDouble sidecars before signing`)
   const entitlements = path.resolve(__dirname, '../resources/entitlements.mac.plist')
   const audioTeePath = path.join(appPath, 'Contents/Resources/bin/music-recognition/audiotee')
   const signBinary = async(filePath) => {
@@ -62,6 +65,7 @@ const signMacAppForLocalUse = async(appPath, vst3HostPath = null) => {
   if (vst3HostPath) {
     await execFileAsync('codesign', ['--verify', '--strict', vst3HostPath])
   }
+  await execFileAsync('codesign', ['--verify', '--deep', '--strict', appPath])
 }
 
 // https://github.com/electron-userland/electron-builder/issues/4630
@@ -107,6 +111,11 @@ module.exports = async(context) => {
     },
   } = context.packager.appInfo
   validateMacMpvRuntimes(path.join(resPath, 'bin'), targetArch)
+  // mpv.app 标记为后台辅助程序，切歌时程序坞不再闪（必须在外层签名之前）
+  for (const relativePath of getRequiredMacMpvPaths(targetArch)) {
+    const appBundle = path.join(resPath, 'bin', relativePath.split(path.sep)[0])
+    if (await markAgentApp(appBundle, (cmd, args) => execFileAsync(cmd, args))) console.log(`[mac] marked ${appBundle} as LSUIElement`)
+  }
 
   // 创建APP语言包文件
   await Promise.all(

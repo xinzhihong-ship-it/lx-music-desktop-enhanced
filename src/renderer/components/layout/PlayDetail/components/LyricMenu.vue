@@ -10,6 +10,11 @@
     </div> -->
       <div :class="$style.group">
         <div :class="$style.subGroup">
+          <button :class="[$style.btn, $style.wideBtn]" :disabled="!lyricInfo.musicInfo" @click="handleSearch">{{ $t('lyric_menu__search') }}</button>
+        </div>
+      </div>
+      <div :class="$style.group">
+        <div :class="$style.subGroup">
           <div :class="$style.title">{{ $t('lyric_menu__lrc_size', { size: appSetting['playDetail.style.fontSize'] }) }}</div>
           <button :class="[$style.btn, $style.titleBtn]" :disabled="appSetting['playDetail.style.fontSize'] == 100" ignore-tip :aria-label="$t('lyric_menu__size_reset')" @click="fontSizeReset">{{ $t('lyric_menu__size_reset') }}</button>
         </div>
@@ -47,28 +52,8 @@
 <script>
 import { computed, ref, watch } from '@common/utils/vueTools'
 import useMenuLocation from '@renderer/utils/compositions/useMenuLocation'
-import { debounce } from '@common/utils/common'
-import { saveLyricEdited, removeLyricEdited } from '@renderer/utils/ipc'
 import { appSetting, setPlayDetailLyricFont, setPlayDetailLyricAlign } from '@renderer/store/setting'
-
-const offsetTagRxp = /(?:^|\n)\s*\[offset:\s*(\S+(?:\d+)*)\s*\]/
-const offsetTagAllRxp = /(^|\n)\s*\[offset:\s*(\S+(?:\d+)*)\s*\]/g
-
-const saveLyric = debounce((musicInfo, lyricInfo) => {
-  void saveLyricEdited(musicInfo, lyricInfo)
-})
-const removeLyric = debounce(musicInfo => {
-  void removeLyricEdited(musicInfo)
-})
-
-const getOffset = lrc => {
-  let offset = lrc.match(offsetTagRxp)
-  if (offset) {
-    offset = parseInt(offset[1])
-    if (Number.isNaN(offset)) offset = 0
-  } else offset = 0
-  return offset
-}
+import { getLyricOffset, setCurrentLyricOffset } from '@renderer/core/lyrics/offsetControl'
 
 export default {
   name: 'LyricMenu',
@@ -83,7 +68,7 @@ export default {
       required: true,
     },
   },
-  emits: ['updateLyric', 'update:modelValue'],
+  emits: ['update:modelValue', 'search'],
   setup(props, { emit }) {
     // const appSetting = useRefGetter('appSetting')
     // const playDetailSetting = useRefGetter('playDetailSetting')
@@ -118,43 +103,9 @@ export default {
       setPlayDetailLyricFont(100)
     }
 
+    // 偏移的改写与保存与桌面歌词工具栏共用（core/lyrics/offsetControl）
     const updateLyric = offset => {
-      let lyric = props.lyricInfo.lyric
-      let tlyric = props.lyricInfo.tlyric
-      let rlyric = props.lyricInfo.rlyric
-      let lxlyric = props.lyricInfo.lxlyric
-      if (offsetTagRxp.test(lyric)) {
-        lyric = lyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-        tlyric &&= tlyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-        lxlyric &&= lxlyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-        rlyric &&= rlyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-      } else {
-        lyric &&= `[offset:${offset}]\n` + lyric
-        tlyric &&= `[offset:${offset}]\n` + tlyric
-        lxlyric &&= `[offset:${offset}]\n` + lxlyric
-        rlyric &&= `[offset:${offset}]\n` + rlyric
-      }
-
-      const musicInfo = 'progress' in props.lyricInfo.musicInfo ? props.lyricInfo.musicInfo.metadata.musicInfo : props.lyricInfo.musicInfo
-
-      if (offset == originOffset.value) {
-        removeLyric(musicInfo)
-      } else {
-        saveLyric(musicInfo, {
-          lyric,
-          tlyric,
-          rlyric,
-          lxlyric,
-        })
-      }
-
-      emit('updateLyric', {
-        lyric,
-        tlyric,
-        rlyric,
-        lxlyric,
-        offset,
-      })
+      void setCurrentLyricOffset(offset)
     }
     const setOffset = step => {
       offset.value += step
@@ -167,9 +118,14 @@ export default {
     }
 
     const parseLrcOffset = () => {
-      offset.value = getOffset(props.lyricInfo.lyric)
-      originOffset.value = getOffset(props.lyricInfo.rawlyric)
+      offset.value = getLyricOffset(props.lyricInfo.lyric)
+      originOffset.value = getLyricOffset(props.lyricInfo.rawlyric)
       offsetDisabled.value = !props.lyricInfo.lyric
+    }
+
+    const handleSearch = () => {
+      onHide()
+      emit('search')
     }
 
 
@@ -201,6 +157,7 @@ export default {
       offsetReset,
       setFontAlign,
       offsetDisabled,
+      handleSearch,
     }
   },
 }
@@ -280,6 +237,10 @@ export default {
       background: none !important;
     }
   }
+}
+.wideBtn {
+  justify-content: flex-start;
+  color: var(--color-primary);
 }
 .titleBtn {
   flex: none;

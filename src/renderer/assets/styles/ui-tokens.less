@@ -1,0 +1,84 @@
+// EasyUI-inspired visual system, implemented for LX's existing Vue components.
+// Use LX theme colors throughout so imported themes and Windows 7 remain supported.
+:root {
+  --ui-sidebar-width: 184px;
+  --ui-surface: var(--color-main-background);
+  --ui-canvas: var(--color-content-background);
+  --ui-text: var(--color-font);
+  --ui-muted: var(--color-font-label);
+  --ui-border: var(--color-primary-alpha-900);
+  --ui-hover: var(--color-primary-alpha-900);
+  --ui-selected: var(--color-primary-alpha-900);
+  --ui-radius: 18px;
+  --ui-radius-small: 10px;
+  --ui-shadow: 0 12px 40px rgba(0, 0, 0, .1);
+  --ui-ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+#root {
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  button, input, select, textarea {
+    font-family: inherit;
+  }
+  button, [role='button'], [role='tab'], a, input, select, textarea {
+    -webkit-app-region: no-drag;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+  }
+  button:disabled, [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+  select {
+    min-height: 30px;
+    padding: 4px 10px;
+    border: 1px solid var(--ui-border);
+    border-radius: 8px;
+    color: var(--ui-text);
+    background: var(--ui-canvas);
+    max-width: 100%;
+  }
+  ::selection {
+    color: var(--ui-text);
+    background: var(--color-primary-alpha-700);
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 8px;
+    background: var(--color-200);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media (max-width: 980px) {
+  :root { --ui-sidebar-width: 64px; }
+}
+
+// Shared table rules keep row dimensions owned by the virtual-list component.
+#root {
+  .thead { padding-right: 6px; background: var(--ui-canvas); border-bottom: 1px solid var(--ui-border); }
+  table th { color: var(--ui-muted); font-size: 11px; font-weight: 400; padding: 0 10px; }
+  .list .list-item { border-bottom: 1px solid var(--ui-border); border-radius: 6px; }
+  .list .list-item-cell { padding-left: 10px; padding-right: 10px; }
+  .list .list-item:hover, .list .list-item.selected { background: var(--ui-hover); }
+  .list .list-item.active { background: var(--ui-selected); }
+  .badge { border-radius: 4px; padding: 1px 4px; line-height: 1.3; font-size: 9px; }
+  [data-view='SongList'] { background: var(--ui-surface); }
+}
+
+// Honor both the OS preference and LX's own animation setting.
+@media (prefers-reduced-motion: reduce) {
+  #root *, #root *::before, #root *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

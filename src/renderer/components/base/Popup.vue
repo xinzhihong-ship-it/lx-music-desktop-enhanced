@@ -121,8 +121,9 @@ onBeforeUnmount(() => {
   // left: 8px;
   // margin-top: 12px;
   max-width: 98%;
-  border-radius: 4px;
-  background-color: var(--color-content-background);
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  background-color: var(--ui-surface);
   opacity: 0;
   transform: scale(.8);
   transform-origin: 50% 0 0;
@@ -131,7 +132,7 @@ onBeforeUnmount(() => {
   max-height: 250px;
   z-index: 10;
   pointer-events: none;
-  filter: drop-shadow(0px 0px 3px rgba(0, 0, 0, .12));
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .1));
   display: flex;
 
   &:before {

@@ -107,85 +107,15 @@ export default {
 
 
 <style lang="less" module>
-@import '@renderer/assets/styles/layout.less';
-
-.pagination {
-  display: inline-block;
-  background-color: var(--color-button-background);
-  // border-top-left-radius: 8px;
-  border-radius: @radius-border;
-  ul {
-    display: flex;
-    flex-flow: row nowrap;
-    // border: .0625rem solid @theme_color2;
-    // border-radius: .3125rem;
-    li {
-      // margin-right: @padding;
-      // color: var(--color-button-font);
-      // border: .0625rem solid @theme_line;
-      // border-radius: .3125rem;
-      transition: 0.4s ease;
-      transition-property: all;
-      line-height: 1.2;
-      display: flex;
-      // border-right: none;
-      svg {
-        height: 1em;
-      }
-      span,
-      button {
-        display: block;
-        padding: 7px 12px;
-        line-height: 1.2;
-        color: var(--color-button-font);
-        font-size: 13px;
-      }
-      &.active {
-        span {
-          background-color: var(--color-button-background-selected);
-        }
-      }
-      button {
-        background-color: transparent;
-        border: none;
-        cursor: pointer;
-        outline: none;
-        transition: background-color .3s ease;
-        &:hover {
-          background-color: var(--color-button-background-hover);
-        }
-        &:active {
-          background-color: var(--color-button-background-active);
-        }
-      }
-      &.disabled {
-        span {
-          opacity: .3;
-        }
-      }
-      &:first-child {
-        span, button {
-          border-top-left-radius: @radius-border;
-          border-bottom-left-radius: @radius-border;
-        }
-        // border-right: .0625rem solid @theme_line;
-      }
-      &:last-child {
-        span, button {
-          border-top-right-radius: @radius-border;
-          border-bottom-right-radius: @radius-border;
-        }
-        // border-right: .0625rem solid @theme_line;
-      }
-      &:first-child, &:last-child, &.first, &.last {
-        span,
-        button {
-          line-height: 0;
-        }
-      }
+.pagination { display: inline-flex; padding: 4px; border: 1px solid var(--ui-border); border-radius: 24px; background: var(--ui-canvas);
+  ul { display: flex; align-items: center; gap: 3px;
+    li { display: flex; align-items: center; line-height: 1.3;
+      svg { width: 10px; height: 10px; }
+      span, button { display: flex; align-items: center; justify-content: center; min-width: 29px; height: 29px; box-sizing: border-box; padding: 5px 9px; font-size: 11px; border-radius: 50%; color: var(--ui-muted); }
+      &.active span { color: var(--color-primary-font); background: var(--ui-surface); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+      button { background: transparent; border: 0; cursor: pointer; &:hover { color: var(--ui-text); background: var(--ui-hover); } }
+      &.disabled span { opacity: .3; }
     }
   }
 }
-
-
 </style>

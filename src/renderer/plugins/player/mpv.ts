@@ -107,8 +107,8 @@ export const setStop = async() => {
   await invoke(WIN_MAIN_RENDERER_EVENT_NAME.mpv_stop)
 }
 
-export const listAudioDevices = async(): Promise<Array<{ id: string, name: string }>> => {
-  return invoke<Array<{ id: string, name: string }>>(WIN_MAIN_RENDERER_EVENT_NAME.mpv_listAudioDevices)
+export const listAudioDevices = async(options: { forceRefresh?: boolean } = {}): Promise<Array<{ id: string, name: string }>> => {
+  return invoke<Array<{ id: string, name: string }>>(WIN_MAIN_RENDERER_EVENT_NAME.mpv_listAudioDevices, { forceRefresh: options.forceRefresh === true })
 }
 
 export const destroy = async() => {

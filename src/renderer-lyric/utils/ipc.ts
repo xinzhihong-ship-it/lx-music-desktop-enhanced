@@ -42,6 +42,29 @@ export const onMainWindowInited = (listener: LX.IpcRendererEventListener): Remov
   }
 }
 
+/** 桌面歌词锁定时：鼠标在“解锁”按钮上时接收鼠标事件，离开后恢复穿透 */
+export const setLyricInteractive = (interactive: boolean) => {
+  rendererSend<boolean>(WIN_LYRIC_RENDERER_EVENT_NAME.lyric_set_interactive, interactive)
+}
+
+/** 歌词岛：鼠标落在胶囊上时接收鼠标事件，离开后恢复穿透 */
+export const setIslandInteractive = (interactive: boolean) => {
+  rendererSend<boolean>(WIN_LYRIC_RENDERER_EVENT_NAME.island_set_interactive, interactive)
+}
+
+/** 歌词岛拖动 */
+export const sendIslandDrag = (drag: LX.DesktopLyric.IslandDrag) => {
+  rendererSend<LX.DesktopLyric.IslandDrag>(WIN_LYRIC_RENDERER_EVENT_NAME.island_drag, drag)
+}
+
+/** 歌词岛所在屏幕的信息（换屏、改分辨率时更新） */
+export const onIslandDisplayInfo = (listener: LX.IpcRendererEventListenerParams<LX.DesktopLyric.IslandDisplayInfo>): RemoveListener => {
+  rendererOn<LX.DesktopLyric.IslandDisplayInfo>(WIN_LYRIC_RENDERER_EVENT_NAME.island_display_info, listener)
+  return () => {
+    rendererOff(WIN_LYRIC_RENDERER_EVENT_NAME.island_display_info, listener)
+  }
+}
+
 export const sendMouseEnterLeave = (isEnter: boolean) => {
   rendererSend(WIN_LYRIC_RENDERER_EVENT_NAME.mouse_enter_leave, isEnter)
 }

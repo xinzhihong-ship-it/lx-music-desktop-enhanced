@@ -182,4 +182,8 @@ export default {
 }
 
 
+.content { padding: 0; }
+.timeContent { font-size: 9px; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
+.progress { border-radius: 3px; opacity: .6; }
+
 </style>

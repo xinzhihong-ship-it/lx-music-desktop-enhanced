@@ -48,7 +48,7 @@ test('chooses a safe playlist sync direction', () => {
 
 const platformKeys = [
   'player.playEngine', 'player.mpv.path', 'player.mpv.extraArgs', 'player.mpv.aoFallbackDevices', 'player.mediaDeviceId',
-  'player.vst3.directories', 'player.vst3.chain', 'download.savePath',
+  'player.vst3.directories', 'player.vst3.chain', 'download.savePath', 'island.x', 'island.y',
 ]
 
 test('platform-specific settings are never uploaded to WebDAV', () => {

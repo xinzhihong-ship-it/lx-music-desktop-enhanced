@@ -8,6 +8,7 @@ import { migrateDataJson, migrateHotKey, migrateUserApi, parseDataFile } from '.
 import { nativeTheme, powerSaveBlocker } from 'electron'
 import { joinPath } from '@common/utils/nodejs'
 import themes from '@common/theme/index.json'
+import { sanitizeAudioDeviceSettings } from '@common/utils/audioDeviceSelection'
 
 export const parseEnvParams = (argv = process.argv): { cmdParams: LX.CmdParams, deeplink: string | null } => {
   const cmdParams: LX.CmdParams = {}
@@ -66,6 +67,7 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
   const updatedSetting: Partial<LX.AppSetting> = {}
 
   if (targetSetting) {
+    targetSetting = sanitizeAudioDeviceSettings(targetSetting, originSetting)
     const originSettingKeys = Object.keys(originSettingCopy)
     const targetSettingKeys = Object.keys(targetSetting)
 
@@ -253,7 +255,7 @@ export const getTheme = () => {
   // themeId = 'naruto'
   // themeId = 'pink'
   // themeId = 'black'
-  let theme = themes.find(theme => theme.id == themeId)
+  let theme: LX.Theme | undefined = themes.find(theme => theme.id == themeId)
   if (!theme) {
     userThemes = getStore(STORE_NAMES.THEME).get('themes') as LX.Theme[] | null ?? []
     theme = userThemes.find(theme => theme.id == themeId)

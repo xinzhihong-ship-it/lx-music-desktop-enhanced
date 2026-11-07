@@ -41,6 +41,17 @@ export default () => {
     return global.lx.worker.dbService.editedLyricCount()
   })
 
+  // 手动选定的歌词来源
+  mainHandle<string, LX.Music.LyricBinding | null>(WIN_MAIN_RENDERER_EVENT_NAME.get_lyric_binding, async({ params: id }) => {
+    return global.lx.worker.dbService.getLyricBinding(id)
+  })
+  mainHandle<LX.Music.LyricBindingSave>(WIN_MAIN_RENDERER_EVENT_NAME.save_lyric_binding, async({ params: { id, binding } }) => {
+    await global.lx.worker.dbService.saveLyricBinding(id, binding)
+  })
+  mainHandle<string>(WIN_MAIN_RENDERER_EVENT_NAME.remove_lyric_binding, async({ params: id }) => {
+    await global.lx.worker.dbService.removeLyricBinding(id)
+  })
+
 
   // =========================歌曲URL=========================
   mainHandle<string, string>(WIN_MAIN_RENDERER_EVENT_NAME.get_music_url, async({ params: id }) => {

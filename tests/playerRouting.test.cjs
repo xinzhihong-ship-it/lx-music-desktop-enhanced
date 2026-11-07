@@ -125,6 +125,12 @@ function loadPlayer() {
   const noopPlayer = new Proxy({}, { get: (_, name) => name === 'isEmpty' ? () => true : async() => {} })
   const modules = {
     '@renderer/store/setting': { appSetting },
+    '@renderer/utils/compositions/useAudioDevices': {
+      ensureAudioDeviceForPlayback: async() => {
+        if (state.failDeviceResolution) throw new Error('selected output is unavailable')
+        return true
+      },
+    },
     './mpv': noopPlayer,
     './mpvVideo': noopPlayer,
     './audirvana': noopPlayer,
@@ -165,6 +171,50 @@ function loadPlayer() {
   })
   return { player: module.exports, appSetting, state, runtime: modules['./vst3'].vst3Runtime }
 }
+
+test('consecutive songs do not reopen an unchanged output sink', async() => {
+  const { player, appSetting, state } = loadPlayer()
+  player.createAudio()
+  await player.setMediaDeviceId('device-a')
+  const original = state.audio[0]
+  const firstCount = original.sinkCalls.length
+  await player.setMediaDeviceId('device-a')
+  await player.setMediaDeviceId('device-a')
+  assert.equal(original.sinkCalls.length, firstCount)
+  appSetting['player.audioVisualization'] = true
+  await player.applyAudioRoutingNow()
+  const output = state.audio.find(item => item.srcObject)
+  assert.ok(output.sinkCalls.includes('device-a'))
+  const rebuiltCount = output.sinkCalls.length
+  await player.setMediaDeviceId('device-a')
+  assert.equal(output.sinkCalls.length, rebuiltCount)
+})
+
+test('an effects rebuild cannot bind an unverified imported device ID', async() => {
+  const { player, appSetting, state } = loadPlayer()
+  appSetting['player.mediaDeviceId'] = 'unverified-imported-id'
+  player.createAudio()
+  appSetting['player.audioVisualization'] = true
+  await player.applyAudioRoutingNow()
+  assert.ok(state.audio.every(item => !item.sinkCalls.includes('unverified-imported-id')))
+  await player.setMediaDeviceId('validated-output', () => true)
+  assert.ok(state.audio.some(item => item.sinkCalls.includes('validated-output')))
+  await player.setMediaDeviceId('rejected-stale-output', () => false)
+  assert.ok(state.audio.every(item => !item.sinkCalls.includes('rejected-stale-output')))
+})
+
+test('an unavailable output is rejected before a new media source is loaded', async() => {
+  const { player, state } = loadPlayer()
+  player.createAudio()
+  state.failDeviceResolution = true
+  await assert.rejects(player.setResource('track://unavailable-output'), /selected output is unavailable/)
+  assert.equal(state.audio[0].src, '')
+  state.failDeviceResolution = false
+  await player.setResource('track://available-output')
+  assert.equal(state.audio[0].src, 'track://available-output')
+  for (const request of state.metadataRequests) request.resolve(null)
+  await new Promise(resolve => setImmediate(resolve))
+})
 
 test('a VST routing failure does not poison subsequent resource loading', async() => {
   const { player, appSetting, state } = loadPlayer()
@@ -286,6 +336,7 @@ test('a replacement play failure rolls back to the old audio element', async() =
 test('visualization switches to outputPipe and disabling it switches back to audio', async() => {
   const { player, appSetting, state } = loadPlayer()
   player.createAudio()
+  await player.setMediaDeviceId('device-a')
   const oldAudio = state.audio[0]
   oldAudio.src = 'track://current'
   await oldAudio.play()

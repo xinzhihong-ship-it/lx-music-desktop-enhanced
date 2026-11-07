@@ -75,7 +75,8 @@ const winEvent = () => {
   browserWindow.once('ready-to-show', () => {
     showWindow()
     if (global.lx.appSetting['desktopLyric.isLock']) {
-      browserWindow!.setIgnoreMouseEvents(true, { forward: !isLinux && global.lx.appSetting['desktopLyric.isHoverHide'] })
+      // 锁定时仍把鼠标移动转发给页面：悬停时显示“解锁”按钮（Linux 不支持转发）
+      browserWindow!.setIgnoreMouseEvents(true, { forward: !isLinux })
     }
     // linux下每次重开时貌似要重新设置置顶
     // if (isLinux && global.lx.appSetting['desktopLyric.isAlwaysOnTop']) {

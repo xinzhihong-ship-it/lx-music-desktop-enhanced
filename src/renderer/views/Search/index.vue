@@ -129,22 +129,7 @@ export default {
 </script>
 
 <style lang="less" module>
-.container {
-  display: flex;
-  flex-flow: column nowrap;
-}
-
-.header {
-  // padding: 5px 0;
-  flex: none;
-  display: flex;
-  flex-flow: row nowrap;
-  justify-content: space-between;
-}
-
-.main {
-  position: relative;
-  flex: auto;
-  // min-height: 0;
-}
+.container { display: flex; flex-direction: column; min-height: 0; }
+.header { flex: none; display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--ui-border); }
+.main { position: relative; flex: auto; min-height: 0; }
 </style>

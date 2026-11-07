@@ -651,4 +651,12 @@ onMounted(() => {
   .row { grid-template-columns: 46px minmax(0, 1fr) 140px; }
   .row time { display: none; }
 }
+.header { height: 64px; border-bottom-color: var(--ui-border); h1 { font-size: 20px; } }
+.recognizer { min-height: 220px; background: var(--ui-canvas); border-bottom-color: var(--ui-border); gap: 8px; }
+.wave { width: 64px; height: 64px; border: 1px solid var(--ui-border); background: var(--ui-surface); border-radius: 50%; margin: 8px 0; gap: 4px; i { width: 3px; border-radius: 3px; } }
+.sourceSwitch { border-radius: 20px; padding: 3px; background: var(--ui-surface); border: 1px solid var(--ui-border); }
+.sourceBtn { border-radius: 18px; font-size: 11px; }
+.sourceBtnActive { background: var(--ui-selected); }
+.row img, .coverFallback { border-radius: 10px; }
+
 </style>

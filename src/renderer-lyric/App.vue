@@ -1,13 +1,13 @@
 <template>
-  <div id="container" :class="[{ lock: setting['desktopLyric.isLock'] }, { hide: isHide || isHoverHide }]">
+  <div id="container" :class="[{ lock: setting['desktopLyric.isLock'] }, { hide: isHide || isHoverHide }, { vertical: setting['desktopLyric.direction'] == 'vertical' }]">
     <div id="main">
-      <transition enter-active-class="animated-fast fadeIn" leave-active-class="animated-fast fadeOut">
-        <div v-show="!setting['desktopLyric.isLock']" class="control-bar">
-          <layout-control-bar />
-        </div>
-      </transition>
-      <layout-lyric-vertical v-if="setting['desktopLyric.direction'] == 'vertical'" />
-      <layout-lyric-horizontal v-else />
+      <div class="lyric-area">
+        <layout-karaoke-lyric />
+      </div>
+      <div v-if="!setting['desktopLyric.isLock']" class="control-bar">
+        <layout-control-bar />
+      </div>
+      <UnlockButton v-else />
       <transition enter-active-class="animated-fast fadeIn" leave-active-class="animated-fast fadeOut">
         <common-audio-visualizer v-if="setting['desktopLyric.audioVisualization']" />
       </transition>
@@ -28,6 +28,7 @@
 
 <script setup>
 import useWindowSize from '@lyric/useApp/useWindowSize'
+import UnlockButton from '@lyric/components/layout/UnlockButton.vue'
 import useHoverHide from '@lyric/useApp/useHoverHide'
 import { onMounted } from '@common/utils/vueTools'
 import { setting } from '@lyric/store/state'
@@ -62,14 +63,6 @@ body {
   user-select: none;
   height: 100vh;
   box-sizing: border-box;
-  color: #fff;
-  opacity: .8;
-}
-
-body {
-  user-select: none;
-  height: 100vh;
-  box-sizing: border-box;
 }
 #root {
   height: 100%;
@@ -80,11 +73,6 @@ body {
   height: 100%;
   transition: opacity .3s ease;
   opacity: 1;
-  &.lock {
-    #main {
-      background-color: transparent;
-    }
-  }
   &.hide {
     opacity: .05;
 
@@ -168,33 +156,67 @@ body {
   // background-color: rgba(0, 0, 0, 1);
 }
 
+// 平时完全透明，只显示歌词；鼠标移入（未锁定）时出现一层深色圆角底板和顶部的工具栏
 #main {
   position: relative;
   box-sizing: border-box;
   height: 100%;
-  transition: background-color @transition-theme;
   min-height: 0;
-  border-radius: @radius-border;
+  border-radius: 16px;
   overflow: hidden;
-  background-color: rgba(0, 0, 0, .2);
+  background-color: transparent;
+  transition: background-color .25s ease, box-shadow .25s ease;
 
   &:hover {
+    background-color: rgba(16, 16, 18, .42);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
     .control-bar {
       opacity: 1;
+      transform: translate(-50%, 0);
+      pointer-events: auto;
     }
   }
+}
+#container.lock #main:hover {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+// 工具栏出现时歌词整体下移，不被工具栏挡住
+.lyric-area {
+  position: absolute;
+  inset: 0;
+  transition: top .2s ease, right .2s ease;
+}
+// 工具栏出现时歌词让出工具栏占的空间（横排在上方，竖排在右侧；大小由工具栏按缩放后的尺寸给出）
+#container:not(.lock) #main:hover .lyric-area {
+  top: var(--lyric-bar-size, 46px);
+}
+#container.vertical:not(.lock) #main:hover .lyric-area {
+  top: 0;
+  right: var(--lyric-bar-size, 46px);
 }
 
 .control-bar {
   position: absolute;
-  border-top-left-radius: @radius-border;
-  border-top-right-radius: @radius-border;
-  overflow: hidden;
-  top: 0;
-  left: 0;
-  width: 100%;
-  opacity: 0;
-  transition: opacity @transition-theme;
+  top: 8px;
+  left: 50%;
   z-index: 1;
+  opacity: 0;
+  transform: translate(-50%, -6px);
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+}
+// 竖排：工具栏在右侧中间，竖着排
+#container.vertical {
+  .control-bar {
+    top: 50%;
+    left: auto;
+    right: 8px;
+    transform: translate(6px, -50%);
+  }
+  #main:hover .control-bar {
+    transform: translate(0, -50%);
+  }
 }
 </style>

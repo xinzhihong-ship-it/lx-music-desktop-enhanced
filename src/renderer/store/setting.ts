@@ -1,6 +1,7 @@
 import { reactive, computed } from '@common/utils/vueTools'
 import defaultSetting from '@common/defaultSetting'
 import { updateSetting as saveSetting } from '@renderer/utils/ipc'
+import { getAudioDevicePreference, getAudioDevicePreferenceSetting, rememberAudioDevice, sanitizeAudioDeviceSettings } from '@common/utils/audioDeviceSelection'
 
 export const appSetting = window.lxData.appSetting = reactive<LX.AppSetting>({ ...defaultSetting })
 
@@ -15,15 +16,16 @@ export const initSetting = (newSetting: LX.AppSetting) => {
 }
 
 export const mergeSetting = (newSetting: Partial<LX.AppSetting>) => {
-  for (const [key, value] of Object.entries(newSetting)) {
+  for (const [key, value] of Object.entries(sanitizeAudioDeviceSettings(newSetting, appSetting))) {
     // @ts-expect-error
     appSetting[key] = value
   }
 }
 
 export const updateSetting = window.lxData.updateSetting = (setting: Partial<LX.AppSetting>) => {
-  mergeSetting(setting)
-  void saveSetting(setting)
+  const valid = sanitizeAudioDeviceSettings(setting, appSetting)
+  mergeSetting(valid)
+  void saveSetting(valid)
 }
 
 // 旧档位键收敛到新的口径：24bit 无损统一叫 hires，192k 并入 320k 档位选择。
@@ -49,8 +51,14 @@ export const saveAgreePact = (isAgreePact: boolean) => {
  * 保存音频输出id
  * @param id 媒体驱动id
  */
-export const saveMediaDeviceId = (id: string) => {
-  updateSetting({ 'player.mediaDeviceId': id })
+export const saveMediaDeviceId = (id: string, label = '') => {
+  const engine = appSetting['player.playEngine']
+  updateSetting({
+    'player.mediaDeviceId': id,
+    ...(engine === 'electron' || engine === 'mpv' ? getAudioDevicePreferenceSetting(
+      rememberAudioDevice(getAudioDevicePreference(appSetting), engine, id, label),
+    ) : {}),
+  })
 }
 
 /**

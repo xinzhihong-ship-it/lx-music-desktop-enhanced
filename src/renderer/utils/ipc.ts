@@ -876,6 +876,16 @@ export const getLyricEditedCount = async() => {
   return rendererInvoke<number>(WIN_MAIN_RENDERER_EVENT_NAME.get_lyric_edited_count)
 }
 
+export const getLyricBinding = async(id: string) => {
+  return rendererInvoke<string, LX.Music.LyricBinding | null>(WIN_MAIN_RENDERER_EVENT_NAME.get_lyric_binding, id)
+}
+export const saveLyricBinding = async(id: string, binding: LX.Music.LyricBinding) => {
+  await rendererInvoke<LX.Music.LyricBindingSave>(WIN_MAIN_RENDERER_EVENT_NAME.save_lyric_binding, { id, binding })
+}
+export const removeLyricBinding = async(id: string) => {
+  await rendererInvoke<string>(WIN_MAIN_RENDERER_EVENT_NAME.remove_lyric_binding, id)
+}
+
 
 export const saveTheme = async(theme: LX.Theme) => {
   return rendererInvoke<LX.Theme>(WIN_MAIN_RENDERER_EVENT_NAME.save_theme, theme)
@@ -1085,8 +1095,9 @@ export const removeSyncServerDevice = (clientId: string) => {
  * @param listener
  * @returns
  */
-export const onNewDesktopLyricProcess = (listener: LX.IpcRendererEventListener): RemoveListener => {
-  rendererOn(WIN_MAIN_RENDERER_EVENT_NAME.process_new_desktop_lyric_client, listener)
+/** 桌面歌词 / 歌词岛连接主窗口；params 为客户端类型（旧版本不带，视为桌面歌词） */
+export const onNewDesktopLyricProcess = (listener: LX.IpcRendererEventListenerParams<LX.DesktopLyric.ClientKind | null>): RemoveListener => {
+  rendererOn<LX.DesktopLyric.ClientKind | null>(WIN_MAIN_RENDERER_EVENT_NAME.process_new_desktop_lyric_client, listener)
   return () => {
     rendererOff(WIN_MAIN_RENDERER_EVENT_NAME.process_new_desktop_lyric_client, listener)
   }

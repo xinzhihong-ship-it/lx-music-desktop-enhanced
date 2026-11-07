@@ -11,6 +11,9 @@ import * as accountSessions from '@main/modules/account/sessions'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { getBundledMacMpvAppNames } from '@common/utils/mpvCompatibility'
 import { isCoreAudioMappedDevice, resolveMpvAudioDevice } from '@common/utils/mpvAudioDevice'
+import { getAudioDeviceForEngine, getAudioDevicePreference } from '@common/utils/audioDeviceSelection'
+import { createAudioDeviceCache } from '@main/utils/audioDeviceCache'
+import { normalizeMpvAudioDevices, parseMpvAudioDevices } from '@common/utils/mpvDeviceList'
 import { trackMpvProcess } from './mpvOrphan'
 
 export type MpvPathSource =
@@ -23,6 +26,17 @@ export type MpvPathSource =
   | 'dev-bundled-x64-fallback'
   | 'system'
   | 'common-path'
+
+/**
+ * macOS：随包的 mpv.app 打包时已在 Info.plist 标记 LSUIElement（后台辅助程序，不进程序坞）。
+ * 启动参数里的激活策略与之保持一致（accessory），运行中不再切换应用类型——切换类型会让整个程序坞闪一下。
+ * 只对随包的 mpv（0.39）加：用户自己指定的旧版 mpv 可能不认识这个选项而直接退出。
+ */
+export const macActivationPolicyArgs = (source: MpvPathSource): string[] => {
+  if (process.platform != 'darwin') return []
+  if (source == 'custom' || source == 'system' || source == 'common-path') return []
+  return ['--macos-app-activation-policy=accessory']
+}
 
 export interface MpvPathInfo {
   path: string
@@ -67,8 +81,7 @@ const FIRST_RUN_DEVICE_TIMEOUT_MS = 60_000
 const DEVICE_LIST_TIMEOUT_MS = 10_000
 // 进程级预热标记：一旦 mpv 成功产出过输出，后续改用较短的超时。
 let mpvSpawnWarmedUp = false
-// 设备列表缓存，避免频繁 spawn；预热完成后基本不再触发冷启动。
-let cachedAudioDevices: Array<{ id: string, name: string }> | null = null
+const audioDeviceCache = createAudioDeviceCache<{ id: string, name: string }>()
 
 const sanitizeUrl = (url: string) => {
   try {
@@ -330,7 +343,7 @@ export class MpvController {
     this.isDestroyed = false
     this.startError = null
     const mpvPath = resolveMpvPath()
-    const args = this.buildArgs()
+    const args = [...this.buildArgs(), ...macActivationPolicyArgs(mpvPath.source)]
     log.info(
       `MpvController starting mpv instance=${this.instanceId} source=${mpvPath.source} path=${mpvPath.path}`,
     )
@@ -460,7 +473,7 @@ export class MpvController {
     }
 
     // 输出设备由 player.mediaDeviceId 单独控制，不污染 player.mpv.extraArgs
-    const mediaDeviceId = global.lx.appSetting['player.mediaDeviceId']
+    const mediaDeviceId = getAudioDeviceForEngine(global.lx.appSetting['player.mediaDeviceId'], getAudioDevicePreference(global.lx.appSetting), 'mpv')
     if (
       mediaDeviceId &&
       mediaDeviceId !== 'default' &&
@@ -697,7 +710,7 @@ export class MpvController {
     }
   }
 
-  private async command<T = unknown>(command: unknown[]): Promise<T> {
+  private async command<T = unknown>(command: unknown[], timeoutMs = 5000): Promise<T> {
     if (!this.socket) { return Promise.reject(new Error('mpv IPC is not connected')) }
     const request_id = ++this.requestId
     const payload = JSON.stringify({ command, request_id }) + '\n'
@@ -705,7 +718,7 @@ export class MpvController {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(request_id)
         reject(new Error('mpv IPC request timeout'))
-      }, 5000)
+      }, timeoutMs)
       this.pendingRequests.set(request_id, {
         resolve: (data) => {
           resolve(data as T)
@@ -997,12 +1010,38 @@ export class MpvController {
     })
   }
 
+  /**
+   * 重启时新实例继承旧实例的音量与静音（启动后由 start() 写入 mpv）。
+   * 否则新实例用 mpv 默认的 100% 音量，切换输出设备后音量会突然变成最大、与音量条不一致。
+   */
+  inheritAudioState(from: MpvController): void {
+    this.cachedVolume = from.cachedVolume
+    this.cachedMute = from.cachedMute
+  }
+
   async setVolume(volume: number): Promise<void> {
     this.cachedVolume = volume
     // 静音期间只记住音量，不写 mpv（与 renderer 侧的约定一致），避免静音被意外解除
     if (this.cachedMute) return
     if (!this.socket) return
     await this.command(['set_property', 'volume', volume])
+  }
+
+  /**
+   * 无感重启交接期间静音旧实例，避免新旧实例同时出声。只调软件音量，不改 cachedMute，
+   * 也不使用 AO 级静音（可能作用于新实例共用的同一输出设备）。
+   */
+  async silenceForHandover(): Promise<void> {
+    if (!this.socket) return
+    await this.command(['set_property', 'volume', 0]).catch(() => {})
+  }
+
+  /**
+   * 交接失败、回退到本实例时撤销 silenceForHandover：按缓存的音量与静音状态重新写入，
+   * 否则旧实例会一直以音量 0 播放（有进度、没声音），直到下次调整音量或重启。
+   */
+  async restoreAfterHandover(): Promise<void> {
+    await this.setMute(this.cachedMute)
   }
 
   /**
@@ -1015,15 +1054,6 @@ export class MpvController {
    * （若把软件音量写成 0，取消静音又会因为队列而慢 2 秒 —— 这一点是实测踩过的坑）。
    * 驱动不支持（写失败）或不是 avfoundation 时，退回原来的软件音量方案。
    */
-  /**
-   * 无感重启交接期间静音旧实例，避免新旧实例同时出声。只调软件音量，不改 cachedMute，
-   * 也不使用 AO 级静音（可能作用于新实例共用的同一输出设备）。
-   */
-  async silenceForHandover(): Promise<void> {
-    if (!this.socket) return
-    await this.command(['set_property', 'volume', 0]).catch(() => {})
-  }
-
   async setMute(isMute: boolean): Promise<void> {
     this.cachedMute = isMute
     if (!this.socket) return
@@ -1085,7 +1115,10 @@ export class MpvController {
           this.cachedVolume ?? 100,
         ]).catch(() => {})
       }
-    } else if (this.aoMuteHintActive) {
+    } else {
+      // 没有静音：不管之前记没记录，驱动音量都恢复到 100。
+      // 用户实测：ao-volume 卡在 0（软件音量 100、mute=false），有进度没声音，切歌也不恢复，
+      // 只有换设备（新进程默认 100）才有声。不能只靠 aoMuteHintActive 判断要不要恢复。
       await this.applyAoLevelMute(false)
     }
   }
@@ -1311,15 +1344,29 @@ export class MpvController {
   /**
    * 运行 mpv --audio-device=help 获取可用设备列表
    */
-  static async listAudioDevices(options: { timeoutMs?: number } = {}): Promise<
-  Array<{ id: string, name: string }>
-  > {
-    const mpvPath = resolveMpvPath()
-    // 已成功枚举过则直接回缓存，避免重复 spawn 再次触发冷启动。
-    if (cachedAudioDevices != null && options.timeoutMs == null) {
-      log.info('[listAudioDevices] using cached devices')
-      return cachedAudioDevices
+  async getLiveAudioDevices(expectedPath: string): Promise<Array<{ id: string, name: string }> | null> {
+    // Query the already-running player without spawning a second MPV per song.
+    // Only use it when its binary still matches the configured runtime.
+    if (!this.socket || !this.process || this.process.killed || this.cachedPathInfo?.path !== expectedPath) return null
+    try {
+      const rows = await this.command<unknown>(['get_property', 'audio-device-list'], 750)
+      return Array.isArray(rows) ? normalizeMpvAudioDevices(rows, isMac) : null
+    } catch (error) {
+      log.warn('[listAudioDevices] live query failed; falling back to probe', error)
+      return null
     }
+  }
+
+  static async listAudioDevices(options: { timeoutMs?: number, forceRefresh?: boolean } = {}): Promise<Array<{ id: string, name: string }>> {
+    const mpvPath = resolveMpvPath()
+    const live = await getMpvController().getLiveAudioDevices(mpvPath.path)
+    if (live) return live
+    const stat = (() => { try { return fs.statSync(mpvPath.path) } catch { return null } })()
+    const key = `${mpvPath.path}:${stat?.mtimeMs ?? ''}:${stat?.size ?? ''}`
+    return audioDeviceCache.get(key, options.forceRefresh === true, async() => MpvController.probeAudioDevices(mpvPath, options), devices => devices.length > 1)
+  }
+
+  private static async probeAudioDevices(mpvPath: MpvPathInfo, options: { timeoutMs?: number }): Promise<Array<{ id: string, name: string }>> {
     log.info(
       `[listAudioDevices] mpv path: ${mpvPath.path} source: ${mpvPath.source}`,
     )
@@ -1340,6 +1387,7 @@ export class MpvController {
           '--no-config',
           '--no-video',
           '--force-window=no',
+          ...macActivationPolicyArgs(mpvPath.source),
           '--audio-device=help',
         ],
         {
@@ -1359,9 +1407,6 @@ export class MpvController {
         if (devices.length > 1 || output.length > 0) {
           mpvSpawnWarmedUp = true
         }
-        // 只有拿到真实设备（多于仅默认项）才写缓存，失败结果不缓存，
-        // 让下次调用仍能用宽松超时重试。
-        if (devices.length > 1) cachedAudioDevices = devices
         resolve(devices)
       }
       proc.stdout?.on('data', (data) => {
@@ -1375,31 +1420,7 @@ export class MpvController {
         log.info(
           `[listAudioDevices] mpv exited code=${code ?? 'null'} output length=${output.length}`,
         )
-        const devices: Array<{ id: string, name: string }> = [
-          { id: 'auto', name: '默认设备' },
-        ]
-        // macOS 上 mpv 会同时列出 coreaudio 与 avfoundation 两套驱动，
-        // 造成同一物理设备重复出现；按名称去重，并优先保留 avfoundation（mpv 默认驱动）
-        const deviceMap = new Map<string, string>()
-        for (const line of output.split('\n')) {
-          const match = line.match(/^\s*'([^']+)'\s*\(([^)]+)\)/)
-          if (!match || match[1] === 'auto') continue
-          const id = match[1]
-          const name = match[2]
-          const existingId = deviceMap.get(name)
-          if (!existingId) {
-            deviceMap.set(name, id)
-          } else if (
-            isMac &&
-            id.startsWith('avfoundation/') &&
-            !existingId.startsWith('avfoundation/')
-          ) {
-            deviceMap.set(name, id)
-          }
-        }
-        for (const [name, id] of deviceMap) {
-          devices.push({ id, name })
-        }
+        const devices = parseMpvAudioDevices(output, isMac)
         log.info(
           `[listAudioDevices] parsed devices: ${JSON.stringify(devices)}`,
         )
@@ -1485,6 +1506,7 @@ const doRestartMpvController = async(
 ): Promise<void> => {
   const oldController = activeMpvController
   const newController = new MpvController()
+  newController.inheritAudioState(oldController)
   // renderer 端的 currentUrl 可能因 HMR 等原因丢失，优先使用 main process 记录的 URL
   let url =
     state.url && state.url.length > 0 ? state.url : oldController.loadedUrl
@@ -1501,6 +1523,8 @@ const doRestartMpvController = async(
 
   // 独占设备 / bit-perfect：旧进程不退出就不会释放设备，必须先彻底终止再启动新进程
   const stopFirst = requiresStopBeforeRestart(global.lx.appSetting)
+  // 旧实例是否已为交接静音：交接失败回退时必须恢复它的音量
+  let oldSilenced = false
   if (stopFirst) {
     log.info(`[restartMpvController] exclusive / bit-perfect output: stopping old controller ${oldController.instanceId} first`)
     await oldController.destroy({ waitForExit: true })
@@ -1530,7 +1554,10 @@ const doRestartMpvController = async(
       )
       if (state.playing) {
         // 无感切换：新实例开始出声前静音旧实例，避免短暂的双重出声
-        if (!stopFirst) await oldController.silenceForHandover()
+        if (!stopFirst) {
+          oldSilenced = true
+          await oldController.silenceForHandover()
+        }
         await newController.play()
         log.info(
           `[restartMpvController] new controller ${newController.instanceId} playing`,
@@ -1569,6 +1596,11 @@ const doRestartMpvController = async(
       log.info(
         `[restartMpvController] rolled back to old controller ${oldController.instanceId}`,
       )
+      if (oldSilenced) {
+        await oldController.restoreAfterHandover().catch((restoreErr: Error) => {
+          log.warn('[restartMpvController] restore old controller volume failed:', restoreErr)
+        })
+      }
     }
     throw err
   }

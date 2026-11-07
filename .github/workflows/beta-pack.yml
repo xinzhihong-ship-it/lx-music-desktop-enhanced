@@ -35,6 +35,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libxcb1-dev libxcb-cursor-dev libxkbcommon-dev
       - name: Lint source
         run: npm run lint
+      - name: Audio device and routing regressions
+        run: npm run test:audio-devices
       - name: Build source
         run: npm run build
       - name: Run VST3 tests
@@ -53,7 +55,7 @@ jobs:
         os:
           - windows-latest
           - macos-15-intel
-          - macos-14
+          - macos-15
     runs-on: ${{ matrix.os }}
     needs: CheckCode
     steps:
@@ -266,7 +268,7 @@ jobs:
             runner: macos-15-intel
             package: pack:mac:dmg
           - arch: arm64
-            runner: macos-14
+            runner: macos-15
             package: pack:mac:dmg:arm64
     runs-on: ${{ matrix.runner }}
     needs: CheckCode
@@ -298,6 +300,13 @@ jobs:
 
       - name: Build Package dmg
         run: npm run ${{ matrix.package }}
+
+      - name: Verify mounted disk image signature
+        shell: bash
+        run: |
+          for image in build/*.dmg; do
+            bash build-config/verify-mac-dmg.sh "$image"
+          done
 
       - name: Upload Artifact dmg
         uses: actions/upload-artifact@v7

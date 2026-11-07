@@ -10,9 +10,11 @@ import {
   init,
   sendInfo,
   setPlaybackRate,
+  sendDesktopLyricInfo,
 } from '@renderer/core/lyric'
 import { appSetting } from '@renderer/store/setting'
-import { isPlay } from '@renderer/store/player/state'
+import { isPlay, musicInfo } from '@renderer/store/player/state'
+import { playProgress } from '@renderer/store/player/playProgress'
 
 const handleApplyPlaybackRate = debounce(setPlaybackRate, 300)
 
@@ -27,7 +29,6 @@ export default () => {
   watch(() => appSetting['player.isShowLyricTranslation'], setLyric)
   watch(() => appSetting['player.isShowLyricRoma'], setLyric)
   watch(() => appSetting['player.isSwapLyricTranslationAndRoma'], setLyric)
-  watch(() => appSetting['player.isPlayLxlrc'], setLyric)
 
   window.app_event.on('play', play)
   window.app_event.on('pause', pause)
@@ -47,6 +48,11 @@ export default () => {
   }
   window.app_event.on('playerSeeked', handleSeeked)
 
+  // 歌词岛需要封面与时长（桌面歌词忽略这两个消息）
+  const sendPic = () => { sendDesktopLyricInfo({ action: 'set_pic', data: musicInfo.pic ?? null }) }
+  window.app_event.on('picUpdated', sendPic)
+  watch(() => playProgress.maxPlayTime, duration => { sendDesktopLyricInfo({ action: 'set_duration', data: duration }) })
+
   onBeforeUnmount(() => {
     window.app_event.off('play', play)
     window.app_event.off('pause', pause)
@@ -56,5 +62,6 @@ export default () => {
     window.app_event.off('lyricUpdated', setLyric)
     window.app_event.off('setPlaybackRate', handleApplyPlaybackRate)
     window.app_event.off('playerSeeked', handleSeeked)
+    window.app_event.off('picUpdated', sendPic)
   })
 }

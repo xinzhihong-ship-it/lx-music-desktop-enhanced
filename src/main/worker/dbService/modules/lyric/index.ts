@@ -90,6 +90,8 @@ export const getRawLyric = (id: string): LX.Music.LyricInfo => {
  * @param lyricInfo 歌词信息
  */
 export const rawLyricAdd = (id: string, lyricInfo: LX.Music.LyricInfo) => {
+  // 同一首歌重新获取时先删旧记录，避免重复行（读取时后一行会覆盖前一行，结果不确定）
+  deleteRawLyric([id])
   insertRawLyric(toDBLyric(id, 'raw', lyricInfo))
 }
 
@@ -195,3 +197,5 @@ export const editedLyricCount = () => {
   return countEditedLyric()
 }
 
+
+export { getLyricBinding, saveLyricBinding, removeLyricBinding, lyricBindingCount, lyricBindingClear } from './binding'

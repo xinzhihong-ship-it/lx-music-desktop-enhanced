@@ -64,64 +64,15 @@ export default {
 </script>
 
 <style lang="less" module>
-@import '@renderer/assets/styles/layout.less';
-
-.controlBtn {
-  padding-left: 20px;
-  padding-right: 10px;
-  flex: none;
-  display: flex;
-  flex-flow: row nowrap;
-  gap: 10px;
-
-  button {
-    color: var(--color-button-font);
-  }
+.controlBtn { padding-left: 10px; flex: none; display: flex; align-items: center; gap: 10px; height: 25px;
+  button { color: var(--ui-muted); }
 }
-
-.titleBtn {
-  flex: none;
-  height: 100%;
-  width: 24px;
-  transition: @transition-fast;
-  transition-property: color, opacity;
-  // color: var(--color-button-font);
-  display: flex;
-  flex-flow: column nowrap;
-  justify-content: center;
-  align-items: center;
-  background-color: transparent;
-  border: none;
-  width: 24px;
-  padding: 0;
-
-  opacity: .6;
-  cursor: pointer;
-
-  svg {
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.2));
-  }
-  &:hover {
-    opacity: 1;
-  }
-  &:active {
-    opacity: 1;
-  }
-  &.active {
-    color: var(--color-primary);
-    opacity: 1;
-  }
+.titleBtn { flex: none; display: flex; align-items: center; justify-content: center; width: 21px; height: 24px; border: 0; padding: 2px; border-radius: 6px; background: transparent; color: var(--ui-muted); cursor: pointer;
+  svg { width: 100%; height: 100%; fill: currentColor; }
+  &:hover { color: var(--color-primary-font); background: var(--ui-selected); }
+  &.active { color: var(--color-primary-font); }
 }
-
-.queueIcon {
-  width: 90%;
-  height: 100%;
-}
-
-.queueBtn {
-  height: auto;
-  align-self: stretch;
-}
-
-
+.queueIcon { width: 100%; height: 100%; }
+.queueBtn { align-self: stretch; }
+@media (max-width: 980px) { .controlBtn { gap: 7px; padding-left: 2px; } }
 </style>

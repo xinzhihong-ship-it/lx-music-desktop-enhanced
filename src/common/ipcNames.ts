@@ -212,6 +212,9 @@ const modules = {
     remove_lyric_edited: 'winMain_remove_lyric_edited',
     clear_lyric_edited: 'winMain_clear_lyric_edited',
     get_lyric_edited_count: 'winMain_get_lyric_edited_count',
+    get_lyric_binding: 'winMain_get_lyric_binding',
+    save_lyric_binding: 'winMain_save_lyric_binding',
+    remove_lyric_binding: 'winMain_remove_lyric_binding',
     get_music_url: 'winMain_get_music_url',
     save_music_url: 'winMain_save_music_url',
     clear_music_url: 'winMain_clear_music_url',
@@ -265,6 +268,11 @@ const modules = {
     request_main_window_channel: 'winLyric_request_main_window_channel',
     provide_main_window_channel: 'winLyric_provide_main_window_channel',
     mouse_enter_leave: 'winLyric_mouse_enter_leave',
+    /** 歌词岛：鼠标是否落在胶囊上（落在上面时接收鼠标，否则穿透） */
+    island_set_interactive: 'winLyric_island_set_interactive',
+    lyric_set_interactive: 'winLyric_lyric_set_interactive',
+    island_display_info: 'winLyric_island_display_info',
+    island_drag: 'winLyric_island_drag',
   },
   hotKey: {
     enable: 'hotKey_enable',

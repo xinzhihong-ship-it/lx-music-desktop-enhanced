@@ -93,18 +93,21 @@ export default {
   transition-property: transform, opacity;
   border-radius: @radius-border;
   background-color: var(--color-content-background);
-  box-shadow: 0 1px 8px 0 rgba(0,0,0,.2);
+  border: 1px solid var(--ui-border);
+  padding: 5px;
+  box-shadow: var(--ui-shadow);
   z-index: 10;
   overflow: hidden;
   // will-change: transform;
 }
 .listItem {
   cursor: pointer;
-  min-width: 96px;
+  min-width: 108px;
+  border-radius: 8px;
   line-height: 34px;
   // color: var(--color-button-font);
   padding: 0 10px;
-  text-align: center;
+  text-align: left;
   outline: none;
   transition: @transition-normal;
   transition-property: background-color, opacity;

@@ -13,8 +13,6 @@ export const setting = shallowReactive<LX.DesktopLyric.Config>({
   'desktopLyric.x': null,
   'desktopLyric.y': null,
   'desktopLyric.isLockScreen': true,
-  'desktopLyric.isDelayScroll': true,
-  'desktopLyric.scrollAlign': 'center',
   'desktopLyric.isHoverHide': false,
   'desktopLyric.direction': 'horizontal',
   'desktopLyric.style.align': 'center',
@@ -24,19 +22,17 @@ export const setting = shallowReactive<LX.DesktopLyric.Config>({
   'desktopLyric.style.font': '',
   'desktopLyric.style.fontSize': 20,
   'desktopLyric.style.lineGap': 15,
-  // 'desktopLyric.style.fontWeight': true,
   'desktopLyric.style.opacity': 95,
   'desktopLyric.style.ellipsis': false,
-  'desktopLyric.style.isFontWeightFont': false,
-  'desktopLyric.style.isFontWeightLine': false,
-  'desktopLyric.style.isFontWeightExtended': false,
-  'desktopLyric.style.isZoomActiveLrc': true,
   'common.langId': 'zh-cn',
   'player.isShowLyricTranslation': false,
   'player.isShowLyricRoma': false,
   'player.isSwapLyricTranslationAndRoma': false,
-  'player.isPlayLxlrc': false,
   'player.playbackRate': 1,
+  'desktopLyric.lineMode': 'double',
+  'player.lyricHighlight': 'word',
+  'desktopLyric.stageSparks': false,
+  'island.expanded': false,
 })
 
 // export const themeList = markRaw([
@@ -92,9 +88,14 @@ export const musicInfo = shallowReactive<{
   name: string
   singer: string
   album: string | null
+  pic: string | null
 }>({
   id: null,
   name: '^',
   singer: '^',
   album: null,
+  pic: null,
 })
+
+/** 歌曲时长（秒），歌词岛的进度条用 */
+export const duration = ref(0)

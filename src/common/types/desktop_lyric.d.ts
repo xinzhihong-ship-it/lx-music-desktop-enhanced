@@ -13,8 +13,6 @@ declare namespace LX {
       'desktopLyric.x': LX.AppSetting['desktopLyric.x']
       'desktopLyric.y': LX.AppSetting['desktopLyric.y']
       'desktopLyric.isLockScreen': LX.AppSetting['desktopLyric.isLockScreen']
-      'desktopLyric.isDelayScroll': LX.AppSetting['desktopLyric.isDelayScroll']
-      'desktopLyric.scrollAlign': LX.AppSetting['desktopLyric.scrollAlign']
       'desktopLyric.isHoverHide': LX.AppSetting['desktopLyric.isHoverHide']
       'desktopLyric.direction': LX.AppSetting['desktopLyric.direction']
       'desktopLyric.style.align': LX.AppSetting['desktopLyric.style.align']
@@ -24,22 +22,40 @@ declare namespace LX {
       'desktopLyric.style.lyricUnplayColor': LX.AppSetting['desktopLyric.style.lyricUnplayColor']
       'desktopLyric.style.lyricPlayedColor': LX.AppSetting['desktopLyric.style.lyricPlayedColor']
       'desktopLyric.style.lyricShadowColor': LX.AppSetting['desktopLyric.style.lyricShadowColor']
-      // 'desktopLyric.style.fontWeight': LX.AppSetting['desktopLyric.style.fontWeight']
       'desktopLyric.style.opacity': LX.AppSetting['desktopLyric.style.opacity']
       'desktopLyric.style.ellipsis': LX.AppSetting['desktopLyric.style.ellipsis']
-      'desktopLyric.style.isFontWeightFont': LX.AppSetting['desktopLyric.style.isFontWeightFont']
-      'desktopLyric.style.isFontWeightLine': LX.AppSetting['desktopLyric.style.isFontWeightLine']
-      'desktopLyric.style.isFontWeightExtended': LX.AppSetting['desktopLyric.style.isFontWeightExtended']
-      'desktopLyric.style.isZoomActiveLrc': LX.AppSetting['desktopLyric.style.isZoomActiveLrc']
+      'desktopLyric.lineMode': LX.AppSetting['desktopLyric.lineMode']
+      'player.lyricHighlight': LX.AppSetting['player.lyricHighlight']
+      'desktopLyric.stageSparks': LX.AppSetting['desktopLyric.stageSparks']
+      'island.expanded': LX.AppSetting['island.expanded']
       'common.langId': LX.AppSetting['common.langId']
       'player.isShowLyricTranslation': LX.AppSetting['player.isShowLyricTranslation']
       'player.isShowLyricRoma': LX.AppSetting['player.isShowLyricRoma']
       'player.isSwapLyricTranslationAndRoma': LX.AppSetting['player.isSwapLyricTranslationAndRoma']
-      'player.isPlayLxlrc': LX.AppSetting['player.isPlayLxlrc']
       'player.playbackRate': LX.AppSetting['player.playbackRate']
     }
 
-    type WinMainActions = 'get_info' | 'get_status' | 'get_analyser_data_array'
+    /** 桌面歌词 / 歌词岛发给主窗口的请求；play_* 为歌词岛的播放控制 */
+    /** offset_adjust：data 为偏移增量（毫秒）；offset_reset：恢复原始偏移 */
+    type WinMainActions = 'get_info' | 'get_status' | 'get_analyser_data_array' | 'play_toggle' | 'play_prev' | 'play_next' | 'seek' | 'offset_adjust' | 'offset_reset'
+
+    /** 连接主窗口的客户端类型：桌面歌词窗口 / 顶部歌词岛 */
+    type ClientKind = 'lyric' | 'island'
+
+    /** 歌词岛所在屏幕：notch 为带刘海的内建屏；menuBar 为 macOS 菜单栏高度（其他系统为 0） */
+    interface IslandDisplayInfo {
+      notch: boolean
+      menuBar: number
+      /** 被拖到了固定位置（悬浮胶囊样式，不贴顶） */
+      floating: boolean
+    }
+
+    /** 歌词岛拖动：dx / dy 为指针相对按下时的屏幕位移 */
+    interface IslandDrag {
+      phase: 'start' | 'move' | 'end'
+      dx: number
+      dy: number
+    }
 
     interface LyricActionBase <A> {
       action: A
@@ -58,7 +74,9 @@ declare namespace LX {
       tlrc: string | null
       rlrc: string | null
       lxlrc: string | null
-      // pic: string | null
+      pic?: string | null
+      /** 歌曲时长（秒） */
+      duration?: number
       isPlay: boolean
       line: number
       played_time: number
@@ -80,6 +98,8 @@ declare namespace LX {
     | LyricAction<'set_pause'>
     | LyricAction<'set_stop'>
     | LyricAction<'send_analyser_data_array', Uint8Array>
+    | LyricAction<'set_pic', string | null>
+    | LyricAction<'set_duration', number>
 
 
     interface NewBounds {

@@ -65,6 +65,9 @@ export const WEBDAV_PLATFORM_SETTING_KEYS = [
   'player.vst3.directories',
   'player.vst3.chain',
   'download.savePath',
+  // 歌词岛被拖到的位置是本机屏幕坐标，换一台电脑 / 显示器布局就不对了
+  'island.x',
+  'island.y',
 ] as const
 
 /** 敏感信息与同步状态：不上传 */

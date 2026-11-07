@@ -65,15 +65,12 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting['player.isShowLyricTranslation'] = setting.player?.isShowLyricTranslation
     setting['player.isShowLyricRoma'] = setting.player?.isShowLyricRoma
     setting['player.isS2t'] = setting.player?.isS2t
-    setting['player.isPlayLxlrc'] = setting.player?.isPlayLxlrc
     setting['player.isSavePlayTime'] = setting.player?.isSavePlayTime
     setting['player.audioVisualization'] = setting.player?.audioVisualization
     setting['player.waitPlayEndStop'] = setting.player?.waitPlayEndStop
     setting['player.waitPlayEndStopTime'] = setting.player?.waitPlayEndStopTime
     setting['player.autoSkipOnError'] = setting.player?.autoSkipOnError
 
-    setting['playDetail.isZoomActiveLrc'] = setting.playDetail?.isZoomActiveLrc
-    setting['playDetail.isShowLyricProgressSetting'] = setting.playDetail?.isShowLyricProgressSetting
     setting['playDetail.style.fontSize'] = setting.playDetail?.style?.fontSize
     setting['playDetail.style.align'] = setting.playDetail?.style?.align
 
@@ -86,12 +83,10 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting['desktopLyric.x'] = setting.desktopLyric?.x
     setting['desktopLyric.y'] = setting.desktopLyric?.y
     setting['desktopLyric.isLockScreen'] = setting.desktopLyric?.isLockScreen
-    setting['desktopLyric.isDelayScroll'] = setting.desktopLyric?.isDelayScroll
     setting['desktopLyric.isHoverHide'] = setting.desktopLyric?.isHoverHide
     setting['desktopLyric.style.font'] = setting.desktopLyric?.style?.font
     if (setting.desktopLyric?.style?.fontSize) setting['desktopLyric.style.fontSize'] = setting.desktopLyric.style.fontSize / 100 * 16
     setting['desktopLyric.style.opacity'] = setting.desktopLyric?.style?.opacity
-    setting['desktopLyric.style.isZoomActiveLrc'] = setting.desktopLyric?.style?.isZoomActiveLrc
 
     setting['list.isClickPlayList'] = setting.list?.isClickPlayList
     setting['list.isShowAlbumName'] = setting.list?.isShowAlbumName
