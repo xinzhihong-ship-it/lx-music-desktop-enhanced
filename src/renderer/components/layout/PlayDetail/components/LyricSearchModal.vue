@@ -73,7 +73,7 @@ import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from '@co
 import { useI18n } from '@renderer/plugins/i18n'
 import { buildLyricDoc, buildSearchKeyword, findLineIndex, hasTimedLyric } from '@common/utils/lyrics'
 import { compareCandidates, fetchCandidateLyric, LYRIC_PLATFORMS, searchLyricCandidates } from '@renderer/core/lyrics/search'
-import { getCurrentTime } from '@renderer/core/lyric'
+import { getCurrentTime } from '@renderer/core/lyrics/time'
 import { getBinding, getMatchSubject, getSongMusicInfo, unbindLyric } from '@renderer/core/lyrics/binding'
 import { applyLyricCandidate, reloadLyric, restoreAutoLyric } from '@renderer/core/lyrics/actions'
 import { saveLyricEdited } from '@renderer/utils/ipc'

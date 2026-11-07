@@ -67,7 +67,9 @@ const harness = ({ savedTasks = [], autoConvert = true, conversions = [], fileEx
     'node:path': { ...path.posix, default: path.posix },
     './state': { downloadList: state.downloadList },
     '@common/utils/vueTools': { markRaw: value => value, toRaw: value => value },
-    '@renderer/core/music/online': { getMusicUrl: async() => 'http://cdn/song.flac', getPicUrl: async() => '', getLyricInfo: async() => ({}) },
+    '@renderer/core/music/online': { getMusicUrl: async() => 'http://cdn/song.flac', getPicUrl: async() => '' },
+    // 下载写词与播放共用的歌词入口（绑定 → 所属来源 → 自动匹配）
+    '@renderer/core/music': { getLyricInfo: async() => ({}) },
     '../setting': { appSetting },
     '..': { qualityList: { value: {} } },
     '../index': { proxy: {} },

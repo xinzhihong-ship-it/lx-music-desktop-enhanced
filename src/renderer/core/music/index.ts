@@ -76,17 +76,19 @@ const getSourceLyricInfo = async({
   musicInfo,
   isRefresh,
   onToggleSource,
+  allowToggleSource,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  allowToggleSource?: boolean
 }): Promise<LX.Player.LyricInfo> => {
   if ('progress' in musicInfo) {
     return getDownloadLyricInfo({ musicInfo, isRefresh, onToggleSource })
   } else if (musicInfo.source == 'local') {
     return getLocalLyricInfo({ musicInfo, isRefresh, onToggleSource })
   } else {
-    return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource })
+    return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
   }
 }
 
@@ -114,14 +116,20 @@ const autoMatchLyricInfo = async(musicInfo: LX.Music.MusicInfo | LX.Download.Lis
 /**
  * 取歌词。优先级：用户绑定 → 原有来源（已编辑 / 缓存 / 本平台 / 文件 / 原有换源）→ 自动跨平台匹配。
  */
+/**
+ * 歌曲的歌词：用户绑定的歌词 → 歌曲所属来源 → 跨平台自动匹配。播放与下载写词共用。
+ * allowToggleSource：所属来源取不到时是否允许换源（下载按“使用其他源”设置）
+ */
 export const getLyricInfo = async({
   musicInfo,
   isRefresh = false,
   onToggleSource,
+  allowToggleSource,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  allowToggleSource?: boolean
 }): Promise<LX.Player.LyricInfo> => {
   try {
     const bound = await loadBoundLyric(musicInfo, isRefresh)
@@ -134,7 +142,7 @@ export const getLyricInfo = async({
   let lyricInfo: LX.Player.LyricInfo | null = null
   let error: unknown = null
   try {
-    lyricInfo = await getSourceLyricInfo({ musicInfo, isRefresh, onToggleSource })
+    lyricInfo = await getSourceLyricInfo({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
   } catch (err) {
     error = err
   }

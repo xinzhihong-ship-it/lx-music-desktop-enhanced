@@ -9,7 +9,7 @@ import { throttle } from '@common/utils'
 import { pause, play, playNext, playPrev } from '@renderer/core/player'
 import { playProgress } from '@renderer/store/player/playProgress'
 import { appSetting } from '@renderer/store/setting'
-import { lyric } from '@renderer/store/player/lyric'
+import { isRomaFirst, lyricDoc } from '@renderer/core/lyrics/engine'
 
 export default () => {
   // const setVisibleDesktopLyric = useCommit('setVisibleDesktopLyric')
@@ -65,7 +65,11 @@ export default () => {
     })
   }
   const handleSetLyricLine = (text: string, line: number) => {
-    let curLine = lyric.lines[line]?.extendedLyrics.join('\n') ?? ''
+    // 当前行的翻译 / 罗马音（按设置显示与排序，与歌词视图一致）
+    const current = lyricDoc.value.lines[line]
+    const extended = [current?.translation, current?.roma].filter(Boolean)
+    if (isRomaFirst.value) extended.reverse()
+    const curLine = extended.join('\n')
     sendPlayerStatus({
       lyricLineText: text,
       lyricLineAllText: curLine ? text + '\n' + curLine : text,

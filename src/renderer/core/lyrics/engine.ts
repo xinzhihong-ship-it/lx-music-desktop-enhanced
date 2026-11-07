@@ -4,7 +4,7 @@ import { computed, watch } from '@common/utils/vueTools'
 import { buildLyricDoc, createMediaClock, type LyricDoc } from '@common/utils/lyrics'
 import { isPlay, musicInfo } from '@renderer/store/player/state'
 import { appSetting } from '@renderer/store/setting'
-import { getCurrentTime } from '@renderer/core/lyric'
+import { getCurrentTime } from '@renderer/core/lyrics/time'
 
 /** 当前歌曲的歌词（按设置决定是否使用逐字 / 翻译 / 罗马音） */
 export const lyricDoc = computed<LyricDoc>(() => buildLyricDoc({

@@ -2,7 +2,6 @@ import { watch } from '@common/utils/vueTools'
 import { appSetting } from '@renderer/store/setting'
 import { sendOpenAPIAction } from '@renderer/utils/ipc'
 import { openAPI } from '@renderer/store'
-import { setDisableAutoPauseBySource } from '@renderer/core/lyric'
 
 export default () => {
   const handleEnable = async(enable: boolean, port: string, bindLan: boolean) => {
@@ -19,8 +18,6 @@ export default () => {
     }).catch((error) => {
       openAPI.address = ''
       openAPI.message = error.message
-    }).finally(() => {
-      setDisableAutoPauseBySource(!!openAPI.address, 'openAPI')
     })
   }
   watch(() => appSetting['openAPI.enable'], enable => {
