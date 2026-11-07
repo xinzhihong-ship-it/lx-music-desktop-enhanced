@@ -24,13 +24,18 @@ export { getCurrentTime }
 /** 跟踪器最长多久复查一次（跳转、倍速变化、时钟误差都在下一次复查时纠正） */
 const MAX_TICK = 1000
 let tickTimer: ReturnType<typeof setTimeout> | null = null
-let lastIndex = -2
+// 上次发出的当前行（行号 + 文本 + 翻译 / 罗马音）：内容没变就不重复通知
+let lastKey = ''
 const clearTick = () => {
   if (tickTimer) clearTimeout(tickTimer)
   tickTimer = null
 }
 const emitLine = (index: number) => {
-  const text = lyricDoc.value.lines[index]?.text ?? ''
+  const line = lyricDoc.value.lines[index]
+  const text = line?.text ?? ''
+  const key = `${index}\u0000${text}\u0000${line?.translation ?? ''}\u0000${line?.roma ?? ''}`
+  if (key == lastKey) return
+  lastKey = key
   setText(text, Math.max(index, 0))
   setStatusText(text)
   window.app_event.lyricLinePlay(text, index)
@@ -40,10 +45,7 @@ const tick = () => {
   const lines = lyricDoc.value.lines
   const pos = readLyricPosition()
   const index = findLineIndex(lines, pos)
-  if (index != lastIndex) {
-    lastIndex = index
-    emitLine(index)
-  }
+  emitLine(index)
   if (!isPlay.value) return
   const next = lines[index + 1]
   const rate = appSetting['player.playbackRate'] || 1
@@ -51,9 +53,8 @@ const tick = () => {
   tickTimer = setTimeout(tick, Math.min(delay, MAX_TICK))
 }
 /** 立即按当前位置重新判断当前行，并在播放中继续跟踪 */
-const retrack = (force = false) => {
+const retrack = () => {
   clearTick()
-  if (force) lastIndex = -2
   tick()
 }
 
@@ -98,7 +99,7 @@ watch(() => [vst3Runtime.active, vst3Runtime.latencyMs, vst3Runtime.bridgeMs], (
   if (isPlay.value) playAt(getCurrentTime())
 })
 // 歌词内容变化（换歌词、翻译 / 罗马音 / 点亮方式开关）后重新判断当前行
-watch(lyricDoc, () => { retrack(true) })
+watch(lyricDoc, () => { retrack() })
 
 // ---- 桌面歌词 / 歌词岛 ----
 type ClientPort = Electron.IpcRendererEvent['ports'][0]
@@ -224,7 +225,6 @@ export const setLyric = () => {
       },
     })
   }
-  // 歌词内容变化时由上面的 watch(lyricDoc) 强制刷新当前行；这里只按当前位置复查
   if (isPlay.value) setTimeout(() => { playAt(getCurrentTime()) })
   else retrack()
 }
@@ -244,7 +244,7 @@ export const pause = () => {
 export const stop = () => {
   stopDriftCheck()
   clearTick()
-  lastIndex = -2
+  lastKey = ''
   sendDesktopLyricInfo({ action: 'set_stop' })
   setText('', 0)
   setStatusText('')
