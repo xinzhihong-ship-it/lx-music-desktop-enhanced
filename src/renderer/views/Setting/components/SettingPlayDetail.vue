@@ -4,6 +4,10 @@ dd
   h3#lyric_content {{ $t('setting__lyric_content') }}
   div
     .gap-top
+      span(style="margin-right: 10px; color: var(--color-font-label)") {{ $t('setting__lyric_highlight') }}
+      base-checkbox.gap-left(id="setting_lyric_highlight_word" :model-value="appSetting['player.lyricHighlight']" need value="word" :label="$t('setting__lyric_highlight_word')" @update:model-value="updateSetting({ 'player.lyricHighlight': $event })")
+      base-checkbox.gap-left(id="setting_lyric_highlight_line" :model-value="appSetting['player.lyricHighlight']" need value="line" :label="$t('setting__lyric_highlight_line')" @update:model-value="updateSetting({ 'player.lyricHighlight': $event })")
+    .gap-top
       base-checkbox(id="setting_player_lyric_transition" :model-value="appSetting['player.isShowLyricTranslation']" :label="$t('setting__play_lyric_transition')" @update:model-value="updateSetting({'player.isShowLyricTranslation': $event})")
     .gap-top
       base-checkbox(id="setting_player_lyric_roma" :model-value="appSetting['player.isShowLyricRoma']" :label="$t('setting__play_lyric_roma')" @update:model-value="updateSetting({'player.isShowLyricRoma': $event})")

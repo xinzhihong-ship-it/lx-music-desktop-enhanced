@@ -522,6 +522,11 @@ declare global {
       'desktopLyric.lineMode': 'single' | 'double' | 'extended' | 'flow' | 'steps' | 'tilt'
 
       /**
+       * 歌词点亮方式（播放详情页、桌面歌词、歌词岛）：word 逐字（有逐字时间时）；line 整句一起点亮
+       */
+      'player.lyricHighlight': 'word' | 'line'
+
+      /**
        * 桌面歌词舞台风格下显示火花
        */
       'desktopLyric.stageSparks': boolean

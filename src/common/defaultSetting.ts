@@ -120,6 +120,7 @@ const defaultSetting: LX.AppSetting = {
   'desktopLyric.style.opacity': 95,
   'desktopLyric.style.ellipsis': false,
   'desktopLyric.lineMode': 'double',
+  'player.lyricHighlight': 'word',
   'desktopLyric.stageSparks': false,
   'island.expanded': false,
   'island.enable': false,

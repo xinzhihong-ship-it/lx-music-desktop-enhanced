@@ -19,8 +19,8 @@ const tempOffset = ref(0)
 
 export const lyricDoc = computed<LyricDoc>(() => buildLyricDoc({
   lyric: source.value.lyric,
-  // 有逐字时间就用（不再受“逐字歌词”开关限制，见播放详情页同一处说明）
-  lxlyric: source.value.lxlyric,
+  // 逐字点亮时用逐字时间；设为整句点亮时不用，整句一起亮
+  lxlyric: setting['player.lyricHighlight'] == 'line' ? '' : source.value.lxlyric,
   tlyric: setting['player.isShowLyricTranslation'] ? source.value.tlyric : '',
   rlyric: setting['player.isShowLyricRoma'] ? source.value.rlyric : '',
 }))

@@ -1,5 +1,5 @@
 <template>
-  <div id="container" :class="[{ lock: setting['desktopLyric.isLock'] }, { hide: isHide || isHoverHide }]">
+  <div id="container" :class="[{ lock: setting['desktopLyric.isLock'] }, { hide: isHide || isHoverHide }, { vertical: setting['desktopLyric.direction'] == 'vertical' }]">
     <div id="main">
       <div class="lyric-area">
         <layout-karaoke-lyric />
@@ -184,10 +184,15 @@ body {
 .lyric-area {
   position: absolute;
   inset: 0;
-  transition: top .2s ease;
+  transition: top .2s ease, right .2s ease;
 }
+// 工具栏出现时歌词让出工具栏占的空间（横排在上方，竖排在右侧；大小由工具栏按缩放后的尺寸给出）
 #container:not(.lock) #main:hover .lyric-area {
-  top: 46px;
+  top: var(--lyric-bar-size, 46px);
+}
+#container.vertical:not(.lock) #main:hover .lyric-area {
+  top: 0;
+  right: var(--lyric-bar-size, 46px);
 }
 
 .control-bar {
@@ -199,5 +204,17 @@ body {
   transform: translate(-50%, -6px);
   pointer-events: none;
   transition: opacity .2s ease, transform .2s ease;
+}
+// 竖排：工具栏在右侧中间，竖着排
+#container.vertical {
+  .control-bar {
+    top: 50%;
+    left: auto;
+    right: 8px;
+    transform: translate(6px, -50%);
+  }
+  #main:hover .control-bar {
+    transform: translate(0, -50%);
+  }
 }
 </style>

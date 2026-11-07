@@ -30,6 +30,7 @@ export const setting = shallowReactive<LX.DesktopLyric.Config>({
   'player.isSwapLyricTranslationAndRoma': false,
   'player.playbackRate': 1,
   'desktopLyric.lineMode': 'double',
+  'player.lyricHighlight': 'word',
   'desktopLyric.stageSparks': false,
   'island.expanded': false,
 })

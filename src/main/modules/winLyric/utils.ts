@@ -77,6 +77,7 @@ export const watchConfigKeys = [
   'player.isSwapLyricTranslationAndRoma',
   'player.playbackRate',
   'desktopLyric.lineMode',
+  'player.lyricHighlight',
   'desktopLyric.stageSparks',
   'island.expanded',
 ] satisfies Array<keyof LX.AppSetting>

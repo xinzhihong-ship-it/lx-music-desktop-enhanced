@@ -11,6 +11,10 @@
       </div>
       <i :class="$style.divider" />
       <button
+        type="button" :class="[$style.btn, { [$style.on]: wordByWord }]" :aria-pressed="wordByWord"
+        :title="$t('lyric_view__word_tip')" @click="toggleWordByWord"
+      >{{ $t('lyric_view__word') }}</button>
+      <button
         type="button" :class="[$style.btn, { [$style.on]: sparks && view == 'stage' }]" :aria-pressed="sparks"
         :disabled="view != 'stage'" :title="$t('lyric_view__sparks_tip')" @click="toggleSparks"
       >{{ $t('lyric_view__sparks') }}</button>
@@ -70,6 +74,8 @@ const setMode = id => {
   if (stageStyle.value != id) patch['playDetail.stageStyle'] = id
   if (Object.keys(patch).length) updateSetting(patch)
 }
+const wordByWord = computed(() => appSetting['player.lyricHighlight'] != 'line')
+const toggleWordByWord = () => { updateSetting({ 'player.lyricHighlight': wordByWord.value ? 'line' : 'word' }) }
 const toggleSparks = () => { updateSetting({ 'playDetail.stageSparks': !sparks.value }) }
 const toggleBackground = () => { updateSetting({ 'playDetail.background': background.value == 'cover' ? 'theme' : 'cover' }) }
 

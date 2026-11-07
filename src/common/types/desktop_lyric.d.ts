@@ -25,6 +25,7 @@ declare namespace LX {
       'desktopLyric.style.opacity': LX.AppSetting['desktopLyric.style.opacity']
       'desktopLyric.style.ellipsis': LX.AppSetting['desktopLyric.style.ellipsis']
       'desktopLyric.lineMode': LX.AppSetting['desktopLyric.lineMode']
+      'player.lyricHighlight': LX.AppSetting['player.lyricHighlight']
       'desktopLyric.stageSparks': LX.AppSetting['desktopLyric.stageSparks']
       'island.expanded': LX.AppSetting['island.expanded']
       'common.langId': LX.AppSetting['common.langId']

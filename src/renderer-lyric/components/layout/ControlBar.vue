@@ -1,67 +1,95 @@
 <template>
-  <!-- 悬浮在歌词上方中央的深色胶囊工具栏，始终一行：显示方式（单行 / 双行 / 翻译 / 流动 / 阶梯 / 倾诉）与火花
-       样式同播放详情页的歌词工具栏；窗口较窄时依次隐藏透明度、方向 / 置顶、字号按钮。空白处按住可拖动窗口 -->
-  <div :class="$style.bar" role="toolbar" @mousedown="handleLyricMouseDown" @touchstart="handleLyricTouchStart">
-    <button type="button" :class="$style.btn" :title="$t('desktop_lyric__lock')" :aria-label="$t('desktop_lyric__lock')" @click="handleLock">
-      <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
-    </button>
-    <i :class="$style.divider" />
-    <div :class="$style.segment" role="radiogroup" :aria-label="$t('setting__desktop_lyric_line_mode')">
-      <button
-        v-for="item in modeList" :key="item.id" type="button" role="radio" :aria-checked="lineMode == item.id"
-        :class="[$style.seg, { [$style.segOn]: lineMode == item.id }]" @click="setLineMode(item.id)"
-      >{{ item.label }}</button>
-    </div>
-    <button
-      type="button" :class="[$style.seg, $style.chip, { [$style.segOn]: sparks && isStage }]" :aria-pressed="sparks" :disabled="!isStage"
-      :title="$t('lyric_view__sparks_tip')" @click="toggleSparks"
-    >{{ $t('lyric_view__sparks') }}</button>
-    <template v-if="width >= 470">
+  <!-- 桌面歌词工具栏（深色胶囊）。横排时在顶部中央一行，竖排时在右侧一列；按窗口大小整体缩放，
+       太小时才依次隐藏透明度、方向 / 置顶、字号按钮。点“颜色”后整条换成颜色选择，点 ✓ 返回。空白处按住可拖动窗口 -->
+  <div
+    ref="dom_bar" :class="[$style.bar, { [$style.vbar]: isVertical }]" :style="barStyle" role="toolbar"
+    @mousedown="handleLyricMouseDown" @touchstart="handleLyricTouchStart"
+  >
+    <template v-if="!colorMode">
+      <button type="button" :class="$style.btn" :title="$t('desktop_lyric__lock')" :aria-label="$t('desktop_lyric__lock')" @click="handleLock">
+        <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+      </button>
       <i :class="$style.divider" />
-      <button type="button" :class="$style.btn" :title="$t('desktop_lyric__font_decrease')" :aria-label="$t('desktop_lyric__font_decrease')" @click="handleFontChange(-1)">
-      <svg viewBox="0 0 24 24"><path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M15 12h6" /></svg>
-    </button>
-    <button type="button" :class="$style.btn" :title="$t('desktop_lyric__font_increase')" :aria-label="$t('desktop_lyric__font_increase')" @click="handleFontChange(1)">
-      <svg viewBox="0 0 24 24"><path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M15 12h6M18 9v6" /></svg>
-    </button>
+      <div :class="$style.segment" role="radiogroup" :aria-label="$t('setting__desktop_lyric_line_mode')">
+        <button
+          v-for="item in modeList" :key="item.id" type="button" role="radio" :aria-checked="lineMode == item.id"
+          :class="[$style.seg, { [$style.segOn]: lineMode == item.id }]" @click="setLineMode(item.id)"
+        >{{ item.label }}</button>
+      </div>
+      <button
+        type="button" :class="[$style.seg, $style.chip, { [$style.segOn]: wordByWord }]" :aria-pressed="wordByWord"
+        :title="$t('lyric_view__word_tip')" @click="toggleWordByWord"
+      >{{ $t('lyric_view__word') }}</button>
+      <button
+        type="button" :class="[$style.seg, $style.chip, { [$style.segOn]: sparks && isStage }]" :aria-pressed="sparks" :disabled="!isStage"
+        :title="$t('lyric_view__sparks_tip')" @click="toggleSparks"
+      >{{ $t('lyric_view__sparks') }}</button>
+      <i :class="$style.divider" />
+      <button type="button" :class="$style.btn" :title="$t('desktop_lyric__color')" :aria-label="$t('desktop_lyric__color')" @click="colorMode = true">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><circle cx="9" cy="9.5" r="1.4" :class="$style.fill" /><circle cx="14.5" cy="8.5" r="1.4" :class="$style.fill" /><circle cx="16" cy="13.5" r="1.4" :class="$style.fill" /></svg>
+      </button>
+      <template v-if="level < 3">
+        <button type="button" :class="$style.btn" :title="$t('desktop_lyric__font_decrease')" :aria-label="$t('desktop_lyric__font_decrease')" @click="handleFontChange(-1)">
+          <svg viewBox="0 0 24 24"><path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M15 12h6" /></svg>
+        </button>
+        <button type="button" :class="$style.btn" :title="$t('desktop_lyric__font_increase')" :aria-label="$t('desktop_lyric__font_increase')" @click="handleFontChange(1)">
+          <svg viewBox="0 0 24 24"><path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M15 12h6M18 9v6" /></svg>
+        </button>
+      </template>
+      <template v-if="level < 1">
+        <button
+          type="button" :class="$style.btn" :title="$t('desktop_lyric__opacity_decrease')" :aria-label="$t('desktop_lyric__opacity_decrease')"
+          @click="handleOpacityChange(-10)" @contextmenu.prevent="handleOpacityChange(-2)"
+        >
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="M12 4.5a7.5 7.5 0 0 1 0 15z" :class="$style.fillLow" /></svg>
+        </button>
+        <button
+          type="button" :class="$style.btn" :title="$t('desktop_lyric__opacity_increase')" :aria-label="$t('desktop_lyric__opacity_increase')"
+          @click="handleOpacityChange(10)" @contextmenu.prevent="handleOpacityChange(2)"
+        >
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" :class="$style.fill" /></svg>
+        </button>
+      </template>
+      <template v-if="level < 2">
+        <i :class="$style.divider" />
+        <button type="button" :class="$style.btn" :title="directionLabel" :aria-label="directionLabel" @click="handleDirection">
+          <svg v-if="isVertical" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9" /></svg>
+          <svg v-else viewBox="0 0 24 24"><path d="M17 5v14M12 5v14M7 5v9" /></svg>
+        </button>
+        <button
+          type="button" :class="[$style.btn, { [$style.on]: isAlwaysOnTop }]" :aria-pressed="isAlwaysOnTop"
+          :title="$t('desktop_lyric__' + (isAlwaysOnTop ? 'win_top_off' : 'win_top_on'))" :aria-label="$t('desktop_lyric__' + (isAlwaysOnTop ? 'win_top_off' : 'win_top_on'))"
+          @click="handleAlwaysOnTop"
+        >
+          <svg viewBox="0 0 24 24"><path d="M9 4h6l-1 5 3 3H7l3-3zM12 12v8" /></svg>
+        </button>
+      </template>
+      <i :class="$style.divider" />
+      <button type="button" :class="$style.btn" :title="$t('desktop_lyric__close')" :aria-label="$t('desktop_lyric__close')" @click="handleClose">
+        <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" /></svg>
+      </button>
     </template>
-    <template v-if="width >= 640">
-    <button
-      type="button" :class="$style.btn" :title="$t('desktop_lyric__opacity_decrease')" :aria-label="$t('desktop_lyric__opacity_decrease')"
-      @click="handleOpacityChange(-10)" @contextmenu.prevent="handleOpacityChange(-2)"
-    >
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="M12 4.5a7.5 7.5 0 0 1 0 15z" :class="$style.fillLow" /></svg>
-    </button>
-    <button
-      type="button" :class="$style.btn" :title="$t('desktop_lyric__opacity_increase')" :aria-label="$t('desktop_lyric__opacity_increase')"
-      @click="handleOpacityChange(10)" @contextmenu.prevent="handleOpacityChange(2)"
-    >
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" :class="$style.fill" /></svg>
-    </button>
+
+    <!-- 颜色：文字颜色（没唱到的字）与高亮颜色（唱过的字） -->
+    <template v-else>
+      <div v-for="group in colorGroups" :key="group.key" :class="$style.colorGroup" role="radiogroup" :aria-label="group.label">
+        <span :class="$style.colorLabel">{{ group.label }}</span>
+        <button
+          v-for="color in group.colors" :key="color" type="button" role="radio" :aria-checked="isSameColor(setting[group.key], color)"
+          :class="[$style.swatch, { [$style.swatchOn]: isSameColor(setting[group.key], color) }]" :style="{ '--swatch': color }"
+          :aria-label="color" @click="updateSetting({ [group.key]: color })"
+        />
+      </div>
+      <i :class="$style.divider" />
+      <button type="button" :class="$style.btn" :title="$t('desktop_lyric__back')" :aria-label="$t('desktop_lyric__back')" @click="colorMode = false">
+        <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+      </button>
     </template>
-    <template v-if="width >= 550">
-    <i :class="$style.divider" />
-    <button type="button" :class="$style.btn" :title="directionLabel" :aria-label="directionLabel" @click="handleDirection">
-      <svg v-if="isVertical" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9" /></svg>
-      <svg v-else viewBox="0 0 24 24"><path d="M17 5v14M12 5v14M7 5v9" /></svg>
-    </button>
-    <button
-      type="button" :class="[$style.btn, { [$style.on]: isAlwaysOnTop }]" :aria-pressed="isAlwaysOnTop"
-      :title="$t('desktop_lyric__' + (isAlwaysOnTop ? 'win_top_off' : 'win_top_on'))" :aria-label="$t('desktop_lyric__' + (isAlwaysOnTop ? 'win_top_off' : 'win_top_on'))"
-      @click="handleAlwaysOnTop"
-    >
-      <svg viewBox="0 0 24 24"><path d="M9 4h6l-1 5 3 3H7l3-3zM12 12v8" /></svg>
-    </button>
-    </template>
-    <i :class="$style.divider" />
-    <button type="button" :class="$style.btn" :title="$t('desktop_lyric__close')" :aria-label="$t('desktop_lyric__close')" @click="handleClose">
-      <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" /></svg>
-    </button>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from '@common/utils/vueTools'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from '@common/utils/vueTools'
 import { useI18n } from '@lyric/plugins/i18n'
 import { setting } from '@lyric/store/state'
 import { updateSetting } from '@lyric/store/action'
@@ -74,16 +102,12 @@ const isAlwaysOnTop = computed(() => !!setting['desktopLyric.isAlwaysOnTop'])
 const isVertical = computed(() => setting['desktopLyric.direction'] == 'vertical')
 const directionLabel = computed(() => t(isVertical.value ? 'desktop_lyric__direction_horizontal' : 'desktop_lyric__direction_vertical'))
 
-// 窗口宽度：窄时隐藏次要按钮，工具栏始终一行，不压到歌词上
-const width = ref(window.innerWidth)
-const handleResize = () => { width.value = window.innerWidth }
-window.addEventListener('resize', handleResize)
-onBeforeUnmount(() => { window.removeEventListener('resize', handleResize) })
-
 const lineMode = computed(() => setting['desktopLyric.lineMode'] ?? 'double')
 const isStage = computed(() => ['flow', 'steps', 'tilt'].includes(lineMode.value))
 const sparks = computed(() => !!setting['desktopLyric.stageSparks'])
 const toggleSparks = () => { updateSetting({ 'desktopLyric.stageSparks': !sparks.value }) }
+const wordByWord = computed(() => setting['player.lyricHighlight'] != 'line')
+const toggleWordByWord = () => { updateSetting({ 'player.lyricHighlight': wordByWord.value ? 'line' : 'word' }) }
 const modeList = computed(() => [
   { id: 'single', label: t('desktop_lyric__mode_single') },
   { id: 'double', label: t('desktop_lyric__mode_double') },
@@ -105,6 +129,61 @@ const handleOpacityChange = step => {
   const opacity = Math.min(Math.max(setting['desktopLyric.style.opacity'] + step, 6), 100)
   if (opacity != setting['desktopLyric.style.opacity']) updateSetting({ 'desktopLyric.style.opacity': opacity })
 }
+
+// ---- 颜色 ----
+const colorMode = ref(false)
+const colorGroups = computed(() => [
+  {
+    key: 'desktopLyric.style.lyricUnplayColor',
+    label: t('setting__desktop_lyric_unplay_color'),
+    colors: ['rgba(255, 255, 255, 1)', 'rgba(255, 244, 214, 1)', 'rgba(207, 232, 255, 1)', 'rgba(255, 214, 231, 1)', 'rgba(208, 255, 232, 1)', 'rgba(40, 40, 44, 1)'],
+  },
+  {
+    key: 'desktopLyric.style.lyricPlayedColor',
+    label: t('setting__desktop_lyric_played_color'),
+    colors: ['rgba(255, 255, 255, 1)', 'rgba(255, 196, 64, 1)', 'rgba(7, 197, 86, 1)', 'rgba(57, 203, 255, 1)', 'rgba(255, 92, 168, 1)', 'rgba(179, 136, 255, 1)'],
+  },
+])
+const normalizeColor = color => String(color ?? '').replace(/\s+/g, '').toLowerCase()
+const isSameColor = (a, b) => normalizeColor(a) == normalizeColor(b)
+
+// ---- 按窗口大小缩放：先整体缩小，缩到 0.72 仍放不下时依次隐藏次要按钮（level 1~3） ----
+const MIN_SCALE = 0.72
+const BAR_GAP = 16
+const dom_bar = ref(null)
+const level = ref(0)
+const scale = ref(1)
+const barStyle = computed(() => ({ transform: `scale(${scale.value})` }))
+// 每次调整都有编号：窗口连续缩放时，旧的那次在 await 之后发现已被新的取代就直接放弃
+let fitRun = 0
+const fit = async() => {
+  const run = ++fitRun
+  level.value = 0
+  await nextTick()
+  for (;;) {
+    const el = dom_bar.value
+    if (!el || run != fitRun) return
+    const natural = isVertical.value ? el.offsetHeight : el.offsetWidth
+    const avail = (isVertical.value ? window.innerHeight : window.innerWidth) - BAR_GAP
+    const value = natural > 0 ? Math.min(1, avail / natural) : 1
+    if (value >= MIN_SCALE || level.value >= 3) {
+      scale.value = Math.max(0.4, value)
+      // 告诉外层布局工具栏占了多大，歌词区让出这么多空间
+      const size = (isVertical.value ? el.offsetWidth : el.offsetHeight) * scale.value + 8
+      document.documentElement.style.setProperty('--lyric-bar-size', `${Math.round(size)}px`)
+      return
+    }
+    level.value++
+    await nextTick()
+  }
+}
+const handleResize = () => { void fit() }
+watch([isVertical, colorMode, lineMode], () => { void fit() })
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+  void fit()
+})
+onBeforeUnmount(() => { window.removeEventListener('resize', handleResize) })
 </script>
 
 <style lang="less" module>
@@ -113,7 +192,6 @@ const handleOpacityChange = step => {
   flex-wrap: nowrap;
   white-space: nowrap;
   justify-content: center;
-  max-width: calc(100vw - 24px);
   box-sizing: border-box;
   align-items: center;
   gap: 2px;
@@ -122,8 +200,30 @@ const handleOpacityChange = step => {
   background: rgba(24, 24, 27, .86);
   box-shadow: 0 6px 20px rgba(0, 0, 0, .28), inset 0 0 0 1px rgba(255, 255, 255, .08);
   cursor: move;
+  transform-origin: 50% 0;
+}
+// 竖排：工具栏是右侧的一列
+.vbar {
+  flex-direction: column;
+  border-radius: 20px;
+  transform-origin: 100% 50%;
+  .segment, .colorGroup {
+    flex-direction: column;
+  }
+  .divider {
+    width: 14px;
+    height: 1px;
+    margin: 3px 0;
+  }
+  .chip {
+    margin: 4px 0 0;
+  }
+  .colorLabel {
+    margin: 2px 0 4px;
+  }
 }
 .divider {
+  flex: none;
   width: 1px;
   height: 14px;
   margin: 0 3px;
@@ -169,6 +269,7 @@ const handleOpacityChange = step => {
   background: rgba(255, 255, 255, .2);
 }
 .btn {
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -210,5 +311,34 @@ const handleOpacityChange = step => {
   fill: currentColor;
   stroke: none;
   opacity: .45;
+}
+.colorGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+}
+.colorLabel {
+  margin-right: 4px;
+  color: rgba(255, 255, 255, .6);
+  font-size: 12px;
+}
+.swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--swatch) content-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25);
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease;
+  &:hover {
+    transform: scale(1.12);
+  }
+}
+.swatchOn {
+  border-color: #fff;
 }
 </style>
