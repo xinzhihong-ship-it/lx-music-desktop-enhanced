@@ -27,6 +27,17 @@ export type MpvPathSource =
   | 'system'
   | 'common-path'
 
+/**
+ * macOS：随包的 mpv 是 .app 里的程序，每次启动（切歌换实例、枚举设备）都会在程序坞里短暂出现一个图标，看起来像程序坞闪了一下。
+ * 用 --macos-app-activation-policy 让它不进程序坞：纯音频 prohibited（不需要任何窗口），视频 accessory（可以有窗口但没有程序坞图标）。
+ * 只对随包的 mpv（0.39）加：用户自己指定的旧版 mpv 可能不认识这个选项而直接退出。
+ */
+export const macActivationPolicyArgs = (source: MpvPathSource, isVideo: boolean): string[] => {
+  if (process.platform != 'darwin') return []
+  if (source == 'custom' || source == 'system' || source == 'common-path') return []
+  return [`--macos-app-activation-policy=${isVideo ? 'accessory' : 'prohibited'}`]
+}
+
 export interface MpvPathInfo {
   path: string
   source: MpvPathSource
@@ -332,7 +343,7 @@ export class MpvController {
     this.isDestroyed = false
     this.startError = null
     const mpvPath = resolveMpvPath()
-    const args = this.buildArgs()
+    const args = [...this.buildArgs(), ...macActivationPolicyArgs(mpvPath.source, this.isVideo)]
     log.info(
       `MpvController starting mpv instance=${this.instanceId} source=${mpvPath.source} path=${mpvPath.path}`,
     )
@@ -1364,6 +1375,7 @@ export class MpvController {
           '--no-config',
           '--no-video',
           '--force-window=no',
+          ...macActivationPolicyArgs(mpvPath.source, false),
           '--audio-device=help',
         ],
         {

@@ -1,7 +1,9 @@
 <template>
   <div id="container" :class="[{ lock: setting['desktopLyric.isLock'] }, { hide: isHide || isHoverHide }]">
     <div id="main">
-      <layout-karaoke-lyric />
+      <div class="lyric-area">
+        <layout-karaoke-lyric />
+      </div>
       <div v-if="!setting['desktopLyric.isLock']" class="control-bar">
         <layout-control-bar />
       </div>
@@ -176,6 +178,16 @@ body {
 #container.lock #main:hover {
   background-color: transparent;
   box-shadow: none;
+}
+
+// 工具栏出现时歌词整体下移，不被工具栏挡住
+.lyric-area {
+  position: absolute;
+  inset: 0;
+  transition: top .2s ease;
+}
+#container:not(.lock) #main:hover .lyric-area {
+  top: 46px;
 }
 
 .control-bar {

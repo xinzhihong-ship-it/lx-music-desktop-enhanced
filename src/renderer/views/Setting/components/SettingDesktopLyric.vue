@@ -24,6 +24,8 @@ dd
       span(:class="$style.rowLabel") {{ $t('setting__desktop_lyric_line_mode') }}
       base-checkbox.gap-left(v-for="item in lineModeList" :id="'setting_desktop_lyric_line_mode_' + item.id" :key="item.id" :model-value="appSetting['desktopLyric.lineMode']" need :value="item.id" :label="item.label" @update:model-value="updateSetting({ 'desktopLyric.lineMode': $event })")
     .gap-top
+      base-checkbox(id="setting_desktop_lyric_stage_sparks" :model-value="appSetting['desktopLyric.stageSparks']" :label="$t('setting__lyric_stage_sparks')" @update:model-value="updateSetting({ 'desktopLyric.stageSparks': $event })")
+    .gap-top
       span(:class="$style.rowLabel") {{ $t('setting__desktop_lyric_direction') }}
       base-checkbox.gap-left(id="setting_desktop_lyric_direction_horizontal" :model-value="appSetting['desktopLyric.direction']" need value="horizontal" :label="$t('setting__desktop_lyric_direction_horizontal')" @update:model-value="updateSetting({ 'desktopLyric.direction': $event })")
       base-checkbox.gap-left(id="setting_desktop_lyric_direction_vertical" :model-value="appSetting['desktopLyric.direction']" need value="vertical" :label="$t('setting__desktop_lyric_direction_vertical')" @update:model-value="updateSetting({ 'desktopLyric.direction': $event })")
@@ -78,8 +80,8 @@ dd
       base-checkbox(id="setting_island_enable" :model-value="appSetting['island.enable']" :label="$t('setting__island_enable')" @update:model-value="updateSetting({ 'island.enable': $event })")
       svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__island_enable_tip')")
     .gap-top
-      base-checkbox(id="setting_island_always_show" :model-value="appSetting['island.alwaysShow']" :disabled="!appSetting['island.enable']" :label="$t('setting__island_always_show')" @update:model-value="updateSetting({ 'island.alwaysShow': $event })")
-      svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__island_always_show_tip')")
+      base-checkbox(id="setting_island_expanded" :model-value="appSetting['island.expanded']" :disabled="!appSetting['island.enable']" :label="$t('setting__island_expanded')" @update:model-value="updateSetting({ 'island.expanded': $event })")
+      svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__island_expanded_tip')")
     .gap-top
       base-btn.btn(min :disabled="appSetting['island.x'] == null" @click="updateSetting({ 'island.x': null, 'island.y': null })") {{ $t('setting__island_reset_position') }}
 </template>
@@ -271,6 +273,9 @@ export default {
       { id: 'single', label: t('desktop_lyric__mode_single') },
       { id: 'double', label: t('desktop_lyric__mode_double') },
       { id: 'extended', label: t('desktop_lyric__mode_extended') },
+      { id: 'flow', label: t('lyric_view__style_flow') },
+      { id: 'steps', label: t('lyric_view__style_steps') },
+      { id: 'tilt', label: t('lyric_view__style_tilt') },
     ])
 
     const resetWindowSetting = () => {

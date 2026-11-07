@@ -187,7 +187,7 @@ export const createWindow = () => {
 
 const getMainFrame = () => browserWindow?.webContents.mainFrame
 
-const islandConfigKeys = [...watchConfigKeys, 'island.alwaysShow'] as Array<keyof LX.AppSetting>
+const islandConfigKeys = watchConfigKeys as Array<keyof LX.AppSetting>
 
 export default () => {
   // 与桌面歌词共用请求通道的事件名：按发送方窗口区分，这里只处理歌词岛

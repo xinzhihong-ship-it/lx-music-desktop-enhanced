@@ -1,24 +1,35 @@
 <template>
   <div
-    :class="[$style.root, vertical ? $style.vertical : $style.horizontal, { [$style.dragging]: isDragging, [$style.ellipsis]: ellipsis }]"
+    :class="[$style.root, vertical && !isStage ? $style.vertical : $style.horizontal, { [$style.dragging]: isDragging, [$style.ellipsis]: ellipsis }]"
     :style="rootStyle" @mousedown="handleMouseDown" @touchstart="handleTouchStart"
   >
-    <!-- 双行交替：上排固定放第 1、3、5… 句，下排放第 2、4、6… 句，上排靠左、下排靠右 -->
-    <div v-if="mode == 'double'" :class="[$style.stack, $style.double]">
+    <!-- 舞台风格：与播放详情页相同的流动 / 阶梯 / 倾诉（只做横排） -->
+    <StageView
+      v-if="isStage" :class="$style.stage" :doc="lyricDoc" :style-name="mode" :sparks="!!setting['desktopLyric.stageSparks']"
+      :accent="setting['desktopLyric.style.lyricPlayedColor']" :read-position="readLyricPosition" :playing="isPlay" :roma-first="isRomaFirst"
+      :base-size="fontSize" compact
+    />
+    <!-- 双行 / 翻译：上排靠左、下排靠右。双行时第 1、3、5… 句固定在上排，第 2、4、6… 句在下排；
+         翻译时上排是当前句、下排是它的翻译（没有翻译的句子按双行交替） -->
+    <div v-else-if="isRows" :class="[$style.stack, $style.double]">
       <template v-for="(row, r) in rows" :key="r">
         <transition
           :enter-from-class="$style.lineEnterFrom" :enter-active-class="$style.lineEnterActive"
           :leave-to-class="$style.lineLeaveTo" :leave-active-class="$style.lineLeaveActive"
         >
           <p
-            v-if="row" :key="`d:${musicInfo.id}:${row.index}`"
-            :class="[$style.line, $style.primary, r ? $style.rowB : $style.rowA, { [$style.waiting]: !row.active }]"
+            v-if="row" :key="`${row.translation ? 't' : 'd'}:${musicInfo.id}:${row.index}`"
+            :class="[$style.line, $style.primary, r ? $style.rowB : $style.rowA, { [$style.waiting]: !row.active, [$style.translation]: row.translation }]"
           >
-            <span v-for="(word, i) in row.words" :key="i" :class="$style.word" :style="row.active ? wordStyle(word) : null">{{ word.text }}</span>
+            <template v-if="row.active && !row.translation">
+              <span v-for="(word, i) in row.words" :key="i" :class="[$style.word, { [$style.singing]: isSinging(word) }]" :style="wordStyle(word)">{{ word.text }}</span>
+            </template>
+            <template v-else>{{ row.words.map(w => w.text).join('') }}</template>
           </p>
         </transition>
       </template>
     </div>
+    <!-- 单行：只显示当前句 -->
     <div v-else :class="$style.stack">
       <transition
         :enter-from-class="$style.lineEnterFrom" :enter-active-class="$style.lineEnterActive"
@@ -26,44 +37,39 @@
       >
         <p :key="`p:${musicInfo.id}:${frame.index}`" :class="[$style.line, $style.primary]">
           <template v-if="frame.index >= 0">
-            <span v-for="(word, i) in frame.words" :key="i" :class="$style.word" :style="wordStyle(word)">{{ word.text }}</span>
+            <span v-for="(word, i) in frame.words" :key="i" :class="[$style.word, { [$style.singing]: isSinging(word) }]" :style="wordStyle(word)">{{ word.text }}</span>
           </template>
           <span v-else :class="$style.title">{{ title }}</span>
         </p>
-      </transition>
-      <transition
-        :enter-from-class="$style.lineEnterFrom" :enter-active-class="$style.lineEnterActive"
-        :leave-to-class="$style.lineLeaveTo" :leave-active-class="$style.lineLeaveActive"
-      >
-        <p
-          v-if="mode == 'extended' && frame.secondary" :key="`s:${musicInfo.id}:${frame.index}:${frame.secondaryKind}`"
-          :class="[$style.line, $style.secondary, { [$style.next]: frame.secondaryKind == 'next' }]"
-        >{{ frame.secondary }}</p>
       </transition>
     </div>
   </div>
 </template>
 
 <script setup>
-// 桌面歌词：三种显示方式（单行 / 双行交替 / 当前句 + 翻译）。当前行逐字点亮——没唱到的字半透明，正在唱的字微微上浮放大并带柔光，
-// 唱过的字保持明亮；换行时旧行上移淡出、新行从下方浮入并由模糊变清晰。
-// 第二行是翻译 / 罗马音，没有时预告下一行。可读性靠柔和投影（不再用描边）。
-// 沿用字体、字号、透明度、对齐、行距、单行省略、横竖排设置；“高亮颜色”作为柔光色，“阴影颜色”用于外圈柔和投影。
-// 在歌词上按住拖动即可移动窗口。
+// 桌面歌词。显示方式（desktopLyric.lineMode）：
+//   single 单行；double 双行交替（酷狗 / 网易云式，下一句在原位亮起）；extended 当前句 + 翻译（排版同双行）；
+//   flow / steps / tilt 与播放详情页相同的舞台风格。
+// 颜色：没唱到的字用“文字颜色”（半透明），唱过的字用“高亮颜色”，正在唱的字按进度在两者之间过渡并微微上浮、带柔光；
+// “阴影颜色”用于外圈柔和投影。沿用字体、字号、透明度、对齐、行距、单行省略、横竖排设置。在歌词上按住拖动可移动窗口。
 import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from '@common/utils/vueTools'
 import { doubleLineFrame, karaokeFrame } from '@common/utils/lyrics'
 import { clockRevision, isRomaFirst, lyricDoc, readLyricPosition } from '@lyric/core/lyric'
 import { isPlay, musicInfo, setting } from '@lyric/store/state'
 import useWindowDrag from '@lyric/useApp/useWindowDrag'
+import StageView from '@renderer/components/layout/PlayDetail/lyrics/StageView.vue'
 
 const PAUSED_REFRESH = 500
+const STAGE_MODES = ['flow', 'steps', 'tilt']
 
 const { isDragging, handleMouseDown, handleTouchStart } = useWindowDrag()
 
 const vertical = computed(() => setting['desktopLyric.direction'] == 'vertical')
 const ellipsis = computed(() => !!setting['desktopLyric.style.ellipsis'])
-// single：只显示当前句；double：双行交替；extended：当前句 + 翻译 / 罗马音（没有时预告下一句）
 const mode = computed(() => setting['desktopLyric.lineMode'] ?? 'double')
+const isStage = computed(() => STAGE_MODES.includes(mode.value))
+const isRows = computed(() => mode.value == 'double' || mode.value == 'extended')
+const fontSize = computed(() => Math.trunc(setting['desktopLyric.style.fontSize']))
 const frame = shallowRef(karaokeFrame(lyricDoc.value, readLyricPosition(), isRomaFirst.value))
 const rows = shallowRef([null, null])
 const title = computed(() => {
@@ -74,24 +80,29 @@ const title = computed(() => {
 
 const rootStyle = computed(() => ({
   fontFamily: setting['desktopLyric.style.font'] || undefined,
-  fontSize: `${Math.trunc(setting['desktopLyric.style.fontSize'])}px`,
+  fontSize: `${fontSize.value}px`,
   opacity: setting['desktopLyric.style.opacity'] / 100,
   textAlign: setting['desktopLyric.style.align'],
   '--line-gap': `${setting['desktopLyric.style.lineGap'] / 2}px`,
   '--lyric-color': setting['desktopLyric.style.lyricUnplayColor'],
-  '--lyric-glow': setting['desktopLyric.style.lyricPlayedColor'],
+  '--lyric-played': setting['desktopLyric.style.lyricPlayedColor'],
   '--lyric-shadow': setting['desktopLyric.style.lyricShadowColor'],
+  // 舞台风格的文字颜色
+  '--stage-color': setting['desktopLyric.style.lyricUnplayColor'],
 }))
 
-/** 每个字：亮度随演唱进度上升；正在唱的字上浮、放大、发光 */
-const wordStyle = word => {
-  const p = word.progress
-  const singing = p > 0 && p < 1
-  return {
-    opacity: 0.4 + 0.6 * p,
-    transform: singing ? 'translateY(-0.05em) scale(1.06)' : undefined,
-    '--glow': singing ? 1 : 0,
-  }
+const isSinging = word => word.progress > 0 && word.progress < 1
+/** 每个字的颜色按演唱进度从“文字颜色”过渡到“高亮颜色” */
+const wordStyle = word => ({ '--p': `${Math.round(word.progress * 100)}%` })
+
+/** 翻译模式：当前句有翻译 / 罗马音时，上排当前句、下排翻译；否则按双行交替 */
+const translationRows = (pos) => {
+  const f = karaokeFrame(lyricDoc.value, pos, isRomaFirst.value)
+  if (f.index < 0 || f.secondaryKind != 'extended') return doubleLineFrame(lyricDoc.value, pos)
+  return [
+    { index: f.index, words: f.words, active: true },
+    { index: f.index, words: [{ text: f.secondary, progress: 0 }], active: true, translation: true },
+  ]
 }
 
 let raf = 0
@@ -106,10 +117,12 @@ const clearSchedule = () => {
 const update = () => {
   raf = 0
   timer = null
+  // 舞台风格由 StageView 自己调度刷新
+  if (unmounted || isStage.value) return
   const pos = readLyricPosition()
   if (mode.value == 'double') rows.value = doubleLineFrame(lyricDoc.value, pos)
+  else if (mode.value == 'extended') rows.value = translationRows(pos)
   else frame.value = karaokeFrame(lyricDoc.value, pos, isRomaFirst.value)
-  if (unmounted) return
   // 播放中逐帧（点亮要连续）；暂停时低频刷新即可
   if (isPlay.value) raf = requestAnimationFrame(update)
   else timer = setTimeout(update, PAUSED_REFRESH)
@@ -165,10 +178,16 @@ onBeforeUnmount(() => {
   grid-template-areas: 'primary' 'secondary';
   row-gap: var(--line-gap);
 }
+.stage {
+  flex: auto;
+  width: 100%;
+  height: 100%;
+}
 .line {
   margin: 0;
   line-height: 1.3;
   overflow-wrap: break-word;
+  color: var(--lyric-color, #fff);
   // 柔和投影保证在任意桌面背景上可读
   text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 2px 10px var(--lyric-shadow, rgba(0, 0, 0, .35));
 }
@@ -178,23 +197,19 @@ onBeforeUnmount(() => {
   font-weight: 800;
   letter-spacing: -.01em;
 }
-.secondary {
-  grid-area: secondary;
-  font-size: .62em;
-  font-weight: 600;
-  opacity: .78;
-  &.next {
-    opacity: .5;
-  }
-}
+// 没唱到：文字颜色（半透明）；唱过：高亮颜色；正在唱：两者按进度混合，并上浮、放大、带高亮色柔光
 .word {
   display: inline-block;
   white-space: pre;
-  transition: opacity .12s linear, transform .25s cubic-bezier(.3, 1.4, .5, 1), text-shadow .3s ease;
+  color: color-mix(in srgb, var(--lyric-played, #fff) var(--p, 0%), color-mix(in srgb, var(--lyric-color, #fff) 50%, transparent));
+  transition: transform .25s cubic-bezier(.3, 1.4, .5, 1), text-shadow .3s ease;
+}
+.singing {
+  transform: translateY(-.05em) scale(1.06);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, .55),
     0 2px 10px var(--lyric-shadow, rgba(0, 0, 0, .35)),
-    0 0 calc(.45em * var(--glow, 0)) color-mix(in srgb, var(--lyric-glow, #fff) calc(85% * var(--glow, 0)), transparent);
+    0 0 .45em color-mix(in srgb, var(--lyric-played, #fff) 85%, transparent);
 }
 .title {
   opacity: .75;
@@ -220,6 +235,11 @@ onBeforeUnmount(() => {
 }
 .waiting {
   opacity: .5;
+}
+.translation {
+  font-size: .8em;
+  font-weight: 700;
+  opacity: .88;
 }
 
 // 换行：旧行上移淡出，新行从下方浮入、由模糊变清晰

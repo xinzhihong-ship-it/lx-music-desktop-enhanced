@@ -225,7 +225,7 @@ export const setLyric = () => {
     if (appSetting['player.isSwapLyricTranslationAndRoma']) extendedLyrics.reverse()
 
     lrc.setLyric(
-      appSetting['player.isPlayLxlrc'] && musicInfo.lxlrc ? musicInfo.lxlrc : musicInfo.lrc,
+      musicInfo.lrc,
       extendedLyrics,
     )
     sendDesktopLyricInfo({

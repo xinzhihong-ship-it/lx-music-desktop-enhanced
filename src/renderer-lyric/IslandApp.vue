@@ -2,7 +2,7 @@
   <div :class="$style.stage">
     <div
       ref="dom_capsule"
-      :class="[$style.capsule, $style[layout], { [$style.expanded]: expanded, [$style.hidden]: hidden, [$style.dragging]: dragging }]"
+      :class="[$style.capsule, $style[layout], { [$style.expanded]: expanded, [$style.dragging]: dragging }]"
       :style="capsuleStyle"
       @pointerdown="handleDragStart"
     >
@@ -36,6 +36,13 @@
             <p :class="$style.singer">{{ musicInfo.id ? musicInfo.singer : '' }}</p>
           </div>
           <span :class="[$style.levels, $style.levelsBig, { [$style.levelsOn]: isPlay }]" aria-hidden="true"><i /><i /><i /><i /><i /></span>
+          <!-- 常驻展开开关：打开后一直显示迷你播放器，关闭后收回胶囊 -->
+          <button
+            type="button" :class="[$style.ctrl, $style.pin, { [$style.pinOn]: pinned }]" :aria-pressed="pinned"
+            :title="$t('setting__island_expanded')" :aria-label="$t('setting__island_expanded')" @click="togglePinned"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 4h6l-1 5 3 3H7l3-3zM12 12v8" /></svg>
+          </button>
         </div>
         <div :class="$style.lyric">
           <p :class="$style.lyricMain">
@@ -74,12 +81,13 @@
 <script setup>
 // 顶部歌词岛：屏幕顶部中央的黑色胶囊，平时显示当前歌词，鼠标停留 300ms 展开为迷你播放器。
 // 窗口默认鼠标穿透（forward：仍能收到移动事件）；鼠标进入胶囊时请求接收鼠标，离开后恢复穿透。
-// 不常驻时（island.alwaysShow 关闭）平时隐藏，鼠标贴到屏幕顶部中央才出现，避免挡住最大化窗口的标题栏。
+// 设置 island.expanded 打开时常驻展开为迷你播放器，否则为胶囊（刘海屏为刘海两侧 + 下方一行歌词）。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from '@common/utils/vueTools'
 import { karaokeFrame } from '@common/utils/lyrics'
 import { clockRevision, init as initLyric, isRomaFirst, lyricDoc, readLyricPosition, readMediaTime } from '@lyric/core/lyric'
 import { playNext, playPrev, playToggle, seekTo } from '@lyric/core/mainWindowChannel'
 import { duration, isPlay, musicInfo, setting } from '@lyric/store/state'
+import { updateSetting } from '@lyric/store/action'
 import { onIslandDisplayInfo, sendConnectMainWindowEvent, sendIslandDrag, setIslandInteractive } from '@lyric/utils/ipc'
 
 const query = new URLSearchParams(location.search)
@@ -87,8 +95,6 @@ const isMac = query.get('os') == 'mac'
 const HOVER_DELAY = 300
 const LEAVE_DELAY = 300
 const SLACK = 6
-const REVEAL_HALF_WIDTH = 110
-const REVEAL_DEPTH = 3
 // 刘海宽度拿不到准确值（系统没有开放给 Electron），按常见机型取 200，两侧各留一个“翼”放封面和电平
 const NOTCH_WIDTH = 200
 const FLOAT_GAP = 6
@@ -100,7 +106,11 @@ const display = reactive({ notch: query.get('notch') == 'true', menuBar: Number(
 const layout = computed(() => display.floating ? 'free' : isMac ? (display.notch ? 'notch' : 'float') : 'top')
 
 const dom_capsule = ref(null)
-const expanded = ref(false)
+// 悬停展开；设置为常驻展开时始终展开
+const hoverExpanded = ref(false)
+const pinned = computed(() => !!setting['island.expanded'])
+const expanded = computed(() => pinned.value || hoverExpanded.value)
+const togglePinned = () => { updateSetting({ 'island.expanded': !pinned.value }) }
 const inside = ref(false)
 const frame = shallowRef(karaokeFrame(lyricDoc.value, 0))
 const mediaTime = ref(0)
@@ -109,11 +119,8 @@ const title = computed(() => {
   if (!musicInfo.id || !musicInfo.name || musicInfo.name == '^') return ''
   return musicInfo.singer && musicInfo.singer != '^' ? `${musicInfo.name} - ${musicInfo.singer}` : musicInfo.name
 })
-// 刘海屏常驻显示：刘海下方多一行当前歌词
-const showChin = computed(() => layout.value == 'notch' && !!setting['island.alwaysShow'] && frame.value.index >= 0 && isPlay.value)
-// 不常驻：只有鼠标在胶囊上（或移到顶部中央）时才显示。刘海屏上的“翼”与刘海融为一体，始终显示
-// 拖到自定义位置后始终显示（那里没有唤出区）
-const hidden = computed(() => layout.value != 'notch' && layout.value != 'free' && !setting['island.alwaysShow'] && !inside.value && !expanded.value)
+// 刘海屏：播放中刘海下方多一行当前歌词
+const showChin = computed(() => layout.value == 'notch' && frame.value.index >= 0 && isPlay.value)
 const EXPANDED_BODY = 176
 const capsuleStyle = computed(() => {
   const top = layout.value == 'float' ? `${display.menuBar + FLOAT_GAP}px` : '0px'
@@ -186,7 +193,7 @@ const refresh = () => {
 }
 watch([lyricDoc, clockRevision, isPlay, isRomaFirst], refresh)
 
-// ---- 鼠标：命中胶囊 / 顶部中央 → 接收鼠标并计时展开；离开 → 恢复穿透并计时收起 ----
+// ---- 鼠标：命中胶囊 → 接收鼠标并计时展开；离开 → 恢复穿透并计时收起 ----
 let hoverTimer = null
 let leaveTimer = null
 let interactive = false
@@ -199,10 +206,7 @@ const hitTest = (x, y) => {
   const el = dom_capsule.value
   if (!el) return false
   const rect = el.getBoundingClientRect()
-  if (!hidden.value && x >= rect.left - SLACK && x <= rect.right + SLACK && y >= rect.top - SLACK && y <= rect.bottom + SLACK) return true
-  // 隐藏时的唤出区：屏幕顶边（macOS 普通屏为菜单栏）中央一段
-  const depth = layout.value == 'float' ? display.menuBar + REVEAL_DEPTH : REVEAL_DEPTH
-  return y <= depth && Math.abs(x - window.innerWidth / 2) <= REVEAL_HALF_WIDTH
+  return x >= rect.left - SLACK && x <= rect.right + SLACK && y >= rect.top - SLACK && y <= rect.bottom + SLACK
 }
 const setInside = value => {
   if (inside.value == value) return
@@ -213,7 +217,7 @@ const setInside = value => {
     leaveTimer = null
     hoverTimer ??= setTimeout(() => {
       hoverTimer = null
-      if (inside.value) expanded.value = true
+      if (inside.value) hoverExpanded.value = true
     }, HOVER_DELAY)
   } else {
     setInteractive(false)
@@ -221,7 +225,7 @@ const setInside = value => {
     hoverTimer = null
     leaveTimer ??= setTimeout(() => {
       leaveTimer = null
-      if (!inside.value) expanded.value = false
+      if (!inside.value) hoverExpanded.value = false
     }, LEAVE_DELAY)
   }
 }
@@ -342,10 +346,6 @@ body {
     &.expanded {
       border-radius: 24px;
     }
-  }
-  &.hidden {
-    opacity: 0;
-    transform: translateY(-100%);
   }
   &.dragging {
     cursor: grabbing;
@@ -562,6 +562,14 @@ body {
   &:active {
     transform: scale(.92);
   }
+}
+.pin {
+  flex: none;
+  color: rgba(255, 255, 255, .45);
+}
+.pinOn {
+  color: #fff;
+  background: rgba(255, 255, 255, .16);
 }
 .ctrlMain {
   color: #fff;
