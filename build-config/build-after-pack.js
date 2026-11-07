@@ -114,8 +114,7 @@ module.exports = async(context) => {
   // mpv.app 标记为后台辅助程序，切歌时程序坞不再闪（必须在外层签名之前）
   for (const relativePath of getRequiredMacMpvPaths(targetArch)) {
     const appBundle = path.join(resPath, 'bin', relativePath.split(path.sep)[0])
-    await markAgentApp(appBundle, (cmd, args) => execFileAsync(cmd, args))
-    console.log(`[mac] marked ${appBundle} as LSUIElement`)
+    if (await markAgentApp(appBundle, (cmd, args) => execFileAsync(cmd, args))) console.log(`[mac] marked ${appBundle} as LSUIElement`)
   }
 
   // 创建APP语言包文件

@@ -32,10 +32,23 @@ test('mpv.app is marked as a background agent (LSUIElement) and re-signed before
     await fs.mkdir(path.join(app, 'Contents'), { recursive: true })
     await fs.writeFile(path.join(app, 'Contents', 'Info.plist'), '<plist/>')
     const calls = []
-    await markAgentApp(app, async(cmd, args) => { calls.push([cmd, ...args]) })
+    assert.equal(await markAgentApp(app, async(cmd, args) => { calls.push([cmd, ...args]) }), true)
     assert.deepEqual(calls[0], ['plutil', '-replace', 'LSUIElement', '-bool', 'YES', path.join(app, 'Contents', 'Info.plist')])
     assert.equal(calls[1][0], 'codesign')
+    assert.ok(!calls[1].some(arg => /requirements/.test(arg)), 'original requirements are not preserved')
     assert.equal(calls[1].at(-1), app)
+    assert.deepEqual(calls[2], ['codesign', '--verify', '--strict', app])
     await assert.rejects(markAgentApp(path.join(root, 'missing.app'), async() => {}))
+
+    // 重新签名或校验失败：还原原来的 .app，不让打包失败
+    const warnings = []
+    const result = await markAgentApp(app, async(cmd, args) => {
+      if (cmd == 'plutil') await fs.writeFile(args.at(-1), '<plist>changed</plist>')
+      if (args[0] == '--verify') throw Object.assign(new Error('verify failed'), { stderr: 'does not satisfy its designated Requirement' })
+    }, { warn: msg => warnings.push(msg) })
+    assert.equal(result, false)
+    assert.equal(await fs.readFile(path.join(app, 'Contents', 'Info.plist'), 'utf8'), '<plist/>')
+    assert.match(warnings[0], /designated Requirement/)
+    await assert.rejects(fs.access(`${app}.lsuielement-backup`))
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
