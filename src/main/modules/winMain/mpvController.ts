@@ -1104,7 +1104,10 @@ export class MpvController {
           this.cachedVolume ?? 100,
         ]).catch(() => {})
       }
-    } else if (this.aoMuteHintActive) {
+    } else {
+      // 没有静音：不管之前记没记录，驱动音量都恢复到 100。
+      // 用户实测：ao-volume 卡在 0（软件音量 100、mute=false），有进度没声音，切歌也不恢复，
+      // 只有换设备（新进程默认 100）才有声。不能只靠 aoMuteHintActive 判断要不要恢复。
       await this.applyAoLevelMute(false)
     }
   }
