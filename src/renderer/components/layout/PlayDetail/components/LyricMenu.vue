@@ -52,33 +52,8 @@
 <script>
 import { computed, ref, watch } from '@common/utils/vueTools'
 import useMenuLocation from '@renderer/utils/compositions/useMenuLocation'
-import { debounce } from '@common/utils/common'
-import { saveLyricEdited, removeLyricEdited } from '@renderer/utils/ipc'
 import { appSetting, setPlayDetailLyricFont, setPlayDetailLyricAlign } from '@renderer/store/setting'
-import { getBinding, setBindingOffset } from '@renderer/core/lyrics/binding'
-
-const offsetTagRxp = /(?:^|\n)\s*\[offset:\s*(\S+(?:\d+)*)\s*\]/
-const offsetTagAllRxp = /(^|\n)\s*\[offset:\s*(\S+(?:\d+)*)\s*\]/g
-
-const saveLyric = debounce((musicInfo, lyricInfo) => {
-  void saveLyricEdited(musicInfo, lyricInfo)
-})
-const removeLyric = debounce(musicInfo => {
-  void removeLyricEdited(musicInfo)
-})
-// 已绑定歌词来源的歌曲：偏移写进绑定（绑定优先于已编辑歌词，写已编辑歌词下次会被忽略）
-const saveBindingOffset = debounce((musicInfo, offset) => {
-  void setBindingOffset(musicInfo, offset)
-})
-
-const getOffset = lrc => {
-  let offset = lrc.match(offsetTagRxp)
-  if (offset) {
-    offset = parseInt(offset[1])
-    if (Number.isNaN(offset)) offset = 0
-  } else offset = 0
-  return offset
-}
+import { getLyricOffset, setCurrentLyricOffset } from '@renderer/core/lyrics/offsetControl'
 
 export default {
   name: 'LyricMenu',
@@ -93,7 +68,7 @@ export default {
       required: true,
     },
   },
-  emits: ['updateLyric', 'update:modelValue', 'search'],
+  emits: ['update:modelValue', 'search'],
   setup(props, { emit }) {
     // const appSetting = useRefGetter('appSetting')
     // const playDetailSetting = useRefGetter('playDetailSetting')
@@ -103,7 +78,6 @@ export default {
     const offset = ref(0)
     const offsetDisabled = ref(true)
     const originOffset = ref(0)
-    const isBound = ref(false)
 
     const visible = computed(() => props.modelValue)
     const location = computed(() => props.xy)
@@ -129,45 +103,9 @@ export default {
       setPlayDetailLyricFont(100)
     }
 
+    // 偏移的改写与保存与桌面歌词工具栏共用（core/lyrics/offsetControl）
     const updateLyric = offset => {
-      let lyric = props.lyricInfo.lyric
-      let tlyric = props.lyricInfo.tlyric
-      let rlyric = props.lyricInfo.rlyric
-      let lxlyric = props.lyricInfo.lxlyric
-      if (offsetTagRxp.test(lyric)) {
-        lyric = lyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-        tlyric &&= tlyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-        lxlyric &&= lxlyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-        rlyric &&= rlyric.replace(offsetTagAllRxp, `$1[offset:${offset}]`)
-      } else {
-        lyric &&= `[offset:${offset}]\n` + lyric
-        tlyric &&= `[offset:${offset}]\n` + tlyric
-        lxlyric &&= `[offset:${offset}]\n` + lxlyric
-        rlyric &&= `[offset:${offset}]\n` + rlyric
-      }
-
-      const musicInfo = 'progress' in props.lyricInfo.musicInfo ? props.lyricInfo.musicInfo.metadata.musicInfo : props.lyricInfo.musicInfo
-
-      if (isBound.value) {
-        saveBindingOffset(musicInfo, offset)
-      } else if (offset == originOffset.value) {
-        removeLyric(musicInfo)
-      } else {
-        saveLyric(musicInfo, {
-          lyric,
-          tlyric,
-          rlyric,
-          lxlyric,
-        })
-      }
-
-      emit('updateLyric', {
-        lyric,
-        tlyric,
-        rlyric,
-        lxlyric,
-        offset,
-      })
+      void setCurrentLyricOffset(offset)
     }
     const setOffset = step => {
       offset.value += step
@@ -180,16 +118,9 @@ export default {
     }
 
     const parseLrcOffset = () => {
-      offset.value = getOffset(props.lyricInfo.lyric)
-      originOffset.value = getOffset(props.lyricInfo.rawlyric)
+      offset.value = getLyricOffset(props.lyricInfo.lyric)
+      originOffset.value = getLyricOffset(props.lyricInfo.rawlyric)
       offsetDisabled.value = !props.lyricInfo.lyric
-      isBound.value = false
-      const musicInfo = props.lyricInfo.musicInfo
-      if (musicInfo) {
-        void getBinding(musicInfo).then(binding => {
-          if (props.lyricInfo.musicInfo === musicInfo) isBound.value = !!binding
-        }).catch(() => {})
-      }
     }
 
     const handleSearch = () => {

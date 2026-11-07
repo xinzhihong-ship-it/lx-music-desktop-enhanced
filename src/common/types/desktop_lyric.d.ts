@@ -36,7 +36,8 @@ declare namespace LX {
     }
 
     /** 桌面歌词 / 歌词岛发给主窗口的请求；play_* 为歌词岛的播放控制 */
-    type WinMainActions = 'get_info' | 'get_status' | 'get_analyser_data_array' | 'play_toggle' | 'play_prev' | 'play_next' | 'seek'
+    /** offset_adjust：data 为偏移增量（毫秒）；offset_reset：恢复原始偏移 */
+    type WinMainActions = 'get_info' | 'get_status' | 'get_analyser_data_array' | 'play_toggle' | 'play_prev' | 'play_next' | 'seek' | 'offset_adjust' | 'offset_reset'
 
     /** 连接主窗口的客户端类型：桌面歌词窗口 / 顶部歌词岛 */
     type ClientKind = 'lyric' | 'island'

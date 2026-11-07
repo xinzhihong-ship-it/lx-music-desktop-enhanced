@@ -182,6 +182,13 @@ const handleDesktopLyricMessage = (action: LX.DesktopLyric.WinMainActions, port:
     case 'play_next':
       void import('@renderer/core/player/action').then(({ playNext }) => playNext())
       break
+    // 桌面歌词工具栏调整偏移：与播放详情页右键菜单相同的改写与保存
+    case 'offset_adjust':
+      if (typeof data == 'number' && Number.isFinite(data)) void import('./lyrics/offsetControl').then(async({ adjustCurrentLyricOffset }) => adjustCurrentLyricOffset(data))
+      break
+    case 'offset_reset':
+      void import('./lyrics/offsetControl').then(async({ resetCurrentLyricOffset }) => resetCurrentLyricOffset())
+      break
     default:
       break
   }

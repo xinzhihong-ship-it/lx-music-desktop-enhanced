@@ -123,6 +123,14 @@ export const getStatus = () => {
 export const playToggle = () => { sendDesktopLyricInfo('play_toggle') }
 export const playPrev = () => { sendDesktopLyricInfo('play_prev') }
 export const playNext = () => { sendDesktopLyricInfo('play_next') }
+/** 调整歌词偏移（毫秒增量），由主窗口改写歌词并保存 */
+export const adjustLyricOffset = (delta: number) => {
+  mainWindowPort?.postMessage({ action: 'offset_adjust', data: delta })
+}
+/** 恢复歌词原始偏移 */
+export const resetLyricOffset = () => {
+  mainWindowPort?.postMessage({ action: 'offset_reset' })
+}
 /** 跳到指定位置（秒） */
 export const seekTo = (seconds: number) => {
   mainWindowPort?.postMessage({ action: 'seek', data: seconds })

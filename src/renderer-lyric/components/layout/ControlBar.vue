@@ -25,6 +25,23 @@
         :title="$t('lyric_view__sparks_tip')" @click="toggleSparks"
       >{{ $t('lyric_view__sparks') }}</button>
       <i :class="$style.divider" />
+      <!-- 歌词偏移：±100ms（右击 ±500ms），点中间的数值恢复原始偏移 -->
+      <div v-if="level < 3" :class="$style.offset" role="group" :aria-label="$t('desktop_lyric__offset')">
+        <button
+          type="button" :class="$style.btn" :title="$t('desktop_lyric__offset_dec')" :aria-label="$t('desktop_lyric__offset_dec')"
+          @click="adjustLyricOffset(-100)" @contextmenu.prevent="adjustLyricOffset(-500)"
+        >
+          <svg viewBox="0 0 24 24"><path d="M6 12h12" /></svg>
+        </button>
+        <button type="button" :class="[$style.seg, $style.offsetValue]" :title="$t('desktop_lyric__offset_reset')" @click="resetLyricOffset">{{ offsetLabel }}</button>
+        <button
+          type="button" :class="$style.btn" :title="$t('desktop_lyric__offset_inc')" :aria-label="$t('desktop_lyric__offset_inc')"
+          @click="adjustLyricOffset(100)" @contextmenu.prevent="adjustLyricOffset(500)"
+        >
+          <svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12" /></svg>
+        </button>
+      </div>
+      <i v-if="level < 3" :class="$style.divider" />
       <button type="button" :class="$style.btn" :title="$t('desktop_lyric__color')" :aria-label="$t('desktop_lyric__color')" @click="colorMode = true">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><circle cx="9" cy="9.5" r="1.4" :class="$style.fill" /><circle cx="14.5" cy="8.5" r="1.4" :class="$style.fill" /><circle cx="16" cy="13.5" r="1.4" :class="$style.fill" /></svg>
       </button>
@@ -105,6 +122,8 @@ import { setting } from '@lyric/store/state'
 import { updateSetting } from '@lyric/store/action'
 import useDrag from './useDrag'
 import { lyricUiScale } from './uiScale'
+import { lyricDoc } from '@lyric/core/lyric'
+import { adjustLyricOffset, resetLyricOffset } from '@lyric/core/mainWindowChannel'
 
 const t = useI18n()
 const { handleLyricMouseDown, handleLyricTouchStart } = useDrag()
@@ -127,6 +146,11 @@ const modeList = computed(() => [
   { id: 'steps', label: t('lyric_view__style_steps') },
   { id: 'tilt', label: t('lyric_view__style_tilt') },
 ])
+// 当前歌词偏移（来自主窗口发来的歌词原文的 [offset:] 标签），以秒显示
+const offsetLabel = computed(() => {
+  const ms = lyricDoc.value.offset
+  return `${ms > 0 ? '+' : ms < 0 ? '−' : ''}${(Math.abs(ms) / 1000).toFixed(1)}s`
+})
 const setLineMode = id => { if (lineMode.value != id) updateSetting({ 'desktopLyric.lineMode': id }) }
 const handleClose = () => { updateSetting({ 'desktopLyric.enable': false }) }
 const handleLock = () => { updateSetting({ 'desktopLyric.isLock': true }) }
@@ -207,7 +231,7 @@ const fit = async() => {
   }
 }
 const handleResize = () => { void fit() }
-watch([isVertical, colorMode, lineMode, () => setting['desktopLyric.style.fontSize']], () => { void fit() })
+watch([isVertical, colorMode, lineMode, offsetLabel, () => setting['desktopLyric.style.fontSize']], () => { void fit() })
 onMounted(() => {
   window.addEventListener('resize', handleResize)
   void fit()
@@ -236,7 +260,21 @@ onBeforeUnmount(() => { window.removeEventListener('resize', handleResize) })
   flex-direction: column;
   border-radius: 20px;
   transform-origin: 100% 50%;
-  .segment, .colorGroup {
+  .segment, .offset {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.offsetValue {
+  min-width: 46px;
+  padding: 0 4px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.vbar .offset {
+  flex-direction: column;
+}
+.colorGroup {
     flex-direction: column;
   }
   .divider {

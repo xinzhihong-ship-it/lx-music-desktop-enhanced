@@ -24,7 +24,7 @@
     <LyricStage v-if="view == 'stage'" :doc="lyricDoc" :style-name="stageStyle" :sparks="sparks" :accent="accent" @search="isShowSearch = true" />
     <LyricScroll v-else :doc="lyricDoc" @search="isShowSearch = true" />
 
-    <LyricMenu v-model="menuVisible" :xy="menuXY" :lyric-info="lyricInfo" @update-lyric="handleUpdateLyric" @search="isShowSearch = true" />
+    <LyricMenu v-model="menuVisible" :xy="menuXY" :lyric-info="lyricInfo" @search="isShowSearch = true" />
     <LyricSearchModal v-model:show="isShowSearch" :music-info="playMusicInfo.musicInfo" />
   </div>
 </template>
@@ -36,8 +36,6 @@ import { useI18n } from '@renderer/plugins/i18n'
 import { appSetting, updateSetting } from '@renderer/store/setting'
 import { isFullscreen } from '@renderer/store'
 import { isShowPlayComment, musicInfo as playerMusicInfo, playMusicInfo } from '@renderer/store/player/state'
-import { setMusicInfo } from '@renderer/store/player/action'
-import { setLyricOffset } from '@renderer/core/lyric'
 import { lyricDoc } from '@renderer/core/lyrics/engine'
 import LyricScroll from './LyricScroll.vue'
 import LyricStage from './LyricStage.vue'
@@ -102,10 +100,6 @@ const handleShowMenu = event => {
   menuXY.y = event.pageY
   if (menuVisible.value) return
   void nextTick(() => { menuVisible.value = true })
-}
-const handleUpdateLyric = ({ lyric, tlyric, rlyric, lxlyric, offset }) => {
-  setMusicInfo({ lrc: lyric, tlrc: tlyric, rlrc: rlyric, lxlrc: lxlyric })
-  setLyricOffset(offset)
 }
 </script>
 
