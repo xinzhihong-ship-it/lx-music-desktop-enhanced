@@ -21,7 +21,7 @@ dd
     base-checkbox.gap-left(
       v-for="item in modeList" :id="'setting_lyric_view_mode_' + item.id" :key="item.id" :model-value="mode" name="setting_lyric_view_mode"
       need :label="item.label" :value="item.id" @update:model-value="setMode")
-  div
+  div(style="margin-top: 10px")
     .gap-top
       base-checkbox(id="setting_lyric_stage_sparks" :model-value="!!appSetting['playDetail.stageSparks']" :label="$t('setting__lyric_stage_sparks')" @update:model-value="updateSetting({'playDetail.stageSparks': $event})")
     .gap-top

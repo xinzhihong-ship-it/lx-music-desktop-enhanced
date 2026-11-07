@@ -35,7 +35,7 @@ dd
     .gap-top
       span(:class="$style.rowLabel") {{ $t('setting__desktop_lyric_line_gap', { num: appSetting['desktopLyric.style.lineGap'] }) }}
       base-btn.btn(min @click="changeLineGap(-1)") {{ $t('setting__desktop_lyric_line_gap_dec') }}
-      base-btn.btn.gap-left(min @click="changeLineGap(1)") {{ $t('setting__desktop_lyric_line_gap_add') }}
+      base-btn.btn(min style="margin-left: 8px" @click="changeLineGap(1)") {{ $t('setting__desktop_lyric_line_gap_add') }}
     .gap-top
       base-checkbox(id="setting_desktop_lyric_ellipsis" :model-value="appSetting['desktopLyric.style.ellipsis']" :label="$t('setting__desktop_lyric_ellipsis')" @update:model-value="updateSetting({ 'desktopLyric.style.ellipsis': $event })")
     .gap-top
