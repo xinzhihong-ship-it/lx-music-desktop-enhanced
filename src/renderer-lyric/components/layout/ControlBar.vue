@@ -79,8 +79,18 @@
           :class="[$style.swatch, { [$style.swatchOn]: isSameColor(setting[group.key], color) }]" :style="{ '--swatch': color }"
           :aria-label="color" @click="updateSetting({ [group.key]: color })"
         />
+        <!-- 自定义：系统取色器（macOS 为色轮） -->
+        <label
+          :class="[$style.swatch, $style.custom, { [$style.swatchOn]: !group.colors.some(color => isSameColor(setting[group.key], color)) }]"
+          :style="{ '--swatch': setting[group.key] }" :title="$t('desktop_lyric__color_custom')"
+        >
+          <input type="color" :value="toHex(setting[group.key])" :aria-label="$t('desktop_lyric__color_custom')" @input="updateSetting({ [group.key]: toRgba($event.target.value) })">
+        </label>
       </div>
       <i :class="$style.divider" />
+      <button type="button" :class="$style.btn" :title="$t('desktop_lyric__color_reset')" :aria-label="$t('desktop_lyric__color_reset')" @click="resetColors">
+        <svg viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.1-5" /><path d="M5 4.5V8h3.5" /></svg>
+      </button>
       <button type="button" :class="$style.btn" :title="$t('desktop_lyric__back')" :aria-label="$t('desktop_lyric__back')" @click="colorMode = false">
         <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
       </button>
@@ -94,6 +104,7 @@ import { useI18n } from '@lyric/plugins/i18n'
 import { setting } from '@lyric/store/state'
 import { updateSetting } from '@lyric/store/action'
 import useDrag from './useDrag'
+import { lyricUiScale } from './uiScale'
 
 const t = useI18n()
 const { handleLyricMouseDown, handleLyricTouchStart } = useDrag()
@@ -146,8 +157,25 @@ const colorGroups = computed(() => [
 ])
 const normalizeColor = color => String(color ?? '').replace(/\s+/g, '').toLowerCase()
 const isSameColor = (a, b) => normalizeColor(a) == normalizeColor(b)
+// 取色器只认 #rrggbb；设置里存 rgba(...)
+const toHex = color => {
+  const m = String(color ?? '').match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
+  if (!m) return /^#[0-9a-f]{6}$/i.test(color) ? color : '#ffffff'
+  return '#' + m.slice(1, 4).map(n => Math.min(255, Number(n)).toString(16).padStart(2, '0')).join('')
+}
+const toRgba = hex => {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 1)`
+}
+// 恢复默认颜色（与 defaultSetting 中的初始值一致）
+const DEFAULT_COLORS = {
+  'desktopLyric.style.lyricUnplayColor': 'rgba(255, 255, 255, 1)',
+  'desktopLyric.style.lyricPlayedColor': 'rgba(7, 197, 86, 1)',
+  'desktopLyric.style.lyricShadowColor': 'rgba(0, 0, 0, 0.18)',
+}
+const resetColors = () => { updateSetting({ ...DEFAULT_COLORS }) }
 
-// ---- 按窗口大小缩放：先整体缩小，缩到 0.72 仍放不下时依次隐藏次要按钮（level 1~3） ----
+// ---- 大小：按歌词字号定基准大小（uiScale），再按窗口大小收缩；缩到 0.72 仍放不下时依次隐藏次要按钮（level 1~3） ----
 const MIN_SCALE = 0.72
 const BAR_GAP = 16
 const dom_bar = ref(null)
@@ -165,9 +193,10 @@ const fit = async() => {
     if (!el || run != fitRun) return
     const natural = isVertical.value ? el.offsetHeight : el.offsetWidth
     const avail = (isVertical.value ? window.innerHeight : window.innerWidth) - BAR_GAP
-    const value = natural > 0 ? Math.min(1, avail / natural) : 1
-    if (value >= MIN_SCALE || level.value >= 3) {
-      scale.value = Math.max(0.4, value)
+    const desired = lyricUiScale(setting['desktopLyric.style.fontSize'])
+    const room = natural > 0 ? avail / natural : desired
+    if (room >= Math.min(desired, MIN_SCALE) || level.value >= 3) {
+      scale.value = Math.max(0.4, Math.min(desired, room))
       // 告诉外层布局工具栏占了多大，歌词区让出这么多空间
       const size = (isVertical.value ? el.offsetWidth : el.offsetHeight) * scale.value + 8
       document.documentElement.style.setProperty('--lyric-bar-size', `${Math.round(size)}px`)
@@ -178,7 +207,7 @@ const fit = async() => {
   }
 }
 const handleResize = () => { void fit() }
-watch([isVertical, colorMode, lineMode], () => { void fit() })
+watch([isVertical, colorMode, lineMode, () => setting['desktopLyric.style.fontSize']], () => { void fit() })
 onMounted(() => {
   window.addEventListener('resize', handleResize)
   void fit()
@@ -340,5 +369,26 @@ onBeforeUnmount(() => { window.removeEventListener('resize', handleResize) })
 }
 .swatchOn {
   border-color: #fff;
+}
+// 自定义颜色：彩色圆环里是当前颜色，点开系统取色器
+.custom {
+  position: relative;
+  overflow: hidden;
+  background: conic-gradient(#f44, #fd4, #4f6, #4df, #46f, #e4f, #f44);
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: var(--swatch);
+  }
+  input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
 }
 </style>

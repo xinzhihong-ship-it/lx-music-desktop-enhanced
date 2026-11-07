@@ -290,6 +290,8 @@
   "setting__lyric_highlight": "Highlight",
   "setting__lyric_highlight_word": "Word by word",
   "setting__lyric_highlight_line": "Whole line",
+  "desktop_lyric__color_custom": "Custom color",
+  "desktop_lyric__color_reset": "Reset colors",
   "lyric_view__empty": "No lyrics",
   "lyric_view__toolbar": "Lyrics display",
   "lyric_view__scroll": "Scroll",

@@ -290,6 +290,8 @@
   "setting__lyric_highlight": "點亮方式",
   "setting__lyric_highlight_word": "逐字",
   "setting__lyric_highlight_line": "整句",
+  "desktop_lyric__color_custom": "自訂顏色",
+  "desktop_lyric__color_reset": "恢復預設顏色",
   "lyric_view__empty": "暫無歌詞",
   "lyric_view__toolbar": "歌詞顯示",
   "lyric_view__scroll": "滾動",

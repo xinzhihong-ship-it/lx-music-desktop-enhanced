@@ -290,6 +290,8 @@
   "setting__lyric_highlight": "点亮方式",
   "setting__lyric_highlight_word": "逐字",
   "setting__lyric_highlight_line": "整句",
+  "desktop_lyric__color_custom": "自定义颜色",
+  "desktop_lyric__color_reset": "恢复默认颜色",
   "lyric_view__empty": "暂无歌词",
   "lyric_view__toolbar": "歌词显示",
   "lyric_view__scroll": "滚动",

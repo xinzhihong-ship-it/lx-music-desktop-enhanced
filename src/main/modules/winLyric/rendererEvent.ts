@@ -3,7 +3,8 @@ import { mainOn, mainHandle } from '@common/mainIpc'
 import { WIN_LYRIC_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { buildLyricConfig, getLyricWindowBounds } from './utils'
 import { sendNewDesktopLyricClient } from '@main/modules/winMain'
-import { getBounds, getMainFrame, sendEvent, setBounds, setResizeable } from './main'
+import { getBounds, getMainFrame, sendEvent, setBounds, setIgnoreMouseEvents, setResizeable } from './main'
+import { isLinux } from '@common/utils'
 import { MessageChannelMain } from 'electron'
 import { mouseCheckTools } from './mouseCheckTools'
 
@@ -45,6 +46,12 @@ export default () => {
     // Now the main window and the worker can communicate with each other
     // without going through the main process!
     console.log('request_main_window_channel')
+  })
+
+  // 锁定状态下鼠标移到“解锁”按钮上：临时接收鼠标，离开后恢复穿透
+  mainOn<boolean>(WIN_LYRIC_RENDERER_EVENT_NAME.lyric_set_interactive, ({ event, params: interactive }) => {
+    if (event.senderFrame !== getMainFrame() || isLinux || !global.lx.appSetting['desktopLyric.isLock']) return
+    setIgnoreMouseEvents(!interactive, { forward: true })
   })
 
   mainOn<boolean>(WIN_LYRIC_RENDERER_EVENT_NAME.mouse_enter_leave, ({ params: isEnter }) => {

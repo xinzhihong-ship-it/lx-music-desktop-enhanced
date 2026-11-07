@@ -21,7 +21,8 @@ export const setLrcConfig = (keys: Array<keyof LX.AppSetting>, setting: Partial<
     if (keys.includes('desktopLyric.isLock') && isLock != global.lx.appSetting['desktopLyric.isLock']) {
       isLock = global.lx.appSetting['desktopLyric.isLock']
       if (global.lx.appSetting['desktopLyric.isLock']) {
-        setIgnoreMouseEvents(true, { forward: !isLinux && global.lx.appSetting['desktopLyric.isHoverHide'] })
+        // 锁定时仍把鼠标移动转发给页面：悬停时显示“解锁”按钮（Linux 不支持转发）
+        setIgnoreMouseEvents(true, { forward: !isLinux })
         mouseCheckTools.runCheck(sendMouseLeave)
       } else {
         setIgnoreMouseEvents(false, { forward: !isLinux && global.lx.appSetting['desktopLyric.isHoverHide'] })
@@ -31,7 +32,7 @@ export const setLrcConfig = (keys: Array<keyof LX.AppSetting>, setting: Partial<
     if (keys.includes('desktopLyric.isHoverHide') && isHoverHide != global.lx.appSetting['desktopLyric.isHoverHide']) {
       isHoverHide = global.lx.appSetting['desktopLyric.isHoverHide']
       if (!isLinux) {
-        setIgnoreMouseEvents(global.lx.appSetting['desktopLyric.isLock'], { forward: isHoverHide })
+        setIgnoreMouseEvents(global.lx.appSetting['desktopLyric.isLock'], { forward: true })
         if (isHoverHide) {
           mouseCheckTools.runCheck(sendMouseLeave)
         } else {

@@ -7,6 +7,7 @@
       <div v-if="!setting['desktopLyric.isLock']" class="control-bar">
         <layout-control-bar />
       </div>
+      <UnlockButton v-else />
       <transition enter-active-class="animated-fast fadeIn" leave-active-class="animated-fast fadeOut">
         <common-audio-visualizer v-if="setting['desktopLyric.audioVisualization']" />
       </transition>
@@ -27,6 +28,7 @@
 
 <script setup>
 import useWindowSize from '@lyric/useApp/useWindowSize'
+import UnlockButton from '@lyric/components/layout/UnlockButton.vue'
 import useHoverHide from '@lyric/useApp/useHoverHide'
 import { onMounted } from '@common/utils/vueTools'
 import { setting } from '@lyric/store/state'
