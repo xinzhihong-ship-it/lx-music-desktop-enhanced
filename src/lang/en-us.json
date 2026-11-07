@@ -820,7 +820,7 @@
   "setting__play_mpv_bit_perfect_tip": "Audio passes through at native sample rate, bypassing system resampling. Takes effect on next playback.",
   "setting__play_mpv_restart_failed": "Failed to restart MPV: {message}",
   "setting__play_statusbar_lyric": "Show lyrics on status menus",
-  "setting__play_statusbar_lyric_tip": "Requires \"Minimize the app window to the system tray when closing it\" to be enabled in Settings → General",
+  "setting__play_statusbar_lyric_tip": "Shows the current lyric next to the LX Music icon in the menu bar. The icon appears automatically; \"Minimize to the system tray\" is not required",
   "setting__play_task_bar": "Show playback progress on the taskbar",
   "setting__play_timeout": "Timed Pause",
   "setting__player_swap_lyric_trans_roma": "Swap the position of the translated and romanized lyrics",

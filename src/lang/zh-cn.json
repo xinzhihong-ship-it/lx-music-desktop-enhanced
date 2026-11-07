@@ -820,7 +820,7 @@
   "setting__play_mpv_bit_perfect_tip": "开启后音频将以原始采样率直通输出，避免系统重采样。切换时自动无感重建 mpv 实例",
   "setting__play_mpv_restart_failed": "MPV 重建失败：{message}",
   "setting__play_statusbar_lyric": "在菜单栏的状态菜单显示歌词",
-  "setting__play_statusbar_lyric_tip": "需要在「设置 → 基本设置」启用「关闭窗口时不退出软件将其最小化到系统托盘」。",
+  "setting__play_statusbar_lyric_tip": "歌词显示在菜单栏的落雪图标旁边。不需要启用「最小化到系统托盘」，开启后会自动显示菜单栏图标",
   "setting__play_task_bar": "在任务栏上显示当前歌曲播放进度",
   "setting__play_timeout": "定时暂停",
   "setting__player_swap_lyric_trans_roma": "调换歌词翻译与歌词罗马音位置",

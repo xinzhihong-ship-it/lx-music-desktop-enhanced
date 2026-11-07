@@ -820,7 +820,7 @@
   "setting__play_mpv_bit_perfect_tip": "開啟後音訊將以原始取樣率直通輸出，避免系統重取樣。下次播放生效",
   "setting__play_mpv_restart_failed": "MPV 重新啟動失敗：{message}",
   "setting__play_statusbar_lyric": "在選單列的「狀態」選單顯示歌詞",
-  "setting__play_statusbar_lyric_tip": "需要在「設定 → 基本設定」啟用「關閉視窗時不退出軟體將其最小化到系統匣」。",
+  "setting__play_statusbar_lyric_tip": "歌詞顯示在選單列的落雪圖示旁邊。不需要啟用「最小化到系統匣」，開啟後會自動顯示選單列圖示",
   "setting__play_task_bar": "在工具列上顯示目前歌曲播放進度",
   "setting__play_timeout": "定時暫停",
   "setting__player_swap_lyric_trans_roma": "調換歌詞翻譯與歌詞羅馬音位置",

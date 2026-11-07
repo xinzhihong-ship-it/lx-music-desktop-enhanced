@@ -21,6 +21,9 @@ import { createLyricDriftGuard } from './lyricDriftGuard'
 export { getCurrentTime }
 
 // ---- 当前行跟踪 ----
+// 是否在播放：由 play / pause / stop 维护，不读 store 的 isPlay ——
+// 'play' 事件里本模块的处理先于 store 置为播放，读 isPlay 会以为还停着，跟踪器就只走一行（菜单栏歌词不动）
+let playing = false
 /** 跟踪器最长多久复查一次（跳转、倍速变化、时钟误差都在下一次复查时纠正） */
 const MAX_TICK = 1000
 let tickTimer: ReturnType<typeof setTimeout> | null = null
@@ -46,7 +49,7 @@ const tick = () => {
   const pos = readLyricPosition()
   const index = findLineIndex(lines, pos)
   emitLine(index)
-  if (!isPlay.value) return
+  if (!playing) return
   const next = lines[index + 1]
   const rate = appSetting['player.playbackRate'] || 1
   const delay = next ? Math.max(16, (next.start - pos) / rate) : MAX_TICK
@@ -70,7 +73,7 @@ const stopDriftCheck = () => {
   }
 }
 const checkDrift = () => {
-  if (!isPlay.value) {
+  if (!playing) {
     stopDriftCheck()
     return
   }
@@ -96,7 +99,7 @@ const playAt = (time: number) => {
   driftTimer ??= setInterval(checkDrift, DRIFT_CHECK_INTERVAL)
 }
 watch(() => [vst3Runtime.active, vst3Runtime.latencyMs, vst3Runtime.bridgeMs], () => {
-  if (isPlay.value) playAt(getCurrentTime())
+  if (playing) playAt(getCurrentTime())
 })
 // 歌词内容变化（换歌词、翻译 / 罗马音 / 点亮方式开关）后重新判断当前行
 watch(lyricDoc, () => { retrack() })
@@ -209,7 +212,7 @@ export const setLyricOffset = (_offset?: number) => {
 }
 
 export const setPlaybackRate = (_rate: number) => {
-  if (isPlay.value) setTimeout(() => { playAt(getCurrentTime()) })
+  if (playing) setTimeout(() => { playAt(getCurrentTime()) })
 }
 
 export const setLyric = () => {
@@ -229,16 +232,18 @@ export const setLyric = () => {
   // 等所有 lyricUpdated 处理完再重新发出当前行（清掉去重记录，即使行没变也要发）
   setTimeout(() => {
     lastKey = ''
-    if (isPlay.value) playAt(getCurrentTime())
+    if (playing) playAt(getCurrentTime())
     else retrack()
   })
 }
 
 export const play = () => {
+  playing = true
   playAt(getCurrentTime())
 }
 
 export const pause = () => {
+  playing = false
   stopDriftCheck()
   clearTick()
   sendDesktopLyricInfo({ action: 'set_pause' })
@@ -247,6 +252,7 @@ export const pause = () => {
 }
 
 export const stop = () => {
+  playing = false
   stopDriftCheck()
   clearTick()
   lastKey = ''

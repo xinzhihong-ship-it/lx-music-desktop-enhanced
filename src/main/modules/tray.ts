@@ -140,9 +140,15 @@ const getIconPath = (id: number) => {
   return path.join(global.staticPath, 'images/tray', theme.fileName + (isWin ? '.ico' : '.png'))
 }
 
+/**
+ * 是否需要托盘 / 菜单栏图标：启用了托盘；或 macOS 上开了菜单栏歌词（歌词显示在菜单栏图标旁，
+ * 不应该还要求先打开“最小化到托盘”）。tray.enable 仍单独决定关闭窗口时是否保留在后台。
+ */
+const shouldShowTray = () => global.lx.appSetting['tray.enable'] || (isMac && global.lx.appSetting['player.isShowStatusBarLyric'])
+
 export const createTray = () => {
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-  if ((tray && !tray.isDestroyed()) || !global.lx.appSetting['tray.enable']) return
+  if ((tray && !tray.isDestroyed()) || !shouldShowTray()) return
 
   // 托盘
   tray = new Tray(nativeImage.createFromPath(getIconPath(global.lx.appSetting['tray.themeId'])))
@@ -327,9 +333,10 @@ const init = () => {
     themeId = global.lx.appSetting['tray.themeId']
     setTrayImage(themeId)
   }
-  if (isEnableTray !== global.lx.appSetting['tray.enable']) {
-    isEnableTray = global.lx.appSetting['tray.enable']
-    global.lx.appSetting['tray.enable'] ? createTray() : destroyTray()
+  const showTray = shouldShowTray()
+  if (isEnableTray !== showTray) {
+    isEnableTray = showTray
+    showTray ? createTray() : destroyTray()
   }
   if (isShowStatusBarLyric !== global.lx.appSetting['player.isShowStatusBarLyric']) {
     isShowStatusBarLyric = global.lx.appSetting['player.isShowStatusBarLyric']
