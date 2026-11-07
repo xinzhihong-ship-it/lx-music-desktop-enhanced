@@ -225,8 +225,13 @@ export const setLyric = () => {
       },
     })
   }
-  if (isPlay.value) setTimeout(() => { playAt(getCurrentTime()) })
-  else retrack()
+  // 播放器状态（托盘 / 开放 API）在 lyricUpdated 时会清空当前行文本：
+  // 等所有 lyricUpdated 处理完再重新发出当前行（清掉去重记录，即使行没变也要发）
+  setTimeout(() => {
+    lastKey = ''
+    if (isPlay.value) playAt(getCurrentTime())
+    else retrack()
+  })
 }
 
 export const play = () => {
