@@ -260,21 +260,7 @@ onBeforeUnmount(() => { window.removeEventListener('resize', handleResize) })
   flex-direction: column;
   border-radius: 20px;
   transform-origin: 100% 50%;
-  .segment, .offset {
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-.offsetValue {
-  min-width: 46px;
-  padding: 0 4px;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
-}
-.vbar .offset {
-  flex-direction: column;
-}
-.colorGroup {
+  .segment, .offset, .colorGroup {
     flex-direction: column;
   }
   .divider {
@@ -378,6 +364,16 @@ onBeforeUnmount(() => { window.removeEventListener('resize', handleResize) })
   fill: currentColor;
   stroke: none;
   opacity: .45;
+}
+.offset {
+  display: flex;
+  align-items: center;
+}
+.offsetValue {
+  min-width: 46px;
+  padding: 0 4px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
 }
 .colorGroup {
   display: flex;
