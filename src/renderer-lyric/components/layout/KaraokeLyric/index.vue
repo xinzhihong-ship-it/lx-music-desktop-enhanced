@@ -201,6 +201,8 @@ onBeforeUnmount(() => {
 }
 // 双行：两排同字号，上排靠左、下排靠右（竖排时上排靠上、下排靠下）；等待中的一排半透明
 .double {
+  // 两排都保留一行高度：最后一句时上排为空，下排也不往上挪
+  grid-template-rows: repeat(2, minmax(1.3em, auto));
   .rowA {
     grid-area: primary;
     justify-self: start;

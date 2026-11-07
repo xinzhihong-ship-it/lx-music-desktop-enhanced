@@ -4,7 +4,7 @@
       ref="dom_capsule"
       :class="[$style.capsule, $style[layout], { [$style.expanded]: expanded, [$style.hidden]: hidden, [$style.dragging]: dragging }]"
       :style="capsuleStyle"
-      @pointerdown="handleDragStart" @pointermove="handleDragMove" @pointerup="handleDragEnd" @pointercancel="handleDragEnd"
+      @pointerdown="handleDragStart"
     >
       <!-- 收起。刘海屏：只在刘海两侧露出封面和电平，中间正好是刘海，不占菜单栏；常驻时刘海下方多一行歌词。
            其他屏：封面 + 当前歌词（逐字填充）+ 电平 -->
@@ -233,10 +233,18 @@ const handleMouseLeave = () => { if (!dragging.value) setInside(false) }
 const DRAG_THRESHOLD = 4
 const dragging = ref(false)
 let dragStart = null
+// 按下后在整个文档上跟踪移动 / 松开：窗口跟着指针移动时，胶囊可能短暂不在指针下
+const listenDrag = on => {
+  const method = on ? 'addEventListener' : 'removeEventListener'
+  document[method]('pointermove', handleDragMove)
+  document[method]('pointerup', handleDragEnd)
+  document[method]('pointercancel', handleDragEnd)
+}
 const handleDragStart = event => {
   if (event.button != 0 || event.target.closest('button, [role=slider]')) return
   dragStart = { x: event.screenX, y: event.screenY, id: event.pointerId }
-  event.currentTarget.setPointerCapture(event.pointerId)
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+  listenDrag(true)
 }
 const handleDragMove = event => {
   if (!dragStart || event.pointerId != dragStart.id) return
@@ -257,6 +265,7 @@ const handleDragEnd = event => {
   if (dragging.value) sendIslandDrag({ phase: 'end', dx: event.screenX - dragStart.x, dy: event.screenY - dragStart.y })
   dragStart = null
   dragging.value = false
+  listenDrag(false)
 }
 
 const removeDisplayListener = onIslandDisplayInfo(({ params }) => {
@@ -276,6 +285,7 @@ onBeforeUnmount(() => {
   unmounted = true
   clearSchedule()
   removeDisplayListener()
+  listenDrag(false)
   document.removeEventListener('mousemove', handleMouseMove)
   document.documentElement.removeEventListener('mouseleave', handleMouseLeave)
 })
