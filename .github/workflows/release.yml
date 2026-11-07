@@ -10,6 +10,8 @@ permissions:
 
 env:
   IS_CI: 'true'
+  # 打包时下载 mpv 官方构建要查询 GitHub 发布信息：带上令牌，避免共享 IP 触发匿名访问限制（403）
+  GITHUB_TOKEN: ${{ github.token }}
 
 concurrency:
   group: release-${{ github.ref }}
