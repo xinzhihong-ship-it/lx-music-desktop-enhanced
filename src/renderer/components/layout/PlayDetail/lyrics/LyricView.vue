@@ -1,22 +1,20 @@
 <template>
   <div :class="['right', $style.right]" :style="fontSizeVar" @contextmenu.stop="handleShowMenu">
+    <!-- 一条工具栏：显示方式（滚动 + 三种舞台风格）| 火花 | 封面色背景，所有按钮同高同形 -->
     <div :class="$style.toolbar" role="toolbar" :aria-label="$t('lyric_view__toolbar')">
-      <div :class="$style.segment" role="radiogroup">
+      <div :class="$style.group" role="radiogroup">
         <button
-          v-for="item in viewOptions" :key="item.id" type="button" role="radio"
-          :class="[$style.segBtn, { [$style.on]: view == item.id }]" :aria-checked="view == item.id"
-          @click="setView(item.id)"
+          v-for="item in modeOptions" :key="item.id" type="button" role="radio"
+          :class="[$style.btn, { [$style.on]: mode == item.id }]" :aria-checked="mode == item.id"
+          @click="setMode(item.id)"
         >{{ item.label }}</button>
       </div>
-      <div v-if="view == 'stage'" :class="$style.segment" role="radiogroup">
-        <button
-          v-for="item in styleOptions" :key="item.id" type="button" role="radio"
-          :class="[$style.segBtn, { [$style.on]: stageStyle == item.id }]" :aria-checked="stageStyle == item.id"
-          @click="setStageStyle(item.id)"
-        >{{ item.label }}</button>
-      </div>
-      <button v-if="view == 'stage'" type="button" :class="[$style.chip, { [$style.on]: sparks }]" :aria-pressed="sparks" @click="toggleSparks">{{ $t('lyric_view__sparks') }}</button>
-      <button type="button" :class="[$style.chip, { [$style.on]: background == 'cover' }]" :aria-pressed="background == 'cover'" @click="toggleBackground">{{ $t('lyric_view__bg_cover') }}</button>
+      <i :class="$style.divider" />
+      <button
+        type="button" :class="[$style.btn, { [$style.on]: sparks && view == 'stage' }]" :aria-pressed="sparks"
+        :disabled="view != 'stage'" :title="$t('lyric_view__sparks_tip')" @click="toggleSparks"
+      >{{ $t('lyric_view__sparks') }}</button>
+      <button type="button" :class="[$style.btn, { [$style.on]: background == 'cover' }]" :aria-pressed="background == 'cover'" @click="toggleBackground">{{ $t('lyric_view__bg_cover') }}</button>
     </div>
 
     <LyricStage v-if="view == 'stage'" :doc="lyricDoc" :style-name="stageStyle" :sparks="sparks" :accent="accent" @search="isShowSearch = true" />
@@ -54,17 +52,24 @@ const sparks = computed(() => !!appSetting['playDetail.stageSparks'])
 const background = computed(() => appSetting['playDetail.background'] ?? 'theme')
 const accent = computed(() => props.accent || 'var(--color-primary)')
 
-const viewOptions = computed(() => [
+// 滚动歌词与三种舞台风格合成一组：scroll / flow / steps / tilt
+const mode = computed(() => view.value == 'stage' ? stageStyle.value : 'scroll')
+const modeOptions = computed(() => [
   { id: 'scroll', label: t('lyric_view__scroll') },
-  { id: 'stage', label: t('lyric_view__stage') },
-])
-const styleOptions = computed(() => [
   { id: 'flow', label: t('lyric_view__style_flow') },
   { id: 'steps', label: t('lyric_view__style_steps') },
   { id: 'tilt', label: t('lyric_view__style_tilt') },
 ])
-const setView = id => { if (view.value != id) updateSetting({ 'playDetail.lyricView': id }) }
-const setStageStyle = id => { if (stageStyle.value != id) updateSetting({ 'playDetail.stageStyle': id }) }
+const setMode = id => {
+  if (id == 'scroll') {
+    if (view.value != 'scroll') updateSetting({ 'playDetail.lyricView': 'scroll' })
+    return
+  }
+  const patch = {}
+  if (view.value != 'stage') patch['playDetail.lyricView'] = 'stage'
+  if (stageStyle.value != id) patch['playDetail.stageStyle'] = id
+  if (Object.keys(patch).length) updateSetting(patch)
+}
 const toggleSparks = () => { updateSetting({ 'playDetail.stageSparks': !sparks.value }) }
 const toggleBackground = () => { updateSetting({ 'playDetail.background': background.value == 'cover' ? 'theme' : 'cover' }) }
 
@@ -115,19 +120,28 @@ const handleUpdateLyric = ({ lyric, tlyric, rlyric, lxlyric, offset }) => {
   right: 6px;
   z-index: 2;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 15px;
+  background-color: var(--color-primary-alpha-900);
   opacity: 0;
   transition: opacity .2s ease;
 }
-.segment {
+.group {
   display: flex;
-  padding: 2px;
-  border-radius: 14px;
-  background-color: var(--color-primary-alpha-900);
+  gap: 2px;
 }
-.segBtn, .chip {
+.divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background-color: var(--color-font-label);
+  opacity: .3;
+}
+.btn {
   height: 24px;
   padding: 0 10px;
   border: none;
@@ -135,17 +149,20 @@ const handleUpdateLyric = ({ lyric, tlyric, rlyric, lxlyric, offset }) => {
   background: none;
   color: var(--color-font-label);
   font-size: 12px;
+  line-height: 24px;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color .2s ease, color .2s ease;
-  &:hover {
+  transition: background-color .2s ease, color .2s ease, opacity .2s ease;
+  &:hover:not(:disabled) {
     color: var(--color-font);
   }
   &.on {
     color: var(--color-font);
     background-color: var(--color-primary-alpha-700);
   }
-}
-.chip {
-  background-color: var(--color-primary-alpha-900);
+  &:disabled {
+    opacity: .4;
+    cursor: default;
+  }
 }
 </style>

@@ -46,6 +46,12 @@ declare namespace LX {
     /** 连接主窗口的客户端类型：桌面歌词窗口 / 顶部歌词岛 */
     type ClientKind = 'lyric' | 'island'
 
+    /** 歌词岛所在屏幕：notch 为带刘海的内建屏；menuBar 为 macOS 菜单栏高度（其他系统为 0） */
+    interface IslandDisplayInfo {
+      notch: boolean
+      menuBar: number
+    }
+
     interface LyricActionBase <A> {
       action: A
     }

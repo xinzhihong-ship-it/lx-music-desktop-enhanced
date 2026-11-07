@@ -6,7 +6,7 @@
     </div>
     <div v-else ref="dom_list" :class="[$style.list, $style[align]]">
       <div
-        v-for="(line, index) in doc.lines" :key="`${line.start}_${index}`" ref="dom_lines"
+        v-for="(line, index) in doc.lines" :key="`${line.start}_${index}`"
         :class="[$style.line, { [$style.active]: index == active }]"
         role="button" tabindex="-1" @click="handleClick(line)"
       >
@@ -42,7 +42,6 @@ const PAUSED_POLL = 250
 
 const dom_root = ref(null)
 const dom_list = ref(null)
-const dom_lines = ref([])
 const active = ref(-1)
 const position = shallowRef(0)
 provide('lyricPosition', position)
@@ -68,7 +67,8 @@ const applyScroll = y => {
 
 const targetOf = index => {
   const root = dom_root.value
-  const el = dom_lines.value[Math.max(0, index)]
+  // 直接取当前列表的子元素：v-for 的 ref 数组在换歌词后可能残留旧行、顺序错乱，量出来的位置会跑到列表末尾
+  const el = dom_list.value?.children[Math.max(0, index)]
   if (!root || !el) return null
   return el.offsetTop + el.offsetHeight / 2 - root.clientHeight * ANCHOR
 }
@@ -130,21 +130,20 @@ const handleClick = line => {
   restart()
 }
 
-// 换歌 / 歌词变化：重新定位（不做动画）
-watch(() => props.doc, () => {
-  active.value = -1
+// 换歌 / 换歌词：在新列表渲染完成后直接定位到当前行（不做动画）
+const snapToCurrent = () => {
   manualUntil = 0
+  const now = performance.now()
+  position.value = readLyricPosition(now)
+  active.value = findLineIndex(props.doc.lines, position.value)
   void nextTick(() => {
-    const now = performance.now()
-    position.value = readLyricPosition(now)
-    active.value = findLineIndex(props.doc.lines, position.value)
-    void nextTick(() => {
-      follow(performance.now(), true)
-      applyScroll(glide.value(performance.now()))
-      restart()
-    })
+    const t = performance.now()
+    follow(t, true)
+    applyScroll(glide.value(t))
+    restart()
   })
-})
+}
+watch(() => props.doc, snapToCurrent, { flush: 'post' })
 watch(isPlay, restart)
 watch([() => appSetting['playDetail.style.fontSize'], align], () => { void nextTick(() => { follow(performance.now()); restart() }) })
 
@@ -152,13 +151,7 @@ let resizeObserver = null
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => { follow(performance.now(), true); applyScroll(glide.value(performance.now())) })
   if (dom_root.value) resizeObserver.observe(dom_root.value)
-  position.value = readLyricPosition()
-  active.value = findLineIndex(props.doc.lines, position.value)
-  void nextTick(() => {
-    follow(performance.now(), true)
-    applyScroll(glide.value(performance.now()))
-    restart()
-  })
+  snapToCurrent()
 })
 onBeforeUnmount(() => {
   unmounted = true

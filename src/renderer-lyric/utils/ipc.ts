@@ -47,6 +47,14 @@ export const setIslandInteractive = (interactive: boolean) => {
   rendererSend<boolean>(WIN_LYRIC_RENDERER_EVENT_NAME.island_set_interactive, interactive)
 }
 
+/** 歌词岛所在屏幕的信息（换屏、改分辨率时更新） */
+export const onIslandDisplayInfo = (listener: LX.IpcRendererEventListenerParams<LX.DesktopLyric.IslandDisplayInfo>): RemoveListener => {
+  rendererOn<LX.DesktopLyric.IslandDisplayInfo>(WIN_LYRIC_RENDERER_EVENT_NAME.island_display_info, listener)
+  return () => {
+    rendererOff(WIN_LYRIC_RENDERER_EVENT_NAME.island_display_info, listener)
+  }
+}
+
 export const sendMouseEnterLeave = (isEnter: boolean) => {
   rendererSend(WIN_LYRIC_RENDERER_EVENT_NAME.mouse_enter_leave, isEnter)
 }

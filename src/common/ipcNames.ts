@@ -270,6 +270,7 @@ const modules = {
     mouse_enter_leave: 'winLyric_mouse_enter_leave',
     /** 歌词岛：鼠标是否落在胶囊上（落在上面时接收鼠标，否则穿透） */
     island_set_interactive: 'winLyric_island_set_interactive',
+    island_display_info: 'winLyric_island_display_info',
   },
   hotKey: {
     enable: 'hotKey_enable',

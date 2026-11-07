@@ -100,7 +100,7 @@ export default {
       return [
         { id: 'SettingBasic', title: t('setting__basic') },
         { id: 'SettingPlay', title: t('setting__play') },
-        { id: 'SettingPlayDetail', title: t('setting__play_detail') },
+        { id: 'SettingPlayDetail', title: t('setting__lyric_display') },
         { id: 'SettingDesktopLyric', title: t('setting__desktop_lyric') },
         { id: 'SettingSearch', title: t('setting__search') },
         { id: 'SettingList', title: t('setting__list') },

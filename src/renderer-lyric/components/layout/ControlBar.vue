@@ -1,162 +1,132 @@
 <template>
-  <div :class="$style.container">
-    <transition enter-active-class="animated-fast fadeIn" leave-active-class="animated fadeOut">
-      <div v-show="!isShowThemeList" :class="$style.btns" @mousedown="handleLyricMouseDown" @touchstart="handleLyricTouchStart">
-        <button :class="$style.btn" :title="$t('desktop_lyric__close')" @click="handleClose">
-          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-close" />
-          </svg>
-        </button>
-        <button :class="$style.btn" :title="$t('desktop_lyric__' + (setting['desktopLyric.isLock'] ? 'unlock' : 'lock'))" @click="handleLock">
-          <svg v-if="setting['desktopLyric.isLock']" version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-unlock" />
-          </svg>
-          <svg v-else version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-lock" />
-          </svg>
-        </button>
-        <button :class="$style.btn" :title="$t('desktop_lyric__font_increase')" @click="handleFontChange('increase', 1)">
-          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-font-increase" />
-          </svg>
-        </button>
-        <button :class="$style.btn" :title="$t('desktop_lyric__font_decrease')" @click="handleFontChange('decrease', 1)">
-          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-font-decrease" />
-          </svg>
-        </button>
-        <button :class="$style.btn" :title="$t('desktop_lyric__opacity_increase')" @click="handleOpactiyChange('increase', 10)" @contextmenu="handleOpactiyChange('increase', 2)">
-          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-opactiy-increase" />
-          </svg>
-        </button>
-        <button :class="$style.btn" :title="$t('desktop_lyric__opacity_decrease')" @click="handleOpactiyChange('decrease', 10)" @contextmenu="handleOpactiyChange('decrease', 2)">
-          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-opactiy-decrease" />
-          </svg>
-        </button>
-        <button :class="$style.btn" :title="$t('desktop_lyric__' + (setting['desktopLyric.style.isZoomActiveLrc'] ? 'lrc_active_zoom_off' : 'lrc_active_zoom_on'))" @click="handleZoomLrc">
-          <svg v-if="setting['desktopLyric.style.isZoomActiveLrc']" version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-vibrate-off" />
-          </svg>
-          <svg v-else version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-vibrate" />
-          </svg>
-        </button>
-        <button :class="$style.btn" :title="$t('desktop_lyric__' + (setting['desktopLyric.isAlwaysOnTop'] ? 'win_top_off' : 'win_top_on'))" @click="handleAlwaysOnTop">
-          <svg v-if="setting['desktopLyric.isAlwaysOnTop']" version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-top-off" />
-          </svg>
-          <svg v-else version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="20px" viewBox="0 0 24 24" space="preserve">
-            <use xlink:href="#icon-top-on" />
-          </svg>
-        </button>
-      </div>
-    </transition>
+  <!-- 悬浮在歌词上方中央的深色胶囊工具栏：图标按钮同尺寸、圆形悬停底色；空白处按住可拖动窗口 -->
+  <div :class="$style.bar" role="toolbar" @mousedown="handleLyricMouseDown" @touchstart="handleLyricTouchStart">
+    <button type="button" :class="$style.btn" :title="$t('desktop_lyric__lock')" :aria-label="$t('desktop_lyric__lock')" @click="handleLock">
+      <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+    </button>
+    <i :class="$style.divider" />
+    <button type="button" :class="$style.btn" :title="$t('desktop_lyric__font_decrease')" :aria-label="$t('desktop_lyric__font_decrease')" @click="handleFontChange(-1)">
+      <svg viewBox="0 0 24 24"><path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M15 12h6" /></svg>
+    </button>
+    <button type="button" :class="$style.btn" :title="$t('desktop_lyric__font_increase')" :aria-label="$t('desktop_lyric__font_increase')" @click="handleFontChange(1)">
+      <svg viewBox="0 0 24 24"><path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M15 12h6M18 9v6" /></svg>
+    </button>
+    <button
+      type="button" :class="$style.btn" :title="$t('desktop_lyric__opacity_decrease')" :aria-label="$t('desktop_lyric__opacity_decrease')"
+      @click="handleOpacityChange(-10)" @contextmenu.prevent="handleOpacityChange(-2)"
+    >
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="M12 4.5a7.5 7.5 0 0 1 0 15z" :class="$style.fillLow" /></svg>
+    </button>
+    <button
+      type="button" :class="$style.btn" :title="$t('desktop_lyric__opacity_increase')" :aria-label="$t('desktop_lyric__opacity_increase')"
+      @click="handleOpacityChange(10)" @contextmenu.prevent="handleOpacityChange(2)"
+    >
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" :class="$style.fill" /></svg>
+    </button>
+    <i :class="$style.divider" />
+    <button type="button" :class="$style.btn" :title="directionLabel" :aria-label="directionLabel" @click="handleDirection">
+      <svg v-if="isVertical" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9" /></svg>
+      <svg v-else viewBox="0 0 24 24"><path d="M17 5v14M12 5v14M7 5v9" /></svg>
+    </button>
+    <button
+      type="button" :class="[$style.btn, { [$style.on]: isAlwaysOnTop }]" :aria-pressed="isAlwaysOnTop"
+      :title="$t('desktop_lyric__' + (isAlwaysOnTop ? 'win_top_off' : 'win_top_on'))" :aria-label="$t('desktop_lyric__' + (isAlwaysOnTop ? 'win_top_off' : 'win_top_on'))"
+      @click="handleAlwaysOnTop"
+    >
+      <svg viewBox="0 0 24 24"><path d="M9 4h6l-1 5 3 3H7l3-3zM12 12v8" /></svg>
+    </button>
+    <button type="button" :class="$style.btn" :title="$t('desktop_lyric__close')" :aria-label="$t('desktop_lyric__close')" @click="handleClose">
+      <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" /></svg>
+    </button>
   </div>
 </template>
 
-<script>
-import { ref } from '@common/utils/vueTools'
+<script setup>
+import { computed } from '@common/utils/vueTools'
+import { useI18n } from '@lyric/plugins/i18n'
 import { setting } from '@lyric/store/state'
 import { updateSetting } from '@lyric/store/action'
 import useDrag from './useDrag'
 
-export default {
-  setup() {
-    const isShowThemeList = ref(false)
-    const { handleLyricMouseDown, handleLyricTouchStart } = useDrag()
+const t = useI18n()
+const { handleLyricMouseDown, handleLyricTouchStart } = useDrag()
 
-    const handleClose = () => {
-      updateSetting({ 'desktopLyric.enable': false })
-    }
-    const handleLock = () => {
-      updateSetting({ 'desktopLyric.isLock': true })
-    }
-    const handleAlwaysOnTop = () => {
-      updateSetting({ 'desktopLyric.isAlwaysOnTop': !setting['desktopLyric.isAlwaysOnTop'] })
-    }
-    const handleZoomLrc = () => {
-      updateSetting({ 'desktopLyric.style.isZoomActiveLrc': !setting['desktopLyric.style.isZoomActiveLrc'] })
-    }
-    const handleFontChange = (action, step) => {
-      let num
-      switch (action) {
-        case 'increase':
-          num = Math.min(setting['desktopLyric.style.fontSize'] + step, 80)
-          break
-        case 'decrease':
-          num = Math.max(setting['desktopLyric.style.fontSize'] - step, 10)
-          break
-      }
-      if (setting['desktopLyric.style.fontSize'] == num) return
-      updateSetting({ 'desktopLyric.style.fontSize': num })
-    }
-    const handleOpactiyChange = (action, step) => {
-      let num
-      switch (action) {
-        case 'increase':
-          num = Math.min(setting['desktopLyric.style.opacity'] + step, 100)
-          break
-        case 'decrease':
-          num = Math.max(setting['desktopLyric.style.opacity'] - step, 6)
-          break
-      }
-      if (setting['desktopLyric.style.opacity'] == num) return
-      updateSetting({ 'desktopLyric.style.opacity': num })
-    }
-    return {
-      setting,
-      isShowThemeList,
+const isAlwaysOnTop = computed(() => !!setting['desktopLyric.isAlwaysOnTop'])
+const isVertical = computed(() => setting['desktopLyric.direction'] == 'vertical')
+const directionLabel = computed(() => t(isVertical.value ? 'desktop_lyric__direction_horizontal' : 'desktop_lyric__direction_vertical'))
 
-      handleClose,
-      handleLock,
-      handleAlwaysOnTop,
-      handleZoomLrc,
-      handleFontChange,
-      handleOpactiyChange,
-      handleLyricMouseDown,
-      handleLyricTouchStart,
-    }
-  },
+const handleClose = () => { updateSetting({ 'desktopLyric.enable': false }) }
+const handleLock = () => { updateSetting({ 'desktopLyric.isLock': true }) }
+const handleAlwaysOnTop = () => { updateSetting({ 'desktopLyric.isAlwaysOnTop': !isAlwaysOnTop.value }) }
+const handleDirection = () => { updateSetting({ 'desktopLyric.direction': isVertical.value ? 'horizontal' : 'vertical' }) }
+const handleFontChange = step => {
+  const size = Math.min(Math.max(setting['desktopLyric.style.fontSize'] + step, 10), 80)
+  if (size != setting['desktopLyric.style.fontSize']) updateSetting({ 'desktopLyric.style.fontSize': size })
+}
+const handleOpacityChange = step => {
+  const opacity = Math.min(Math.max(setting['desktopLyric.style.opacity'] + step, 6), 100)
+  if (opacity != setting['desktopLyric.style.opacity']) updateSetting({ 'desktopLyric.style.opacity': opacity })
 }
 </script>
 
 <style lang="less" module>
-@import '../../assets/styles/layout.less';
-
-@bar-height: 38px;
-@bar-height-padding: 7px;
-
-.container {
-  position: relative;
-  // height: 50px;
-  transition: opacity @transition-theme;
-  // opacity: 0;
-  // &:hover {
-  //   opacity: 1;
-  // }
-}
-
-.btns {
-  display: flex;
-  flex-flow: row wrap;
+.bar {
+  display: inline-flex;
   align-items: center;
-  background-color: rgba(0, 0, 0, 0.7);
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(24, 24, 27, .86);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .28), inset 0 0 0 1px rgba(255, 255, 255, .08);
+  cursor: move;
 }
-
+.divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, .16);
+}
 .btn {
-  min-height: @bar-height;
-  padding: 0 10px;
-  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
-  outline: none;
+  border-radius: 50%;
   background: none;
-  color: #fff;
-  transition: opacity @transition-theme;
+  color: rgba(255, 255, 255, .82);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, transform .15s ease;
+  svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
   &:hover {
-    opacity: .7;
+    color: #fff;
+    background: rgba(255, 255, 255, .14);
+  }
+  &:active {
+    transform: scale(.92);
+  }
+  &.on {
+    color: #fff;
+    background: rgba(255, 255, 255, .2);
   }
 }
-
+.fill {
+  fill: currentColor;
+}
+.fillLow {
+  fill: currentColor;
+  stroke: none;
+  opacity: .45;
+}
 </style>

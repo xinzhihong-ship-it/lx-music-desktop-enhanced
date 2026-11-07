@@ -32,7 +32,7 @@
 // 桌面歌词：两行。当前行逐字点亮——没唱到的字半透明，正在唱的字微微上浮放大并带柔光，
 // 唱过的字保持明亮；换行时旧行上移淡出、新行从下方浮入并由模糊变清晰。
 // 第二行是翻译 / 罗马音，没有时预告下一行。可读性靠柔和投影（不再用描边）。
-// 沿用字体、字号、透明度、对齐、行距、单行省略、横竖排设置；“已播放颜色”作为柔光色。
+// 沿用字体、字号、透明度、对齐、行距、单行省略、横竖排设置；“高亮颜色”作为柔光色，“阴影颜色”用于外圈柔和投影。
 // 在歌词上按住拖动即可移动窗口。
 import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from '@common/utils/vueTools'
 import { karaokeFrame } from '@common/utils/lyrics'
@@ -61,6 +61,7 @@ const rootStyle = computed(() => ({
   '--line-gap': `${setting['desktopLyric.style.lineGap'] / 2}px`,
   '--lyric-color': setting['desktopLyric.style.lyricUnplayColor'],
   '--lyric-glow': setting['desktopLyric.style.lyricPlayedColor'],
+  '--lyric-shadow': setting['desktopLyric.style.lyricShadowColor'],
 }))
 
 /** 每个字：亮度随演唱进度上升；正在唱的字上浮、放大、发光 */
@@ -148,7 +149,7 @@ onBeforeUnmount(() => {
   line-height: 1.3;
   overflow-wrap: break-word;
   // 柔和投影保证在任意桌面背景上可读
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 2px 10px rgba(0, 0, 0, .35);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 2px 10px var(--lyric-shadow, rgba(0, 0, 0, .35));
 }
 .primary {
   grid-area: primary;
@@ -171,7 +172,7 @@ onBeforeUnmount(() => {
   transition: opacity .12s linear, transform .25s cubic-bezier(.3, 1.4, .5, 1), text-shadow .3s ease;
   text-shadow:
     0 1px 2px rgba(0, 0, 0, .55),
-    0 2px 10px rgba(0, 0, 0, .35),
+    0 2px 10px var(--lyric-shadow, rgba(0, 0, 0, .35)),
     0 0 calc(.45em * var(--glow, 0)) color-mix(in srgb, var(--lyric-glow, #fff) calc(85% * var(--glow, 0)), transparent);
 }
 .title {

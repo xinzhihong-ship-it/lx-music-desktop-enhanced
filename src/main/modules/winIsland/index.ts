@@ -1,8 +1,9 @@
 // 顶部歌词岛：屏幕顶部中央的透明窗口，复用桌面歌词的渲染包（lyric.html?mode=island）
 // 与主窗口通道（每种客户端一个端口）。窗口默认鼠标穿透（forward 让渲染进程仍能收到移动事件），
 // 只有鼠标落在胶囊上时渲染进程才请求接收鼠标。
+// 多显示器：跟随鼠标所在的屏幕。macOS 上区分带刘海的内建屏（贴着刘海）与普通屏（放在菜单栏下方，不挡菜单）。
 import path from 'node:path'
-import { BrowserWindow, MessageChannelMain, screen } from 'electron'
+import { BrowserWindow, MessageChannelMain, screen, type Display } from 'electron'
 import { getPlatform, isLinux, isMac } from '@common/utils'
 import { encodePath } from '@common/utils/electron'
 import { mainOn, mainSend } from '@common/mainIpc'
@@ -12,20 +13,50 @@ import { buildLyricConfig, watchConfigKeys } from '@main/modules/winLyric/utils'
 
 /** 窗口大小按展开后的迷你播放器留足；透明部分不拦截鼠标 */
 export const ISLAND_WIDTH = 560
-export const ISLAND_HEIGHT = 240
+export const ISLAND_HEIGHT = 260
+const FOLLOW_INTERVAL = 500
+// 带刘海的屏幕菜单栏约 32~38pt，普通屏约 24pt
+const NOTCH_MENU_BAR_MIN = 30
 
 let browserWindow: BrowserWindow | null = null
+let currentDisplayId: number | null = null
+let followTimer: NodeJS.Timeout | null = null
 
-const getIslandBounds = () => {
-  const display = screen.getPrimaryDisplay()
+/** 鼠标所在的屏幕 */
+const pickDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+
+export const getDisplayInfo = (display: Display): LX.DesktopLyric.IslandDisplayInfo => {
+  if (!isMac) return { notch: false, menuBar: 0 }
+  // 菜单栏自动隐藏时 workArea 不含菜单栏，按普通屏处理
+  const menuBar = Math.max(0, display.workArea.y - display.bounds.y)
+  return { notch: display.internal && menuBar >= NOTCH_MENU_BAR_MIN, menuBar: menuBar || 24 }
+}
+
+const getIslandBounds = (display: Display) => {
   // 用整个屏幕（含菜单栏）的顶边：macOS 上贴着刘海 / 菜单栏，Windows 上贴着屏幕顶边
   const { x, y, width } = display.bounds
   return { x: Math.round(x + (width - ISLAND_WIDTH) / 2), y, width: ISLAND_WIDTH, height: ISLAND_HEIGHT }
 }
 
-const placeWindow = () => {
+const placeWindow = (force = true) => {
   if (!browserWindow) return
-  browserWindow.setBounds(getIslandBounds())
+  const display = pickDisplay()
+  if (!force && display.id == currentDisplayId) return
+  currentDisplayId = display.id
+  browserWindow.setBounds(getIslandBounds(display))
+  mainSend(browserWindow, WIN_LYRIC_RENDERER_EVENT_NAME.island_display_info, getDisplayInfo(display))
+}
+
+const stopFollow = () => {
+  if (followTimer) clearInterval(followTimer)
+  followTimer = null
+}
+/** 多显示器时跟着鼠标换屏（只比较屏幕 id，开销很小） */
+const startFollow = () => {
+  stopFollow()
+  followTimer = setInterval(() => {
+    if (screen.getAllDisplays().length > 1) placeWindow(false)
+  }, FOLLOW_INTERVAL)
 }
 
 const setInteractive = (interactive: boolean) => {
@@ -45,7 +76,10 @@ export const closeWindow = () => {
 export const createWindow = () => {
   closeWindow()
   const { shouldUseDarkColors, theme } = global.lx.theme
-  const bounds = getIslandBounds()
+  const display = pickDisplay()
+  currentDisplayId = display.id
+  const bounds = getIslandBounds(display)
+  const displayInfo = getDisplayInfo(display)
   browserWindow = new BrowserWindow({
     ...bounds,
     // macOS：非激活面板，悬停 / 点击不会抢走当前应用的焦点
@@ -82,16 +116,19 @@ export const createWindow = () => {
 
   browserWindow.on('closed', () => {
     browserWindow = null
+    currentDisplayId = null
+    stopFollow()
   })
   browserWindow.once('ready-to-show', () => {
     if (!browserWindow) return
     browserWindow.showInactive()
     // macOS 会把新窗口挪到菜单栏下方：显示后再定位一次
     placeWindow()
+    startFollow()
   })
 
   const winURL = process.env.NODE_ENV === 'development' ? 'http://localhost:9081/lyric.html' : `file://${path.join(encodePath(__dirname), 'lyric.html')}`
-  void browserWindow.loadURL(winURL + `?os=${getPlatform()}&mode=island&dark=${shouldUseDarkColors}&theme=${encodeURIComponent(JSON.stringify(theme))}`)
+  void browserWindow.loadURL(winURL + `?os=${getPlatform()}&mode=island&notch=${displayInfo.notch}&menuBar=${displayInfo.menuBar}&dark=${shouldUseDarkColors}&theme=${encodeURIComponent(JSON.stringify(theme))}`)
 }
 
 const getMainFrame = () => browserWindow?.webContents.mainFrame
@@ -129,7 +166,8 @@ export default () => {
   global.lx.event_app.on('main_window_close', () => {
     closeWindow()
   })
-  screen.on('display-metrics-changed', placeWindow)
-  screen.on('display-added', placeWindow)
-  screen.on('display-removed', placeWindow)
+  const replace = () => { placeWindow() }
+  screen.on('display-metrics-changed', replace)
+  screen.on('display-added', replace)
+  screen.on('display-removed', replace)
 }
