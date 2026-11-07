@@ -29,8 +29,12 @@ test('mpv.app is marked as a background agent (LSUIElement) and re-signed before
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lx-agent-app-'))
   const app = path.join(root, 'mpv.app')
   try {
-    await fs.mkdir(path.join(app, 'Contents'), { recursive: true })
+    await fs.mkdir(path.join(app, 'Contents', 'MacOS'), { recursive: true })
     await fs.writeFile(path.join(app, 'Contents', 'Info.plist'), '<plist/>')
+    // CI 日志：mpv-macos26.app/Contents/MacOS/._.gitkeep 让重新签名失败（code object is not signed at all）
+    await fs.writeFile(path.join(app, 'Contents', 'MacOS', 'mpv'), 'binary')
+    await fs.writeFile(path.join(app, 'Contents', 'MacOS', '.gitkeep'), '')
+    await fs.writeFile(path.join(app, 'Contents', 'MacOS', '._.gitkeep'), 'sidecar')
     const calls = []
     assert.equal(await markAgentApp(app, async(cmd, args) => { calls.push([cmd, ...args]) }), true)
     assert.deepEqual(calls[0], ['plutil', '-replace', 'LSUIElement', '-bool', 'YES', path.join(app, 'Contents', 'Info.plist')])
@@ -38,6 +42,7 @@ test('mpv.app is marked as a background agent (LSUIElement) and re-signed before
     assert.ok(!calls[1].some(arg => /requirements/.test(arg)), 'original requirements are not preserved')
     assert.equal(calls[1].at(-1), app)
     assert.deepEqual(calls[2], ['codesign', '--verify', '--strict', app])
+    assert.deepEqual(await fs.readdir(path.join(app, 'Contents', 'MacOS')), ['mpv'], 'stray files are removed before signing')
     await assert.rejects(markAgentApp(path.join(root, 'missing.app'), async() => {}))
 
     // 重新签名或校验失败：还原原来的 .app，不让打包失败

@@ -22,9 +22,27 @@ const removeAppleDoubleFiles = async(directory) => {
 // 外层 app 的签名随后再封装一次。
 // 任何一步失败都还原成原来的 .app 并返回 false，不让打包失败（最多只是这个 mpv 仍会在程序坞出现）。
 // exec 可注入，便于测试。
+// 仓库里占位用的 .gitkeep 被打进了 mpv.app 的 Contents/MacOS：重新签名时那里的每个文件都被当作代码，
+// 未签名的 .gitkeep / ._.gitkeep 会让签名失败（code object is not signed at all）
+const removePlaceholderFiles = async(directory) => {
+  const entries = await fs.readdir(directory, { withFileTypes: true })
+  let removed = 0
+  for (const entry of entries) {
+    const filename = path.join(directory, entry.name)
+    if (entry.isFile() && entry.name == '.gitkeep') {
+      await fs.unlink(filename)
+      removed++
+    } else if (entry.isDirectory()) removed += await removePlaceholderFiles(filename)
+  }
+  return removed
+}
+
 const markAgentApp = async(appBundle, exec, log = console) => {
   const plist = path.join(appBundle, 'Contents', 'Info.plist')
   await fs.access(plist)
+  // 先清掉不属于代码的杂项文件（AppleDouble、.gitkeep），否则重新签名这个 .app 会失败
+  await removeAppleDoubleFiles(appBundle)
+  await removePlaceholderFiles(appBundle)
   const backup = `${appBundle}.lsuielement-backup`
   await fs.rm(backup, { recursive: true, force: true })
   await fs.cp(appBundle, backup, { recursive: true, verbatimSymlinks: true })
