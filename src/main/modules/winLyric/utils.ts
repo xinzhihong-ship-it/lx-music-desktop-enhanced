@@ -85,6 +85,7 @@ export const watchConfigKeys = [
   'player.isPlayLxlrc',
   'player.playbackRate',
   'island.alwaysShow',
+  'desktopLyric.lineMode',
 ] satisfies Array<keyof LX.AppSetting>
 
 export const buildLyricConfig = (appSetting: Partial<LX.AppSetting>): Partial<LX.DesktopLyric.Config> => {

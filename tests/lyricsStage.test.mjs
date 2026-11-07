@@ -258,3 +258,22 @@ test('karaokeFrame: roma / translation order follows the swap setting', () => {
   assert.equal(L.karaokeFrame(doc, 1500).secondary, 'Song / uta')
   assert.equal(L.karaokeFrame(doc, 1500, true).secondary, 'uta / Song')
 })
+
+// ---- 双行交替（酷狗 / 网易云式桌面歌词） ----
+test('doubleLineFrame: odd lines stay on the top row, even lines on the bottom; the next line lights up in place', () => {
+  const doc = L.buildLyricDoc({
+    lyric: '[00:01.00]第一句\n[00:03.00]第二句\n[00:05.00]第三句\n[00:07.00]第四句\n',
+    lxlyric: '[00:01.00]<0,1000>第一<1000,1000>句\n[00:03.00]<0,1000>第二<1000,1000>句\n[00:05.00]<0,2000>第三句\n[00:07.00]<0,2000>第四句\n',
+  })
+  const rows = pos => L.doubleLineFrame(doc, pos).map(r => r && `${r.index}${r.active ? '*' : ''}`)
+  assert.deepEqual(rows(500), ['0', '1'], 'before start: preview the first two lines')
+  assert.deepEqual(rows(1500), ['0*', '1'])
+  assert.deepEqual(rows(3500), ['2', '1*'], 'line 2 lit where it already was (bottom), top row moves on to line 3')
+  assert.deepEqual(rows(5500), ['2*', '3'])
+  assert.deepEqual(rows(7500), [null, '3*'], 'nothing after the last line')
+  const [top] = L.doubleLineFrame(doc, 1500)
+  assert.deepEqual(top.words.map(w => w.text), ['第一', '句'])
+  assert.ok(Math.abs(top.words[0].progress - 0.5) < 1e-9)
+  assert.deepEqual(L.doubleLineFrame(doc, 1500)[1].words, [{ text: '第二句', progress: 0 }], 'the waiting row is plain text')
+  assert.deepEqual(L.doubleLineFrame(L.buildLyricDoc({ lyric: '' }), 0), [null, null])
+})

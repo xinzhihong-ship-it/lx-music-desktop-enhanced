@@ -5,6 +5,13 @@
       <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
     </button>
     <i :class="$style.divider" />
+    <div :class="$style.segment" role="radiogroup" :aria-label="$t('setting__desktop_lyric_line_mode')">
+      <button
+        v-for="item in modeList" :key="item.id" type="button" role="radio" :aria-checked="lineMode == item.id"
+        :class="[$style.seg, { [$style.segOn]: lineMode == item.id }]" @click="setLineMode(item.id)"
+      >{{ item.label }}</button>
+    </div>
+    <i :class="$style.divider" />
     <button type="button" :class="$style.btn" :title="$t('desktop_lyric__font_decrease')" :aria-label="$t('desktop_lyric__font_decrease')" @click="handleFontChange(-1)">
       <svg viewBox="0 0 24 24"><path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M15 12h6" /></svg>
     </button>
@@ -55,6 +62,13 @@ const isAlwaysOnTop = computed(() => !!setting['desktopLyric.isAlwaysOnTop'])
 const isVertical = computed(() => setting['desktopLyric.direction'] == 'vertical')
 const directionLabel = computed(() => t(isVertical.value ? 'desktop_lyric__direction_horizontal' : 'desktop_lyric__direction_vertical'))
 
+const lineMode = computed(() => setting['desktopLyric.lineMode'] ?? 'double')
+const modeList = computed(() => [
+  { id: 'single', label: t('desktop_lyric__mode_single') },
+  { id: 'double', label: t('desktop_lyric__mode_double') },
+  { id: 'extended', label: t('desktop_lyric__mode_extended') },
+])
+const setLineMode = id => { if (lineMode.value != id) updateSetting({ 'desktopLyric.lineMode': id }) }
 const handleClose = () => { updateSetting({ 'desktopLyric.enable': false }) }
 const handleLock = () => { updateSetting({ 'desktopLyric.isLock': true }) }
 const handleAlwaysOnTop = () => { updateSetting({ 'desktopLyric.isAlwaysOnTop': !isAlwaysOnTop.value }) }
@@ -72,6 +86,10 @@ const handleOpacityChange = step => {
 <style lang="less" module>
 .bar {
   display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
   align-items: center;
   gap: 2px;
   padding: 4px;
@@ -85,6 +103,31 @@ const handleOpacityChange = step => {
   height: 14px;
   margin: 0 3px;
   background: rgba(255, 255, 255, .16);
+}
+// 显示方式：与播放详情页歌词工具栏同样的分段按钮，深色版
+.segment {
+  display: flex;
+  gap: 2px;
+}
+.seg {
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 13px;
+  background: none;
+  color: rgba(255, 255, 255, .6);
+  font-size: 12px;
+  line-height: 26px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+  &:hover {
+    color: #fff;
+  }
+}
+.segOn {
+  color: #fff;
+  background: rgba(255, 255, 255, .2);
 }
 .btn {
   display: inline-flex;

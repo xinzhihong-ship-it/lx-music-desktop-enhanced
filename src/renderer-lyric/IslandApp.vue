@@ -2,8 +2,9 @@
   <div :class="$style.stage">
     <div
       ref="dom_capsule"
-      :class="[$style.capsule, $style[layout], { [$style.expanded]: expanded, [$style.hidden]: hidden }]"
+      :class="[$style.capsule, $style[layout], { [$style.expanded]: expanded, [$style.hidden]: hidden, [$style.dragging]: dragging }]"
       :style="capsuleStyle"
+      @pointerdown="handleDragStart" @pointermove="handleDragMove" @pointerup="handleDragEnd" @pointercancel="handleDragEnd"
     >
       <!-- 收起。刘海屏：只在刘海两侧露出封面和电平，中间正好是刘海，不占菜单栏；常驻时刘海下方多一行歌词。
            其他屏：封面 + 当前歌词（逐字填充）+ 电平 -->
@@ -79,7 +80,7 @@ import { karaokeFrame } from '@common/utils/lyrics'
 import { clockRevision, init as initLyric, isRomaFirst, lyricDoc, readLyricPosition, readMediaTime } from '@lyric/core/lyric'
 import { playNext, playPrev, playToggle, seekTo } from '@lyric/core/mainWindowChannel'
 import { duration, isPlay, musicInfo, setting } from '@lyric/store/state'
-import { onIslandDisplayInfo, sendConnectMainWindowEvent, setIslandInteractive } from '@lyric/utils/ipc'
+import { onIslandDisplayInfo, sendConnectMainWindowEvent, sendIslandDrag, setIslandInteractive } from '@lyric/utils/ipc'
 
 const query = new URLSearchParams(location.search)
 const isMac = query.get('os') == 'mac'
@@ -93,9 +94,10 @@ const NOTCH_WIDTH = 200
 const FLOAT_GAP = 6
 
 /** 所在屏幕：主进程在换屏 / 改分辨率时推送 */
-const display = reactive({ notch: query.get('notch') == 'true', menuBar: Number(query.get('menuBar')) || 0 })
-// notch：贴着刘海；float：macOS 普通屏，放在菜单栏下方，不挡菜单；top：Windows / Linux，贴着屏幕顶边
-const layout = computed(() => isMac ? (display.notch ? 'notch' : 'float') : 'top')
+const display = reactive({ notch: query.get('notch') == 'true', menuBar: Number(query.get('menuBar')) || 0, floating: query.get('floating') == 'true' })
+// free：被拖到了自定义位置（悬浮胶囊）；notch：贴着刘海；float：macOS 普通屏，放在菜单栏下方，不挡菜单；
+// top：Windows / Linux，贴着屏幕顶边
+const layout = computed(() => display.floating ? 'free' : isMac ? (display.notch ? 'notch' : 'float') : 'top')
 
 const dom_capsule = ref(null)
 const expanded = ref(false)
@@ -110,7 +112,8 @@ const title = computed(() => {
 // 刘海屏常驻显示：刘海下方多一行当前歌词
 const showChin = computed(() => layout.value == 'notch' && !!setting['island.alwaysShow'] && frame.value.index >= 0 && isPlay.value)
 // 不常驻：只有鼠标在胶囊上（或移到顶部中央）时才显示。刘海屏上的“翼”与刘海融为一体，始终显示
-const hidden = computed(() => layout.value != 'notch' && !setting['island.alwaysShow'] && !inside.value && !expanded.value)
+// 拖到自定义位置后始终显示（那里没有唤出区）
+const hidden = computed(() => layout.value != 'notch' && layout.value != 'free' && !setting['island.alwaysShow'] && !inside.value && !expanded.value)
 const EXPANDED_BODY = 176
 const capsuleStyle = computed(() => {
   const top = layout.value == 'float' ? `${display.menuBar + FLOAT_GAP}px` : '0px'
@@ -222,12 +225,44 @@ const setInside = value => {
     }, LEAVE_DELAY)
   }
 }
-const handleMouseMove = event => { setInside(hitTest(event.clientX, event.clientY)) }
-const handleMouseLeave = () => { setInside(false) }
+// 拖动期间保持接收鼠标（否则松手事件会穿透丢失）
+const handleMouseMove = event => { if (!dragging.value) setInside(hitTest(event.clientX, event.clientY)) }
+const handleMouseLeave = () => { if (!dragging.value) setInside(false) }
+
+// ---- 拖动：按住胶囊（按钮、进度条除外）移动超过 4px 开始拖动；拖回屏幕顶部中央松手会重新停靠 ----
+const DRAG_THRESHOLD = 4
+const dragging = ref(false)
+let dragStart = null
+const handleDragStart = event => {
+  if (event.button != 0 || event.target.closest('button, [role=slider]')) return
+  dragStart = { x: event.screenX, y: event.screenY, id: event.pointerId }
+  event.currentTarget.setPointerCapture(event.pointerId)
+}
+const handleDragMove = event => {
+  if (!dragStart || event.pointerId != dragStart.id) return
+  const dx = event.screenX - dragStart.x
+  const dy = event.screenY - dragStart.y
+  if (!dragging.value) {
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+    dragging.value = true
+    // 拖动时不展开
+    if (hoverTimer) clearTimeout(hoverTimer)
+    hoverTimer = null
+    sendIslandDrag({ phase: 'start', dx: 0, dy: 0 })
+  }
+  sendIslandDrag({ phase: 'move', dx, dy })
+}
+const handleDragEnd = event => {
+  if (!dragStart || event.pointerId != dragStart.id) return
+  if (dragging.value) sendIslandDrag({ phase: 'end', dx: event.screenX - dragStart.x, dy: event.screenY - dragStart.y })
+  dragStart = null
+  dragging.value = false
+}
 
 const removeDisplayListener = onIslandDisplayInfo(({ params }) => {
   display.notch = params.notch
   display.menuBar = params.menuBar
+  display.floating = !!params.floating
 })
 
 onMounted(() => {
@@ -291,8 +326,8 @@ body {
       box-shadow: 0 6px 24px rgba(0, 0, 0, .28);
     }
   }
-  // 普通屏：悬浮在菜单栏下方的胶囊
-  &.float {
+  // 普通屏：悬浮在菜单栏下方的胶囊；拖到自定义位置后同样是四角圆角的悬浮胶囊
+  &.float, &.free {
     border-radius: 17px;
     &.expanded {
       border-radius: 24px;
@@ -301,6 +336,9 @@ body {
   &.hidden {
     opacity: 0;
     transform: translateY(-100%);
+  }
+  &.dragging {
+    cursor: grabbing;
   }
   .full {
     padding-top: calc(var(--pad-top, 0px) + 16px);

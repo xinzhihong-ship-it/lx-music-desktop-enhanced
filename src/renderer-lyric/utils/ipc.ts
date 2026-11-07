@@ -47,6 +47,11 @@ export const setIslandInteractive = (interactive: boolean) => {
   rendererSend<boolean>(WIN_LYRIC_RENDERER_EVENT_NAME.island_set_interactive, interactive)
 }
 
+/** 歌词岛拖动 */
+export const sendIslandDrag = (drag: LX.DesktopLyric.IslandDrag) => {
+  rendererSend<LX.DesktopLyric.IslandDrag>(WIN_LYRIC_RENDERER_EVENT_NAME.island_drag, drag)
+}
+
 /** 歌词岛所在屏幕的信息（换屏、改分辨率时更新） */
 export const onIslandDisplayInfo = (listener: LX.IpcRendererEventListenerParams<LX.DesktopLyric.IslandDisplayInfo>): RemoveListener => {
   rendererOn<LX.DesktopLyric.IslandDisplayInfo>(WIN_LYRIC_RENDERER_EVENT_NAME.island_display_info, listener)

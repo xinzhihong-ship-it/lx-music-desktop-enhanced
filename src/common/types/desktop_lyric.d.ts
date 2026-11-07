@@ -32,6 +32,7 @@ declare namespace LX {
       'desktopLyric.style.isFontWeightExtended': LX.AppSetting['desktopLyric.style.isFontWeightExtended']
       'desktopLyric.style.isZoomActiveLrc': LX.AppSetting['desktopLyric.style.isZoomActiveLrc']
       'island.alwaysShow': LX.AppSetting['island.alwaysShow']
+      'desktopLyric.lineMode': LX.AppSetting['desktopLyric.lineMode']
       'common.langId': LX.AppSetting['common.langId']
       'player.isShowLyricTranslation': LX.AppSetting['player.isShowLyricTranslation']
       'player.isShowLyricRoma': LX.AppSetting['player.isShowLyricRoma']
@@ -50,6 +51,15 @@ declare namespace LX {
     interface IslandDisplayInfo {
       notch: boolean
       menuBar: number
+      /** 被拖到了固定位置（悬浮胶囊样式，不贴顶） */
+      floating: boolean
+    }
+
+    /** 歌词岛拖动：dx / dy 为指针相对按下时的屏幕位移 */
+    interface IslandDrag {
+      phase: 'start' | 'move' | 'end'
+      dx: number
+      dy: number
     }
 
     interface LyricActionBase <A> {

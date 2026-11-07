@@ -3,7 +3,23 @@
     :class="[$style.root, vertical ? $style.vertical : $style.horizontal, { [$style.dragging]: isDragging, [$style.ellipsis]: ellipsis }]"
     :style="rootStyle" @mousedown="handleMouseDown" @touchstart="handleTouchStart"
   >
-    <div :class="$style.stack">
+    <!-- 双行交替：上排固定放第 1、3、5… 句，下排放第 2、4、6… 句，上排靠左、下排靠右 -->
+    <div v-if="mode == 'double'" :class="[$style.stack, $style.double]">
+      <template v-for="(row, r) in rows" :key="r">
+        <transition
+          :enter-from-class="$style.lineEnterFrom" :enter-active-class="$style.lineEnterActive"
+          :leave-to-class="$style.lineLeaveTo" :leave-active-class="$style.lineLeaveActive"
+        >
+          <p
+            v-if="row" :key="`d:${musicInfo.id}:${row.index}`"
+            :class="[$style.line, $style.primary, r ? $style.rowB : $style.rowA, { [$style.waiting]: !row.active }]"
+          >
+            <span v-for="(word, i) in row.words" :key="i" :class="$style.word" :style="row.active ? wordStyle(word) : null">{{ word.text }}</span>
+          </p>
+        </transition>
+      </template>
+    </div>
+    <div v-else :class="$style.stack">
       <transition
         :enter-from-class="$style.lineEnterFrom" :enter-active-class="$style.lineEnterActive"
         :leave-to-class="$style.lineLeaveTo" :leave-active-class="$style.lineLeaveActive"
@@ -20,7 +36,7 @@
         :leave-to-class="$style.lineLeaveTo" :leave-active-class="$style.lineLeaveActive"
       >
         <p
-          v-if="frame.secondary" :key="`s:${musicInfo.id}:${frame.index}:${frame.secondaryKind}`"
+          v-if="mode == 'extended' && frame.secondary" :key="`s:${musicInfo.id}:${frame.index}:${frame.secondaryKind}`"
           :class="[$style.line, $style.secondary, { [$style.next]: frame.secondaryKind == 'next' }]"
         >{{ frame.secondary }}</p>
       </transition>
@@ -29,13 +45,13 @@
 </template>
 
 <script setup>
-// 桌面歌词：两行。当前行逐字点亮——没唱到的字半透明，正在唱的字微微上浮放大并带柔光，
+// 桌面歌词：三种显示方式（单行 / 双行交替 / 当前句 + 翻译）。当前行逐字点亮——没唱到的字半透明，正在唱的字微微上浮放大并带柔光，
 // 唱过的字保持明亮；换行时旧行上移淡出、新行从下方浮入并由模糊变清晰。
 // 第二行是翻译 / 罗马音，没有时预告下一行。可读性靠柔和投影（不再用描边）。
 // 沿用字体、字号、透明度、对齐、行距、单行省略、横竖排设置；“高亮颜色”作为柔光色，“阴影颜色”用于外圈柔和投影。
 // 在歌词上按住拖动即可移动窗口。
 import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from '@common/utils/vueTools'
-import { karaokeFrame } from '@common/utils/lyrics'
+import { doubleLineFrame, karaokeFrame } from '@common/utils/lyrics'
 import { clockRevision, isRomaFirst, lyricDoc, readLyricPosition } from '@lyric/core/lyric'
 import { isPlay, musicInfo, setting } from '@lyric/store/state'
 import useWindowDrag from '@lyric/useApp/useWindowDrag'
@@ -46,7 +62,10 @@ const { isDragging, handleMouseDown, handleTouchStart } = useWindowDrag()
 
 const vertical = computed(() => setting['desktopLyric.direction'] == 'vertical')
 const ellipsis = computed(() => !!setting['desktopLyric.style.ellipsis'])
+// single：只显示当前句；double：双行交替；extended：当前句 + 翻译 / 罗马音（没有时预告下一句）
+const mode = computed(() => setting['desktopLyric.lineMode'] ?? 'double')
 const frame = shallowRef(karaokeFrame(lyricDoc.value, readLyricPosition(), isRomaFirst.value))
+const rows = shallowRef([null, null])
 const title = computed(() => {
   if (!musicInfo.id) return ''
   const singer = musicInfo.singer && musicInfo.singer != '^' ? ` - ${musicInfo.singer}` : ''
@@ -87,7 +106,9 @@ const clearSchedule = () => {
 const update = () => {
   raf = 0
   timer = null
-  frame.value = karaokeFrame(lyricDoc.value, readLyricPosition(), isRomaFirst.value)
+  const pos = readLyricPosition()
+  if (mode.value == 'double') rows.value = doubleLineFrame(lyricDoc.value, pos)
+  else frame.value = karaokeFrame(lyricDoc.value, pos, isRomaFirst.value)
   if (unmounted) return
   // 播放中逐帧（点亮要连续）；暂停时低频刷新即可
   if (isPlay.value) raf = requestAnimationFrame(update)
@@ -98,7 +119,7 @@ const refresh = () => {
   update()
 }
 
-watch([lyricDoc, clockRevision, isPlay, isRomaFirst], refresh)
+watch([lyricDoc, clockRevision, isPlay, isRomaFirst, mode], refresh)
 onMounted(refresh)
 onBeforeUnmount(() => {
   unmounted = true
@@ -177,6 +198,26 @@ onBeforeUnmount(() => {
 }
 .title {
   opacity: .75;
+}
+// 双行：两排同字号，上排靠左、下排靠右（竖排时上排靠上、下排靠下）；等待中的一排半透明
+.double {
+  .rowA {
+    grid-area: primary;
+    justify-self: start;
+    text-align: start;
+  }
+  .rowB {
+    grid-area: secondary;
+    justify-self: end;
+    text-align: end;
+  }
+  .line {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+.waiting {
+  opacity: .5;
 }
 
 // 换行：旧行上移淡出，新行从下方浮入、由模糊变清晰

@@ -550,9 +550,20 @@ declare global {
       'desktopLyric.style.isZoomActiveLrc': boolean
 
       /**
+       * 桌面歌词显示方式：single 单行；double 双行交替（酷狗 / 网易云式）；extended 当前句 + 翻译 / 罗马音（没有时预告下一句）
+       */
+      'desktopLyric.lineMode': 'single' | 'double' | 'extended'
+
+      /**
        * 顶部歌词岛：屏幕顶部中央的歌词胶囊，悬停展开为迷你播放器
        */
       'island.enable': boolean
+
+      /**
+       * 歌词岛被拖到的位置（窗口左上角，屏幕坐标）；null 表示停靠在屏幕顶部中央
+       */
+      'island.x': number | null
+      'island.y': number | null
 
       /**
        * 顶部歌词岛常驻显示；关闭时平时隐藏，鼠标移到屏幕顶部中央才出现（不遮挡最大化窗口的标题栏）

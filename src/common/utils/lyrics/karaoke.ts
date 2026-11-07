@@ -60,3 +60,38 @@ export const karaokeFrame = (doc: LyricDoc, pos: number, romaFirst = false): Kar
     ? { index, words, done, secondary: following.text, secondaryKind: 'next' }
     : { index, words, done, secondary: '', secondaryKind: 'none' }
 }
+
+export interface DoubleRow {
+  /** 这一行歌词的行号 */
+  index: number
+  words: KaraokeWord[]
+  /** 正在唱（或刚唱完、下一句还没开始）的那一行 */
+  active: boolean
+}
+
+/**
+ * 双行交替（酷狗 / 网易云桌面歌词式）：第 1、3、5… 句固定在上排，第 2、4、6… 句固定在下排。
+ * 当前句高亮并逐字填充，另一排预告下一句；唱到下一句时它就在原位亮起，不会跳到上排，
+ * 唱完的那一排再换成下下句。返回 [上排, 下排]，没有内容的一排为 null。
+ */
+export const doubleLineFrame = (doc: LyricDoc, pos: number): [DoubleRow | null, DoubleRow | null] => {
+  const lines = doc.lines
+  const plain = (index: number): DoubleRow | null => {
+    const line = lines[index]
+    return line ? { index, words: [{ text: line.text, progress: 0 }], active: false } : null
+  }
+  if (!lines.length) return [null, null]
+  const index = findLineIndex(lines, pos)
+  // 开头之前：两排分别预告第一、二句
+  if (index < 0) return [plain(0), plain(1)]
+  const line = lines[index]
+  const current: DoubleRow = {
+    index,
+    words: line.timedWords
+      ? line.words.map(word => ({ text: word.text, progress: wordProgress(word, pos) }))
+      : [{ text: line.text, progress: 1 }],
+    active: true,
+  }
+  const next = plain(index + 1)
+  return index % 2 == 0 ? [current, next] : [next, current]
+}

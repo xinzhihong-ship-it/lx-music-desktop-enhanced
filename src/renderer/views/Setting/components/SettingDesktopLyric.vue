@@ -21,6 +21,9 @@ dd
   h3#desktop_lyric_style {{ $t('setting__desktop_lyric_group_style') }}
   div
     .gap-top
+      span(:class="$style.rowLabel") {{ $t('setting__desktop_lyric_line_mode') }}
+      base-checkbox.gap-left(v-for="item in lineModeList" :id="'setting_desktop_lyric_line_mode_' + item.id" :key="item.id" :model-value="appSetting['desktopLyric.lineMode']" need :value="item.id" :label="item.label" @update:model-value="updateSetting({ 'desktopLyric.lineMode': $event })")
+    .gap-top
       span(:class="$style.rowLabel") {{ $t('setting__desktop_lyric_direction') }}
       base-checkbox.gap-left(id="setting_desktop_lyric_direction_horizontal" :model-value="appSetting['desktopLyric.direction']" need value="horizontal" :label="$t('setting__desktop_lyric_direction_horizontal')" @update:model-value="updateSetting({ 'desktopLyric.direction': $event })")
       base-checkbox.gap-left(id="setting_desktop_lyric_direction_vertical" :model-value="appSetting['desktopLyric.direction']" need value="vertical" :label="$t('setting__desktop_lyric_direction_vertical')" @update:model-value="updateSetting({ 'desktopLyric.direction': $event })")
@@ -77,6 +80,8 @@ dd
     .gap-top
       base-checkbox(id="setting_island_always_show" :model-value="appSetting['island.alwaysShow']" :disabled="!appSetting['island.enable']" :label="$t('setting__island_always_show')" @update:model-value="updateSetting({ 'island.alwaysShow': $event })")
       svg-icon(class="help-icon" name="help-circle-outline" :aria-label="$t('setting__island_always_show_tip')")
+    .gap-top
+      base-btn.btn(min :disabled="appSetting['island.x'] == null" @click="updateSetting({ 'island.x': null, 'island.y': null })") {{ $t('setting__island_reset_position') }}
 </template>
 
 <script>
@@ -262,6 +267,12 @@ export default {
       systemFontList.value = fonts.map(f => ({ id: f, label: f.replace(/(^"|"$)/g, '') }))
     })
 
+    const lineModeList = computed(() => [
+      { id: 'single', label: t('desktop_lyric__mode_single') },
+      { id: 'double', label: t('desktop_lyric__mode_double') },
+      { id: 'extended', label: t('desktop_lyric__mode_extended') },
+    ])
+
     const resetWindowSetting = () => {
       updateSetting({
         'desktopLyric.width': 450,
@@ -282,6 +293,7 @@ export default {
       resetWindowSetting,
 
       fontList,
+      lineModeList,
       isLinux,
     }
   },

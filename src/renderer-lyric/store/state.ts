@@ -38,6 +38,7 @@ export const setting = shallowReactive<LX.DesktopLyric.Config>({
   'player.isPlayLxlrc': false,
   'player.playbackRate': 1,
   'island.alwaysShow': false,
+  'desktopLyric.lineMode': 'double',
 })
 
 // export const themeList = markRaw([
