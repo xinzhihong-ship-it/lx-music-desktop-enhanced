@@ -586,6 +586,8 @@ onBeforeUnmount(() => {
 }
 // 紧凑模式（桌面歌词）：翻译贴底、字号随基准字号
 .compact {
+  // 桌面上背景不确定：与其他显示方式一样加柔和投影（发光中的字由行内样式覆盖）
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 2px 10px var(--lyric-shadow, rgba(0, 0, 0, .35));
   .foot {
     bottom: 4%;
     gap: 2px;
