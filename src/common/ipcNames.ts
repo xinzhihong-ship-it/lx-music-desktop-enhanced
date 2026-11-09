@@ -189,6 +189,7 @@ const modules = {
     import_user_api: 'winMain_import_user_api',
     export_user_api: 'winMain_export_user_api',
     remove_user_api: 'winMain_remove_user_api',
+    move_user_api: 'winMain_move_user_api',
     set_user_api: 'winMain_set_user_api',
     get_user_api_list: 'winMain_get_user_api_list',
     request_user_api: 'winMain_request_user_api',

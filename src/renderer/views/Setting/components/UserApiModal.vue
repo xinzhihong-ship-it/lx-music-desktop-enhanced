@@ -2,6 +2,7 @@
 material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose")
   main.scroll(:class="$style.main")
     h2 {{ $t('user_api__title') }}
+    p(v-if="apiList.length" :class="$style.orderTip") {{ $t('user_api__order_tip') }}
     ul.scroll(v-if="apiList.length" :class="$style.content")
       li(v-for="(api, index) in apiList" :key="api.id" :class="[$style.listItem, {[$style.active]: appSetting['common.apiSource'] == api.id}]")
         div(:class="$style.listLeft")
@@ -13,8 +14,11 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
           div
             base-checkbox(:id="`user_api_${api.id}`" v-model="api.allowShowUpdateAlert" :class="$style.checkbox" :label="$t('user_api__allow_show_update_alert')" @change="handleChangeAllowUpdateAlert(api, $event)")
         div(:class="$style.listActions")
+          div(:class="$style.moveActions")
+            base-btn(min outline :disabled="isSavingOrder || index == 0" :aria-label="$t('user_api__move_up', { name: api.name })" :title="$t('user_api__move_up', { name: api.name })" @click.stop="handleMove(api.id, -1)") ↑
+            base-btn(min outline :disabled="isSavingOrder || index == apiList.length - 1" :aria-label="$t('user_api__move_down', { name: api.name })" :title="$t('user_api__move_down', { name: api.name })" @click.stop="handleMove(api.id, 1)") ↓
           base-btn(min outline @click.stop="api.importSource?.type == 'online' ? handleCopyUrl(api) : handleExport(api)") {{ api.importSource?.type == 'online' ? $t('user_api__btn_copy_link') : $t('user_api__btn_export') }}
-          base-btn(:class="$style.listBtn" outline :aria-label="$t('user_api__btn_remove')" @click.stop="handleRemove(index)")
+          base-btn(:class="$style.listBtn" outline :disabled="isSavingOrder" :aria-label="$t('user_api__btn_remove')" @click.stop="handleRemove(index)")
             svg(v-once version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" viewBox="0 0 212.982 212.982" space="preserve")
               use(xlink:href="#icon-delete")
     div(v-else :class="$style.content")
@@ -32,7 +36,7 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
 </template>
 
 <script>
-import { exportUserApi, importUserApi, openSaveDir, removeUserApi, showSelectDialog, setAllowShowUserApiUpdateAlert } from '@renderer/utils/ipc'
+import { exportUserApi, importUserApi, openSaveDir, removeUserApi, moveUserApi, showSelectDialog, setAllowShowUserApiUpdateAlert } from '@renderer/utils/ipc'
 import { writeRendererLog } from '@common/rendererIpc'
 import { readFile } from '@common/utils/nodejs'
 import { clipboardWriteText, openUrl } from '@common/utils/electron'
@@ -57,6 +61,7 @@ export default {
   emits: ['update:modelValue'],
   setup() {
     const isShowOnlineImportModal = ref(false)
+    const isSavingOrder = ref(false)
     const apiList = computed(() => userApi.list)
 
     return {
@@ -64,9 +69,21 @@ export default {
       apiList,
       appSetting,
       isShowOnlineImportModal,
+      isSavingOrder,
     }
   },
   methods: {
+    async handleMove(id, direction) {
+      if (this.isSavingOrder) return
+      this.isSavingOrder = true
+      try {
+        userApi.list = await moveUserApi(id, direction)
+      } catch (err) {
+        void dialog(this.$t('user_api__order_failed', { message: err?.message ?? String(err) }))
+      } finally {
+        this.isSavingOrder = false
+      }
+    },
     async importUserApi(params) {
       writeRendererLog('[UserApiModal importUserApi] called, script length:', params.script?.length, 'type:', typeof params.script)
       return importUserApi(params).then(({ apiList }) => {
@@ -254,6 +271,17 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.moveActions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.orderTip {
+  margin: 10px 7px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-font-label);
 }
 .note {
   padding: 0 7px;
