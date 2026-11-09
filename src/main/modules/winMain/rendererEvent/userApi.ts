@@ -9,6 +9,7 @@ import {
   exportApi,
   removeApi,
   moveApi,
+  moveApiBefore,
   setApi,
   getStatus,
   request,
@@ -38,6 +39,10 @@ export default () => {
 
   mainHandle<{ id: string, direction: number }, LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.move_user_api, async({ params }) => {
     return moveApi(params?.id, params?.direction)
+  })
+
+  mainHandle<{ id: string, beforeId: string | null }, LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.move_user_api_before, async({ params }) => {
+    return moveApiBefore(params?.id, params?.beforeId)
   })
 
   mainHandle<LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_list, async() => {

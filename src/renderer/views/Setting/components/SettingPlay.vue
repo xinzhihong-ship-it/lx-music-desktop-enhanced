@@ -73,7 +73,6 @@ dd
         :aria-label="$t('setting__play_error_api_source_count')"
         type="number"
         :min="PLAY_ERROR_API_SOURCE_COUNT.min"
-        :max="PLAY_ERROR_API_SOURCE_COUNT.max"
         step="1"
         @change="handlePlayErrorApiSourceCountChange"
         @submit="handlePlayErrorApiSourceCountChange")

@@ -2,7 +2,7 @@ export const PLAY_ERROR_ACTIONS = ['apiSource', 'platform', 'quality', 'next'] a
 export type PlayErrorAction = typeof PLAY_ERROR_ACTIONS[number]
 
 export const PLAY_ERROR_RETRY_COUNT = { default: 1, min: 0, max: 5 } as const
-export const PLAY_ERROR_API_SOURCE_COUNT = { default: 2, min: 1, max: 20 } as const
+export const PLAY_ERROR_API_SOURCE_COUNT = { default: 2, min: 1 } as const
 
 const actionSet = new Set<string>(PLAY_ERROR_ACTIONS)
 
@@ -14,11 +14,11 @@ export const normalizePlayErrorStrategyOrder = (value: unknown): PlayErrorAction
   return [...uniqueOrder, ...PLAY_ERROR_ACTIONS.filter(action => action != 'next' && !uniqueOrder.includes(action)), 'next']
 }
 
-const normalizeCount = (value: unknown, range: { default: number, min: number, max: number }) => {
+const normalizeCount = (value: unknown, range: { default: number, min: number, max?: number }) => {
   if (value === '' || value === null || value === undefined) return range.default
   const count = Number(value)
   if (!Number.isFinite(count)) return range.default
-  return Math.min(range.max, Math.max(range.min, Math.trunc(count)))
+  return Math.min(range.max ?? Number.MAX_SAFE_INTEGER, Math.max(range.min, Math.trunc(count)))
 }
 
 export const normalizePlayErrorRetryCount = (value: unknown) => normalizeCount(value, PLAY_ERROR_RETRY_COUNT)
