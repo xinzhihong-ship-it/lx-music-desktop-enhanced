@@ -3,8 +3,9 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
   main.scroll(:class="$style.main")
     h2 {{ $t('user_api__title') }}
     p(v-if="apiList.length" :class="$style.orderTip") {{ $t('user_api__order_tip') }}
-    ul.scroll(v-if="apiList.length" :class="$style.content")
-      li(v-for="(api, index) in apiList" :key="api.id" :class="[$style.listItem, {[$style.active]: appSetting['common.apiSource'] == api.id}]")
+    ul.scroll(v-if="apiList.length" ref="domApiList" :class="$style.content")
+      li(v-for="(api, index) in apiList" :key="api.id" :data-api-id="api.id" :class="[$style.listItem, {[$style.active]: appSetting['common.apiSource'] == api.id}]")
+        button.user-api-drag-handle(type="button" :class="$style.dragHandle" :disabled="isSavingOrder" :aria-label="$t('user_api__drag', { name: api.name })" :title="$t('user_api__drag', { name: api.name })") ⋮⋮
         div(:class="$style.listLeft")
           h3
             | {{ api.name }}
@@ -12,7 +13,7 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
             span(v-if="api.author") {{ api.author }}
           p {{ api.description }}
           div
-            base-checkbox(:id="`user_api_${api.id}`" v-model="api.allowShowUpdateAlert" :class="$style.checkbox" :label="$t('user_api__allow_show_update_alert')" @change="handleChangeAllowUpdateAlert(api, $event)")
+            base-checkbox(:id="`user_api_${api.id}`" v-model="api.allowShowUpdateAlert" :disabled="isSavingOrder" :class="$style.checkbox" :label="$t('user_api__allow_show_update_alert')" @change="handleChangeAllowUpdateAlert(api, $event)")
         div(:class="$style.listActions")
           div(:class="$style.moveActions")
             base-btn(min outline :disabled="isSavingOrder || index == 0" :aria-label="$t('user_api__move_up', { name: api.name })" :title="$t('user_api__move_up', { name: api.name })" @click.stop="handleMove(api.id, -1)") ↑
@@ -29,22 +30,25 @@ material-modal(:show="modelValue" bg-close teleport="#view" @close="handleClose"
         span.hover.underline(aria-label="https://lxmusic.toside.cn/desktop/custom-source" @click="handleOpenUrl('https://lyswhut.github.io/lx-music-doc/desktop/custom-source')") FAQ
       p {{ $t('user_api__note') }}
     div(:class="$style.footer")
-      base-btn(:class="$style.footerBtn" @click="isShowOnlineImportModal = true") {{ $t('user_api__btn_import_online') }}
-      base-btn(:class="$style.footerBtn" @click="handleImport") {{ $t('user_api__btn_import') }}
+      base-btn(:class="$style.footerBtn" :disabled="isSavingOrder" @click="isShowOnlineImportModal = true") {{ $t('user_api__btn_import_online') }}
+      base-btn(:class="$style.footerBtn" :disabled="isSavingOrder" @click="handleImport") {{ $t('user_api__btn_import') }}
       //- base-btn(:class="$style.footerBtn" @click="handleExport") {{ $t('user_api__btn_export') }}
     UserApiOnlineImportModal(v-model:show="isShowOnlineImportModal" @import="importUserApi")
 </template>
 
 <script>
-import { exportUserApi, importUserApi, openSaveDir, removeUserApi, moveUserApi, showSelectDialog, setAllowShowUserApiUpdateAlert } from '@renderer/utils/ipc'
+import { exportUserApi, importUserApi, openSaveDir, removeUserApi, moveUserApi, moveUserApiBefore, showSelectDialog, setAllowShowUserApiUpdateAlert } from '@renderer/utils/ipc'
 import { writeRendererLog } from '@common/rendererIpc'
 import { readFile } from '@common/utils/nodejs'
 import { clipboardWriteText, openUrl } from '@common/utils/electron'
 import apiSourceInfo from '@renderer/utils/musicSdk/api-source-info'
 import { userApi } from '@renderer/store'
 import { appSetting, updateSetting } from '@renderer/store/setting'
-import { computed, ref } from '@common/utils/vueTools'
+import { computed, ref, watch, useCssModule } from '@common/utils/vueTools'
 import { dialog } from '@renderer/plugins/Dialog'
+import { useI18n } from '@renderer/plugins/i18n'
+import Sortable from '@renderer/utils/sortable'
+import { clearDownKeys } from '@renderer/event'
 
 import UserApiOnlineImportModal from './UserApiOnlineImportModal.vue'
 
@@ -63,6 +67,41 @@ export default {
     const isShowOnlineImportModal = ref(false)
     const isSavingOrder = ref(false)
     const apiList = computed(() => userApi.list)
+    const domApiList = ref(null)
+    const style = useCssModule()
+    const t = useI18n()
+    watch(domApiList, (element, _previous, onCleanup) => {
+      if (!element) return
+      const sortable = Sortable.create(element, {
+        handle: '.user-api-drag-handle',
+        draggable: 'li',
+        dataIdAttr: 'data-api-id',
+        ghostClass: style.dragging,
+        animation: 150,
+        forceFallback: true,
+        fallbackOnBody: true,
+        scroll: element,
+        disabled: isSavingOrder.value,
+        onStart() { window.app_event.dragStart() },
+        onEnd(event) {
+          window.app_event.dragEnd()
+          clearDownKeys()
+          if (event.oldIndex == event.newIndex) return
+          const id = event.item.dataset.apiId
+          const beforeId = event.item.nextElementSibling?.dataset.apiId ?? null
+          // Restore Sortable's DOM mutation before Vue applies the saved list.
+          sortable.sort(userApi.list.map(api => api.id))
+          isSavingOrder.value = true
+          void moveUserApiBefore(id, beforeId).then(list => {
+            userApi.list = list
+          }).catch(err => {
+            void dialog(t('user_api__order_failed', { message: err?.message ?? String(err) }))
+          }).finally(() => { isSavingOrder.value = false })
+        },
+      })
+      const stop = watch(isSavingOrder, value => { sortable.option('disabled', value) })
+      onCleanup(() => { stop(); sortable.destroy() })
+    }, { flush: 'post' })
 
     return {
       userApi,
@@ -70,6 +109,7 @@ export default {
       appSetting,
       isShowOnlineImportModal,
       isSavingOrder,
+      domApiList,
     }
   },
   methods: {
@@ -108,13 +148,6 @@ export default {
       })
     },
     handleImport() {
-      if (this.userApi.list.length > 20) {
-        this.$dialog({
-          message: this.$t('user_api__max_tip'),
-          confirmButtonText: this.$t('ok'),
-        })
-        return
-      }
       void showSelectDialog({
         title: this.$t('user_api__import_file'),
         properties: ['openFile'],
@@ -277,6 +310,22 @@ export default {
   flex-direction: column;
   gap: 4px;
 }
+.dragHandle {
+  flex: none;
+  padding: 8px 4px;
+  margin-right: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-font-label);
+  font-size: 18px;
+  cursor: grab;
+  touch-action: none;
+  &:active { cursor: grabbing; }
+  &:disabled { cursor: default; opacity: .4; }
+  &:focus-visible { outline: 2px solid var(--color-primary); }
+}
+.dragging { opacity: .35; }
 .orderTip {
   margin: 10px 7px 0;
   font-size: 12px;

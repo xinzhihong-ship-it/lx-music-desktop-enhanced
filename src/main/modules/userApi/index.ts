@@ -9,6 +9,7 @@ import {
   importApi as handleImportApi,
   removeApi as handleRemoveApi,
   moveApi as handleMoveApi,
+  moveApiBefore as handleMoveApiBefore,
   setAllowShowUpdateAlert as saveAllowShowUpdateAlert,
 } from './utils'
 import { loadApi, setAllowShowUpdateAlert as setRendererEventAllowShowUpdateAlert, init } from './rendererEvent/rendererEvent'
@@ -76,6 +77,11 @@ export const setApi = async(id: string) => {
 
 export const moveApi = (id: string, direction: number): LX.UserApi.UserApiInfo[] => {
   handleMoveApi(id, direction)
+  return getApiList()
+}
+
+export const moveApiBefore = (id: string, beforeId: string | null): LX.UserApi.UserApiInfo[] => {
+  handleMoveApiBefore(id, beforeId)
   return getApiList()
 }
 

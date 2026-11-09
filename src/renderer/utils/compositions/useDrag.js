@@ -1,8 +1,6 @@
-import Sortable, { AutoScroll } from 'sortablejs/modular/sortable.core.esm'
+import Sortable from '../sortable'
 import { onMounted } from '@common/utils/vueTools'
 import { clearDownKeys } from '@renderer/event'
-
-Sortable.mount(new AutoScroll())
 
 const noop = () => {}
 

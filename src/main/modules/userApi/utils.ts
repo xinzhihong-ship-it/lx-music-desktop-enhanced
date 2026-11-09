@@ -172,10 +172,19 @@ export const moveApi = (id: string, direction: number) => {
   const index = list.findIndex(api => api.id == id)
   const targetIndex = index + direction
   if (index < 0 || targetIndex < 0 || targetIndex >= list.length) return
-  // Move by ID against the current list so a stale UI cannot discard imported sources.
-  const nextList = [...list]
-  const [api] = nextList.splice(index, 1)
+  moveApiBefore(id, direction < 0 ? list[targetIndex].id : list[targetIndex + 1]?.id ?? null)
+}
+
+export const moveApiBefore = (id: string, beforeId: string | null) => {
+  if (typeof id != 'string' || (beforeId !== null && typeof beforeId != 'string')) throw new Error('Invalid user API move')
+  const list = getUserApis()
+  const api = list.find(api => api.id == id)
+  if (!api || id == beforeId || (beforeId !== null && !list.some(api => api.id == beforeId))) return
+  // Apply the moved ID and destination to the current list, preserving concurrent imports.
+  const nextList = list.filter(api => api.id != id)
+  const targetIndex = beforeId === null ? nextList.length : nextList.findIndex(api => api.id == beforeId)
   nextList.splice(targetIndex, 0, api)
+  if (nextList.every((api, index) => api.id == list[index].id)) return
   userApis = nextList
   try {
     saveData()
@@ -199,25 +208,27 @@ export const getUserApiData = async(): Promise<LX.WebDAVSync.UserApiData> => {
 }
 
 export const overwriteUserApiData = async(data: LX.WebDAVSync.UserApiData): Promise<void> => {
-  if (!Array.isArray(data?.list) || data.list.length > 20 || !data.scripts || typeof data.scripts != 'object') throw new Error('Invalid WebDAV user API data')
+  if (!Array.isArray(data?.list) || !data.scripts || typeof data.scripts != 'object') throw new Error('Invalid WebDAV user API data')
   const ids = new Set<string>()
   const nextScripts = new Map<string, string>()
-  const nextApis = await Promise.all(data.list.map(async api => {
+  const nextApis: LX.UserApi.UserApiInfo[] = []
+  // Process scripts sequentially instead of allocating one compression task per source.
+  for (const api of data.list) {
     if (typeof api?.id != 'string' || !api.id || api.id.length > 128 || ids.has(api.id)) throw new Error('Invalid WebDAV user API id')
     ids.add(api.id)
     const rawScript = data.scripts[api.id]
     if (typeof rawScript != 'string' || !rawScript || rawScript.length > 5 * 1024 * 1024) throw new Error('Invalid WebDAV user API script')
     const parsed = parseScriptInfo(rawScript)
     nextScripts.set(api.id, await deflateScript(rawScript))
-    return {
+    nextApis.push({
       ...parsed,
       ...api,
       id: api.id,
       importSource: api.importSource?.type == 'online' && /^https?:\/\//.test(api.importSource.url)
         ? api.importSource
         : { type: 'local' as const },
-    }
-  }))
+    })
+  }
   userApis = nextApis
   scripts = nextScripts
   saveData()
