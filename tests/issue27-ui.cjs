@@ -94,7 +94,8 @@ async function verify(win) {
         const to = document.querySelector('li[data-api-id="${toId}"]').getBoundingClientRect();
         const list = document.querySelector('li[data-api-id="${fromId}"]').parentElement.getBoundingClientRect();
         if (from.top < list.top || from.bottom > list.bottom || to.top < list.top) throw Error('Drag fixture is not visible');
-        return { x: Math.round(from.x + from.width / 2), y: Math.round(from.y + from.height / 2), targetY: Math.round(${after} ? to.bottom - 8 : to.top + 8) };
+        // Stay away from the scroll edge when selecting a visible insertion position.
+        return { x: Math.round(from.x + from.width / 2), y: Math.round(from.y + from.height / 2), targetY: Math.round(to.top + to.height * (${after} ? 0.6 : 0.4)) };
       })()`)
       // Await Chromium's real input pipeline; native events can be dropped by hidden windows.
       if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3')
@@ -102,8 +103,8 @@ async function verify(win) {
       await mouse({ type: 'mouseMoved', x: points.x, y: points.y })
       await mouse({ type: 'mousePressed', button: 'left', buttons: 1, clickCount: 1, x: points.x, y: points.y })
       await new Promise(resolve => setTimeout(resolve, 100))
-      for (let step = 1; step <= 20; step++) {
-        await mouse({ type: 'mouseMoved', button: 'left', buttons: 1, x: points.x, y: Math.round(points.y + (points.targetY - points.y) * step / 20) })
+      for (let step = 1; step <= 12; step++) {
+        await mouse({ type: 'mouseMoved', button: 'left', buttons: 1, x: points.x, y: Math.round(points.y + (points.targetY - points.y) * step / 12) })
         await new Promise(resolve => setTimeout(resolve, 35))
       }
       await mouse({ type: 'mouseReleased', button: 'left', buttons: 0, clickCount: 1, x: points.x, y: points.targetY })
