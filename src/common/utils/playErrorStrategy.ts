@@ -2,7 +2,7 @@ export const PLAY_ERROR_ACTIONS = ['apiSource', 'platform', 'quality', 'next'] a
 export type PlayErrorAction = typeof PLAY_ERROR_ACTIONS[number]
 
 export const PLAY_ERROR_RETRY_COUNT = { default: 1, min: 0, max: 5 } as const
-export const PLAY_ERROR_API_SOURCE_COUNT = { default: 2, min: 1, max: 10 } as const
+export const PLAY_ERROR_API_SOURCE_COUNT = { default: 2, min: 1, max: 20 } as const
 
 const actionSet = new Set<string>(PLAY_ERROR_ACTIONS)
 

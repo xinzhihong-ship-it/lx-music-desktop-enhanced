@@ -167,6 +167,9 @@ export const setUserApi = async(source: LX.UserApi.UserApiSetApiParams): Promise
 export const removeUserApi = async(ids: string[]) => {
   return rendererInvoke<string[], LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.remove_user_api, ids)
 }
+export const moveUserApi = async(id: string, direction: number) => {
+  return rendererInvoke<{ id: string, direction: number }, LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.move_user_api, { id, direction })
+}
 export const onShowUserApiUpdateAlert = (listener: LX.IpcRendererEventListenerParams<LX.UserApi.UserApiUpdateInfo>): RemoveListener => {
   rendererOn(WIN_MAIN_RENDERER_EVENT_NAME.user_api_show_update_alert, listener)
   return () => {

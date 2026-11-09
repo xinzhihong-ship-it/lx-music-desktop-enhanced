@@ -166,6 +166,25 @@ export const setAllowShowUpdateAlert = (id: string, enable: boolean) => {
   saveData()
 }
 
+export const moveApi = (id: string, direction: number) => {
+  if (typeof id != 'string' || (direction !== -1 && direction !== 1)) throw new Error('Invalid user API move')
+  const list = getUserApis()
+  const index = list.findIndex(api => api.id == id)
+  const targetIndex = index + direction
+  if (index < 0 || targetIndex < 0 || targetIndex >= list.length) return
+  // Move by ID against the current list so a stale UI cannot discard imported sources.
+  const nextList = [...list]
+  const [api] = nextList.splice(index, 1)
+  nextList.splice(targetIndex, 0, api)
+  userApis = nextList
+  try {
+    saveData()
+  } catch (error) {
+    userApis = list
+    throw error
+  }
+}
+
 export const getScript = async(id: string) => {
   return inflateScript(scripts.get(id) ?? '')
 }

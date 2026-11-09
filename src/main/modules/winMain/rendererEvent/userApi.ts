@@ -8,6 +8,7 @@ import {
   importApi,
   exportApi,
   removeApi,
+  moveApi,
   setApi,
   getStatus,
   request,
@@ -33,6 +34,10 @@ export default () => {
 
   mainHandle<LX.UserApi.UserApiSetApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api, async({ params: apiId }) => {
     await setApi(apiId)
+  })
+
+  mainHandle<{ id: string, direction: number }, LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.move_user_api, async({ params }) => {
+    return moveApi(params?.id, params?.direction)
   })
 
   mainHandle<LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_list, async() => {

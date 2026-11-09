@@ -8,6 +8,7 @@ import {
   overwriteUserApiData as handleOverwriteUserApiData,
   importApi as handleImportApi,
   removeApi as handleRemoveApi,
+  moveApi as handleMoveApi,
   setAllowShowUpdateAlert as saveAllowShowUpdateAlert,
 } from './utils'
 import { loadApi, setAllowShowUpdateAlert as setRendererEventAllowShowUpdateAlert, init } from './rendererEvent/rendererEvent'
@@ -71,6 +72,11 @@ export const setApi = async(id: string) => {
   if (!apiList.some(a => a.id === id)) return
   userApiId ||= id
   await loadApi(id)
+}
+
+export const moveApi = (id: string, direction: number): LX.UserApi.UserApiInfo[] => {
+  handleMoveApi(id, direction)
+  return getApiList()
 }
 
 export const setAllowShowUpdateAlert = (id: string, enable: boolean) => {
