@@ -143,11 +143,13 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
       case 'songlist':
         await playSongList(params.text, params.source, params.musicId)
         return null
-      case 'later':
-        // 「下一首播放」：排在稍后播放的最前面
-        assertPlayable(params.musicInfo)
-        addTempPlayList([{ listId: LIST_IDS.PLAY_LATER, musicInfo: params.musicInfo, isTop: true }])
+      case 'later': {
+        // 「下一首播放」排在稍后播放的最前面（top），「加入队列」排在最后；几首按给的顺序
+        const musicInfos = params.musicInfos as LX.Music.MusicInfo[]
+        for (const musicInfo of musicInfos) assertPlayable(musicInfo)
+        addTempPlayList(musicInfos.map(musicInfo => ({ listId: LIST_IDS.PLAY_LATER, musicInfo, isTop: params.top as boolean })))
         return null
+      }
     }
     return null
   },
