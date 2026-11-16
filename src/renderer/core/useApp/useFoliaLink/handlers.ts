@@ -4,7 +4,6 @@ import { LIST_IDS } from '@common/constants'
 import { similar, sortInsert } from '@common/utils/common'
 import musicSdk from '@renderer/utils/musicSdk'
 import { deduplicationList, toMD5, toNewMusicInfo } from '@renderer/utils'
-import { assertApiSupport } from '@renderer/store/utils'
 import { qualityList } from '@renderer/store'
 import { appSetting, setTogglePlayMode, updateSetting } from '@renderer/store/setting'
 import { tempListMeta, userLists } from '@renderer/store/list/state'
@@ -45,11 +44,6 @@ const sortByKeyword = (list: LX.Music.MusicInfo[], keyword: string) => {
   const arr: Array<{ num: number, data: LX.Music.MusicInfo }> = []
   for (const item of list) sortInsert(arr, { num: similar(keyword, `${item.name} ${item.singer}`), data: item })
   return arr.map(item => item.data).reverse()
-}
-
-const assertPlayable = (musicInfo: LX.Music.MusicInfo) => {
-  if (musicInfo.source == 'local') return
-  if (!assertApiSupport(musicInfo.source)) throw new FoliaLinkError('not-playable', `No playable source for ${musicInfo.source}`)
 }
 
 const songListKey = (id: string, source: string) => `${source}__${id}`
@@ -125,14 +119,13 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
         const list = await getListMusics(params.listId)
         const musicInfo = list.find(item => item.id == params.musicId)
         if (!musicInfo) throw new FoliaLinkError('not-found', 'The song is not in that list')
-        assertPlayable(musicInfo)
+        // 不先查音源：与在本软件里双击一样，取链接时音源不支持会自动换源
         playListById(params.listId, params.musicId)
         return null
       }
       case 'search': {
         // 与搜索页双击一样：加进「试听列表」，从那里播放
         const musicInfo = params.musicInfo as LX.Music.MusicInfo
-        assertPlayable(musicInfo)
         await addListMusics(LIST_IDS.DEFAULT, [musicInfo])
         const list = await getListMusics(LIST_IDS.DEFAULT)
         const index = list.findIndex(item => item.id == musicInfo.id)
@@ -144,10 +137,13 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
         await playSongList(params.text, params.source, params.musicId)
         return null
       case 'later': {
-        // 「下一首播放」排在稍后播放的最前面（top），「加入队列」排在最后；几首按给的顺序
+        // 「下一首播放」排在稍后播放的最前面（top），「加入队列」排在最后；几首按给的顺序。
+        // now：排到最前并马上放第一首（稍后播放的歌先放，playNext 取的就是它），不换正在播放的列表
         const musicInfos = params.musicInfos as LX.Music.MusicInfo[]
-        for (const musicInfo of musicInfos) assertPlayable(musicInfo)
+        const hadMusic = playMusicInfo.musicInfo != null
         addTempPlayList(musicInfos.map(musicInfo => ({ listId: LIST_IDS.PLAY_LATER, musicInfo, isTop: params.top as boolean })))
+        // 没有在放的歌时 addTempPlayList 自己会开始放
+        if (params.now && hadMusic) await playNext()
         return null
       }
     }
@@ -161,7 +157,8 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
       case 'toggle': togglePlay(); break
       case 'next': await playNext(); break
       case 'prev': await playPrev(); break
-      case 'seek': window.app_event.setProgress(Math.min(value as number, playProgress.maxPlayTime || (value as number))); break
+      // 不按 maxPlayTime 截：刚起播时它还是上一首的时长；位置超过时长由播放器自己处理
+      case 'seek': window.app_event.setProgress(value as number); break
       case 'volume': window.app_event.setVolume(value as number); break
       case 'mute': window.app_event.setVolumeIsMute(value as boolean); break
       case 'rate': window.app_event.setPlaybackRate(value as number); break
@@ -191,7 +188,6 @@ const playSongList = async(text: string, source: LX.OnlineSource, musicId?: stri
   const start = (list: LX.Music.MusicInfo[]) => {
     const index = musicId ? list.findIndex(item => item.id == musicId) : 0
     if (index < 0) return false
-    assertPlayable(list[index])
     playList(LIST_IDS.TEMP, index)
     return true
   }
@@ -205,12 +201,18 @@ const playSongList = async(text: string, source: LX.OnlineSource, musicId?: stri
   }
   const firstPage = (await getListDetail(text, source, 1)).list
   if (!firstPage.length) throw new FoliaLinkError('not-found', 'The song list is empty')
+  // 要放的歌不在第一页：读完整张再起播，起播之后才回答（Folia 等着这一首，不跟回上一首；读失败 Folia 会知道）
+  if (musicId && !firstPage.some(item => item.id == musicId)) {
+    const fullList = await getListDetailAll(text, source)
+    await setTempList(key, [...fullList])
+    if (!start(fullList)) throw new FoliaLinkError('not-found', 'The song is not in that song list')
+    return
+  }
   await setTempList(key, [...firstPage])
-  const started = start(firstPage)
+  start(firstPage)
   void getListDetailAll(text, source).then(async fullList => {
     if (!fullList.length || tempListMeta.id != key) return
     await setTempList(key, [...fullList])
-    if (!started) start(fullList)
   }).catch(err => { console.log('[FoliaLink] could not read the whole song list', err) })
 }
 

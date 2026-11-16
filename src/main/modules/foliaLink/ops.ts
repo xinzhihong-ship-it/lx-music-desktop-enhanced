@@ -100,12 +100,15 @@ export const checkParams = (op: LinkOp, raw: unknown): Record<string, any> => {
       switch (target) {
         case 'list': return { target, listId: text(p.listId, 'listId', 200), musicId: text(p.musicId, 'musicId', 500) }
         case 'search': return { target, musicInfo: checkMusicInfo(p.musicInfo) }
-        // 稍后播放：一首（musicInfo）或几首（musicInfos），top 为 false 时排在稍后播放的最后，否则排在最前
+        // 稍后播放：一首（musicInfo）或几首（musicInfos），top 为 false 时排在稍后播放的最后，否则排在最前；
+        // now 为 true 时排到最前并马上播放第一首（在 Folia 的队列里点了一首稍后播放的歌）
         case 'later': {
           const musicInfos = p.musicInfos === undefined ? [checkMusicInfo(p.musicInfo)] : checkMusicInfos(p.musicInfos, 'musicInfos')
           if (!musicInfos.length) fail('musicInfos must not be empty')
           if (p.top !== undefined && typeof p.top != 'boolean') fail('top must be a boolean')
-          return { target, musicInfos, top: p.top !== false }
+          if (p.now !== undefined && typeof p.now != 'boolean') fail('now must be a boolean')
+          const now = p.now === true
+          return { target, musicInfos, top: now || p.top !== false, now }
         }
         case 'songlist': return {
           target,

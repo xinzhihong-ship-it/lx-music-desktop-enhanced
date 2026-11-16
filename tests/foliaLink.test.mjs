@@ -93,11 +93,15 @@ test('ops: params are checked and trimmed to known fields', () => {
   assert.throws(() => checkParams('play', { target: 'search', musicInfo: { id: 'x' } }), LinkError)
   assert.throws(() => checkParams('play', { target: 'eval' }), LinkError)
   // 稍后播放：一首默认排最前，几首按顺序、top: false 排最后
-  assert.deepEqual(checkParams('play', { target: 'later', musicInfo: music() }), { target: 'later', musicInfos: [music()], top: true })
+  assert.deepEqual(checkParams('play', { target: 'later', musicInfo: music() }), { target: 'later', musicInfos: [music()], top: true, now: false })
   assert.equal(checkParams('play', { target: 'later', musicInfos: [music(), music()], top: false }).top, false)
   assert.equal(checkParams('play', { target: 'later', musicInfos: [music(), music()] }).musicInfos.length, 2)
   assert.throws(() => checkParams('play', { target: 'later', musicInfos: [] }), LinkError)
   assert.throws(() => checkParams('play', { target: 'later', musicInfo: music(), top: 'yes' }), LinkError)
+  // now：马上放，总是排最前
+  assert.deepEqual(checkParams('play', { target: 'later', musicInfo: music(), top: false, now: true }), { target: 'later', musicInfos: [music()], top: true, now: true })
+  assert.equal(checkParams('play', { target: 'later', musicInfo: music() }).now, false)
+  assert.throws(() => checkParams('play', { target: 'later', musicInfo: music(), now: 1 }), LinkError)
   assert.throws(() => checkParams('listRemove', { listId: 'love', ids: [1] }), LinkError)
   assert.throws(() => checkParams('listAdd', { listId: 'love', musicInfos: 'x' }), LinkError)
   assert.throws(() => checkParams('lists', 'x'), LinkError)

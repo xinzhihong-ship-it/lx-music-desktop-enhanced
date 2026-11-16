@@ -98,6 +98,9 @@ export default () => {
   window.app_event.on('stop', handleLoaded)
   window.app_event.on('error', handleLoaded)
   window.app_event.on('playerEmptied', handleLoaded)
+  // 暂停着加载完（换音质、启动时恢复）：不会再有 play / pause 事件，canplay 时就算加载完了
+  window.app_event.on('playerCanplay', handleLoaded)
+  window.app_event.on('playerLoadeddata', handleLoaded)
   window.app_event.on('playerSeeked', handleSeeked)
 
   const removeRequestListener = onFoliaLinkRequest(({ params: { requestKey, op, params } }) => {
@@ -119,6 +122,8 @@ export default () => {
     window.app_event.off('stop', handleLoaded)
     window.app_event.off('error', handleLoaded)
     window.app_event.off('playerEmptied', handleLoaded)
+    window.app_event.off('playerCanplay', handleLoaded)
+    window.app_event.off('playerLoadeddata', handleLoaded)
     window.app_event.off('playerSeeked', handleSeeked)
   })
 

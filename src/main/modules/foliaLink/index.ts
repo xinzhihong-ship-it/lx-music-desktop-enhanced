@@ -94,6 +94,13 @@ export default () => {
     }, LISTS_PUSH_DEBOUNCE_MS)
   }
 
+  /** Folia 只能改试听列表、我的收藏和还在的自建列表（Folia 记着的列表可能已经在这边删了） */
+  const assertWritableList = async(listId: string) => {
+    if (listId == LIST_IDS.DEFAULT || listId == LIST_IDS.LOVE) return
+    const userLists = await global.lx.worker.dbService.getAllUserList()
+    if (!userLists.some(list => list.id == listId)) throw new LinkError('not-found', 'That list does not exist')
+  }
+
   /** 主进程直接回答的接口：我的列表在主进程的数据库里 */
   const handleMainOp = async(op: MainOp, params: Record<string, any>) => {
     const db = global.lx.worker.dbService
@@ -112,9 +119,11 @@ export default () => {
       case 'listMusics':
         return db.getListMusics(params.listId)
       case 'listAdd':
+        await assertWritableList(params.listId)
         await global.lx.event_list.list_music_add(params.listId, params.musicInfos, global.lx.appSetting['list.addMusicLocationType'])
         return null
       case 'listRemove':
+        await assertWritableList(params.listId)
         await global.lx.event_list.list_music_remove(params.listId, params.ids)
         return null
       case 'likedIds':
@@ -146,8 +155,14 @@ export default () => {
     const token = randomBytes(32).toString('base64url')
     const instance = createLinkServer({ token, getState: () => linkState.read(), handleRpc, log: logLine, now: () => Date.now() })
     const port = await instance.start()
+    // 连接文件写不出来就不算开着：关掉服务，下次开开关时重来
+    try {
+      await writeLinkConnectionFile(linkFilePath, buildLinkConnectionInfo({ pid, port, token, appVersion: app.getVersion() }))
+    } catch (err) {
+      await instance.stop()
+      throw err
+    }
     server = instance
-    await writeLinkConnectionFile(linkFilePath, buildLinkConnectionInfo({ pid, port, token, appVersion: app.getVersion() }))
     log.info(`[FoliaLink] listening on 127.0.0.1:${port}`)
   }
 
@@ -160,14 +175,18 @@ export default () => {
     await instance?.stop()
   }
 
+  // 开关一次次排着做：后一次等前一次做完（快速开关时 stop 不会删掉后一次 start 刚写的连接文件）
   const setEnabled = (enabled: boolean) => {
     const previous = starting ?? Promise.resolve()
-    starting = previous.then(async() => {
+    const run: Promise<void> = previous.then(async() => {
       if (enabled && !server) await start()
       else if (!enabled && server) await stop()
     }).catch(err => {
       log.warn('[FoliaLink] could not switch the link', err)
-    }).finally(() => { starting = null })
+    }).finally(() => {
+      if (starting === run) starting = null
+    })
+    starting = run
   }
 
   // 渲染进程推来的播放状态；回答 RPC
