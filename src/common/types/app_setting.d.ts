@@ -793,6 +793,11 @@ declare global {
       'foliaStage.enable': boolean
 
       /**
+       * 是否开启「Folia 对接」：让 Folia（落雪对接分支）搜歌、读我的列表、控制播放（本机接口）
+       */
+      'foliaLink.enable': boolean
+
+      /**
        * 是否在离开搜索界面时自动清空搜索框
        */
       'odc.isAutoClearSearchInput': boolean

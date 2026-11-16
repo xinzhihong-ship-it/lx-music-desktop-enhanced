@@ -9,6 +9,7 @@ import { requestStage } from './client'
 import { readStageConnection, resolveConnectionFilePaths, resolveSystemAppDataDir } from './connection'
 import { resolveFoliaCover } from './cover'
 import { buildFoliaLyricContent } from './lyric'
+import { isFoliaLinkClientActive, onFoliaLinkClientActiveChange } from '../foliaLink/presence'
 
 let isRegistered = false
 export default () => {
@@ -36,10 +37,19 @@ export default () => {
   })
 
   let enabled = false
-  const setEnabled = (value: boolean) => {
+  // 设置里的开关；Folia 经「Folia 对接」连着时它自己跟随本软件播放，舞台推送暂停，免得舞台把 Folia 的播放挤掉
+  let wanted = false
+  const applyEnabled = () => {
+    const value = wanted && !isFoliaLinkClientActive()
+    if (value === enabled) return
     enabled = value
     bridge.setEnabled(value, global.lx.player_status)
   }
+  const setEnabled = (value: boolean) => {
+    wanted = value
+    applyEnabled()
+  }
+  onFoliaLinkClientActiveChange(applyEnabled)
 
   // 关着时不跟踪：开启时从主进程当前的播放状态补齐
   global.lx.event_app.on('player_status', status => {
@@ -50,7 +60,10 @@ export default () => {
   })
   setEnabled(!!global.lx.appSetting['foliaStage.enable'])
 
-  mainHandle<FoliaStageStatus>(WIN_MAIN_RENDERER_EVENT_NAME.folia_stage_status, async() => bridge.getStatus())
+  mainHandle<FoliaStageStatus & { pausedByLink: boolean }>(WIN_MAIN_RENDERER_EVENT_NAME.folia_stage_status, async() => ({
+    ...bridge.getStatus(),
+    pausedByLink: wanted && isFoliaLinkClientActive(),
+  }))
 
   app.on('before-quit', () => { bridge.shutdown() })
 }

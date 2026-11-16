@@ -13,7 +13,9 @@ export const addSongListDetail = async(id: string, source: LX.OnlineSource, name
   // console.log(this.listDetail.info)
   // if (!this.listDetail.info.name) return
   const listId = getListId(id, source)
-  const targetList = userLists.find(l => l.sourceListId == listId)
+  // 收藏时 sourceListId 存的是原始 id（syncSourceList 按它重新拉取），所以按 id 与来源比较，并认收藏时生成的列表 id
+  const userListId = `${source}_${toMD5(listId)}`
+  const targetList = userLists.find(l => l.id == userListId || (l.source == source && l.sourceListId == id))
   if (targetList) {
     const confirm = await dialog.confirm({
       message: window.i18n.t('duplicate_list_tip', { name: targetList.name }),
@@ -28,7 +30,7 @@ export const addSongListDetail = async(id: string, source: LX.OnlineSource, name
   const list = await getListDetailAll(id, source)
   await createUserList({
     name,
-    id: `${source}_${toMD5(listId)}`,
+    id: userListId,
     list,
     source,
     sourceListId: id,

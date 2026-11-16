@@ -190,6 +190,7 @@ const defaultSetting: LX.AppSetting = {
   'openAPI.bindLan': false,
 
   'foliaStage.enable': false,
+  'foliaLink.enable': true,
 
   // 'theme.id': 'blue_plus',
   'theme.id': 'easy_light',

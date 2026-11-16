@@ -21,11 +21,13 @@ dd.gap-top
       | {{ $t('setting__open_api_tip') }}
       strong.hover.underline(aria-label="https://lyswhut.github.io/lx-music-doc/desktop/faq/open-api" @click="openUrl('https://lyswhut.github.io/lx-music-doc/desktop/open-api')") {{ $t('setting__open_api_tip_link') }}
 
+setting-folia-link
 setting-folia-stage
 </template>
 
 <script>
 // import { computed } from '@common/utils/vueTools'
+import SettingFoliaLink from './SettingFoliaLink.vue'
 import SettingFoliaStage from './SettingFoliaStage.vue'
 import { openAPI } from '@renderer/store'
 import { openUrl } from '@common/utils/electron'
@@ -34,7 +36,7 @@ import { debounce } from '@common/utils'
 
 export default {
   name: 'SettingOpenAPI',
-  components: { SettingFoliaStage },
+  components: { SettingFoliaLink, SettingFoliaStage },
   setup() {
     const setPort = debounce(port => {
       updateSetting({ 'openAPI.port': port.trim() })

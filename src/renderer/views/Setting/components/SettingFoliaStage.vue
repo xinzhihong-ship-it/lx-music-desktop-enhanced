@@ -35,11 +35,12 @@ export default {
     const statusText = computed(() => {
       switch (status.value.state) {
         case 'connected':
+          if (status.value.pausedByLink) return t('setting__folia_stage_status_paused_by_link')
           return status.value.detached
             ? t('setting__folia_stage_status_detached')
             : t('setting__folia_stage_status_connected', { port: status.value.port })
         case 'waiting': return t('setting__folia_stage_status_waiting')
-        default: return t('setting__folia_stage_status_disabled')
+        default: return status.value.pausedByLink ? t('setting__folia_stage_status_paused_by_link') : t('setting__folia_stage_status_disabled')
       }
     })
 

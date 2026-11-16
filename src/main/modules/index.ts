@@ -9,6 +9,7 @@ import registerCommonRenderers from './commonRenderers'
 import registerAccount from './account'
 import registerMusicRecognition from './musicRecognition'
 import registerFoliaStage from './foliaStage'
+import registerFoliaLink from './foliaLink'
 
 let isRegistered = false
 export default () => {
@@ -25,4 +26,5 @@ export default () => {
   registerAccount()
   registerMusicRecognition()
   registerFoliaStage()
+  registerFoliaLink()
 }

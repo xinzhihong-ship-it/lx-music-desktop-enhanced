@@ -83,6 +83,7 @@
     "test:webdav": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/webdavSync.test.mjs",
     "test:lyrics": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/lyricsModel.test.mjs tests/lyricsMatch.test.mjs tests/lyricsResolve.test.mjs tests/lyricsSearch.test.mjs tests/lyricsStage.test.mjs",
     "test:folia-stage": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/foliaStage.test.mjs",
+    "test:folia-link": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/foliaLink.test.mjs",
     "test:audio-conversion": "node --test tests/audioConversion.test.mjs",
     "test:song-key": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/songKey.test.mjs tests/songKeyAnalysis.test.mjs tests/songKeyStore.test.mjs",
     "test:song-key-ipc": "electron tests/songKeyIpc.test.cjs",

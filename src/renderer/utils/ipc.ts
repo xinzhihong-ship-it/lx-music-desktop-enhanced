@@ -266,10 +266,38 @@ export interface FoliaStageStatus {
   state: 'disabled' | 'waiting' | 'connected'
   port: number | null
   detached: boolean
+  /** Folia 经「Folia 对接」连着，舞台推送暂停 */
+  pausedByLink?: boolean
 }
 /** 推送到 Folia 歌词舞台的连接状态（主进程 modules/foliaStage） */
 export const getFoliaStageStatus = async() => {
   return rendererInvoke<FoliaStageStatus>(WIN_MAIN_RENDERER_EVENT_NAME.folia_stage_status)
+}
+
+export interface FoliaLinkStatus {
+  state: 'disabled' | 'waiting' | 'connected'
+  port: number | null
+}
+/** 「Folia 对接」的连接状态（主进程 modules/foliaLink） */
+export const getFoliaLinkStatus = async() => {
+  return rendererInvoke<FoliaLinkStatus>(WIN_MAIN_RENDERER_EVENT_NAME.folia_link_status)
+}
+/** 把播放状态（可以只含变了的字段）推给「Folia 对接」 */
+export const sendFoliaLinkState = (state: Record<string, unknown>) => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.folia_link_state, state)
+}
+export interface FoliaLinkResponse {
+  requestKey: string
+  ok: boolean
+  data?: unknown
+  error?: { code?: string, message?: string }
+}
+export const sendFoliaLinkResponse = (response: FoliaLinkResponse) => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.folia_link_response, response)
+}
+/** 「Folia 对接」转来的请求（搜索、歌单、播放控制…） */
+export const onFoliaLinkRequest = (listener: LX.IpcRendererEventListenerParams<{ requestKey: string, op: string, params: any }>): RemoveListener => {
+  return rendererOn(WIN_MAIN_RENDERER_EVENT_NAME.folia_link_request, listener)
 }
 
 export const sendOpenAPIAction = async(action: LX.OpenAPI.Actions) => {

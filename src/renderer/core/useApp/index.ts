@@ -11,6 +11,7 @@ import useHandleEnvParams from './useHandleEnvParams'
 import useEventListener from './useEventListener'
 import useDeeplink from './useDeeplink'
 import usePlayer from './usePlayer'
+import useFoliaLink from './useFoliaLink'
 import useSettingSync from './useSettingSync'
 import { useRouter } from '@common/utils/vueRouter'
 import handleListAutoUpdate from './listAutoUpdate'
@@ -30,6 +31,7 @@ export default () => {
   const initOpenAPI = useOpenAPI()
   useEventListener()
   const initPlayer = usePlayer()
+  const initFoliaLink = useFoliaLink()
   const handleEnvParams = useHandleEnvParams()
   const initData = useDataInit()
   const initDeeplink = useDeeplink()
@@ -62,6 +64,7 @@ export default () => {
     // 初始化我的列表、下载列表等数据
     void initData().then(() => {
       initPlayer()
+      initFoliaLink()
       handleEnvParams(envParams) // 处理传入的启动参数
       void initDeeplink(envParams)
       void initSyncService()
