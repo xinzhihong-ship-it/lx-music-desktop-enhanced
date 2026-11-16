@@ -324,7 +324,7 @@ jobs:
 
   Linux:
     name: Linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: CheckCode
     steps:
       - name: Check out git repository
