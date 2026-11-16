@@ -47,6 +47,8 @@ const sortByKeyword = (list: LX.Music.MusicInfo[], keyword: string) => {
 }
 
 const songListKey = (id: string, source: string) => `${source}__${id}`
+/** Folia 交来的队列在临时列表里的名字 */
+const FOLIA_QUEUE_LIST_KEY = 'folia__queue'
 
 const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
   info() {
@@ -113,7 +115,7 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
     return { url: await getPicPath({ musicInfo }) }
   },
 
-  async play(params: { target: 'list' | 'search' | 'songlist' | 'later', [key: string]: any }) {
+  async play(params: { target: 'list' | 'search' | 'songlist' | 'later' | 'queue', [key: string]: any }) {
     switch (params.target) {
       case 'list': {
         const list = await getListMusics(params.listId)
@@ -136,6 +138,16 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
       case 'songlist':
         await playSongList(params.text, params.source, params.musicId)
         return null
+      case 'queue': {
+        // Folia 打乱、筛过或加过歌的队列：照「播放分享歌单」放进临时列表，从这首开始，按这个顺序往下放
+        const musicInfos = params.musicInfos as LX.Music.MusicInfo[]
+        const index = musicInfos.findIndex(item => item.id == params.musicId)
+        if (index < 0) throw new FoliaLinkError('not-found', 'The song is not in that queue')
+        // 临时列表与其他列表一样放得下本地歌曲（overwriteListMusics 不分），setTempList 的类型只是按分享歌单写的
+        await setTempList(FOLIA_QUEUE_LIST_KEY, [...musicInfos] as LX.Music.MusicInfoOnline[])
+        playList(LIST_IDS.TEMP, index)
+        return null
+      }
       case 'later': {
         // 「下一首播放」排在稍后播放的最前面（top），「加入队列」排在最后；几首按给的顺序。
         // now：排到最前并马上放第一首（稍后播放的歌先放，playNext 取的就是它），不换正在播放的列表

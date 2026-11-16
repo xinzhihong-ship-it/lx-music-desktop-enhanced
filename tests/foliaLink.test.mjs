@@ -98,6 +98,10 @@ test('ops: params are checked and trimmed to known fields', () => {
   assert.equal(checkParams('play', { target: 'later', musicInfos: [music(), music()] }).musicInfos.length, 2)
   assert.throws(() => checkParams('play', { target: 'later', musicInfos: [] }), LinkError)
   assert.throws(() => checkParams('play', { target: 'later', musicInfo: music(), top: 'yes' }), LinkError)
+  // queue：Folia 排好的队列进临时列表
+  assert.deepEqual(checkParams('play', { target: 'queue', musicInfos: [music('kw_1'), music('kw_2')], musicId: 'kw_2', extra: 1 }), { target: 'queue', musicInfos: [music('kw_1'), music('kw_2')], musicId: 'kw_2' })
+  assert.throws(() => checkParams('play', { target: 'queue', musicInfos: [], musicId: 'kw_1' }), LinkError)
+  assert.throws(() => checkParams('play', { target: 'queue', musicInfos: [music()] }), LinkError)
   // now：马上放，总是排最前
   assert.deepEqual(checkParams('play', { target: 'later', musicInfo: music(), top: false, now: true }), { target: 'later', musicInfos: [music()], top: true, now: true })
   assert.equal(checkParams('play', { target: 'later', musicInfo: music() }).now, false)
