@@ -222,6 +222,7 @@ const modules = {
     clear_music_url: 'winMain_clear_music_url',
     get_music_url_count: 'winMain_get_music_url_count',
     open_api_action: 'winMain_open_api_action',
+    folia_stage_status: 'winMain_folia_stage_status',
     sync_action: 'winMain_sync_action',
     sync_get_server_devices: 'winMain_sync_get_server_devices',
     sync_remove_server_device: 'winMain_sync_remove_server_device',

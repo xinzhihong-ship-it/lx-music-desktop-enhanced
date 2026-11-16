@@ -262,6 +262,16 @@ export const sendPlayerStatus = (status: Partial<LX.Player.Status>) => {
 }
 
 
+export interface FoliaStageStatus {
+  state: 'disabled' | 'waiting' | 'connected'
+  port: number | null
+  detached: boolean
+}
+/** 推送到 Folia 歌词舞台的连接状态（主进程 modules/foliaStage） */
+export const getFoliaStageStatus = async() => {
+  return rendererInvoke<FoliaStageStatus>(WIN_MAIN_RENDERER_EVENT_NAME.folia_stage_status)
+}
+
 export const sendOpenAPIAction = async(action: LX.OpenAPI.Actions) => {
   return rendererInvoke<LX.OpenAPI.Actions, LX.OpenAPI.Status>(WIN_MAIN_RENDERER_EVENT_NAME.open_api_action, action)
 }

@@ -788,6 +788,11 @@ declare global {
       'openAPI.bindLan': boolean
 
       /**
+       * 是否把正在播放的歌曲与歌词推送到 Folia 的歌词舞台（Folia Stage API）
+       */
+      'foliaStage.enable': boolean
+
+      /**
        * 是否在离开搜索界面时自动清空搜索框
        */
       'odc.isAutoClearSearchInput': boolean
