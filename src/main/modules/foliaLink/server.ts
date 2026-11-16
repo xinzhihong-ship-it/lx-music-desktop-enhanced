@@ -107,7 +107,8 @@ export const createLinkServer = (deps: LinkServerDeps) => {
       })
       req.socket.setTimeout(0)
       streams.add(res)
-      req.on('close', () => { streams.delete(res) })
+      // 连接断开时去掉（看 res：req 的 close 在请求读完时就会发，读过请求体的话会提前删掉）
+      res.on('close', () => { streams.delete(res) })
       writeEvent(res, 'state', deps.getState())
       return
     }
