@@ -1,5 +1,6 @@
 <template lang="pug">
-material-modal(:show="modelValue" bg-close :hide-header="true" teleport="#view" width="min(860px, 92vw)" min-width="0" max-width="92vw" height="min(560px, 78vh)" max-height="78vh" @close="handleClose")
+//- 弹窗放在 #view（窗口去掉左栏、顶栏和播放栏的那块）里：尺寸按 #view 的百分比算，不用 vw / vh，窗口变小时不会伸出去被裁掉
+material-modal(:show="modelValue" bg-close :hide-header="true" teleport="#view" width="min(860px, calc(100% - 24px))" min-width="0" max-width="calc(100% - 24px)" height="min(560px, calc(100% - 24px))" max-height="calc(100% - 24px)" @close="handleClose")
   main(:class="$style.main")
     header(:class="$style.hero")
       div
@@ -691,7 +692,8 @@ export default {
 .formBody {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  // 窗口矮时放不下二维码和文案：可以滚动，不把下面的「刷新二维码」裁掉
+  overflow-y: auto;
   border: 1px solid var(--color-primary-background-hover);
   border-radius: 12px;
   background: var(--color-primary-background);
@@ -699,13 +701,14 @@ export default {
 
 .qrcodeSection {
   width: 100%;
-  height: 100%;
+  min-height: 100%;
   box-sizing: border-box;
   padding: 16px 22px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  // 放得下时居中；放不下时从顶上排起（普通的 center 会把上下两头都挤出去，滚动也够不到顶上）
+  justify-content: safe center;
   gap: 14px;
 }
 
@@ -979,6 +982,10 @@ export default {
 
   .qrcodeSection {
     padding: 10px 14px;
+  }
+
+  // 两列在 .qrcodeMain 上（从 .qrcodeSection 抽出来之后，这里要跟着改）
+  .qrcodeMain {
     grid-template-columns: 140px minmax(0, 1fr);
     gap: 16px;
   }
@@ -1037,9 +1044,13 @@ export default {
   }
 
   .qrcodeSection {
-    grid-template-columns: 140px minmax(0, 1fr);
     padding-top: 10px;
     padding-bottom: 10px;
+  }
+
+  // 两列在 .qrcodeMain 上（从 .qrcodeSection 抽出来之后，这里要跟着改）
+  .qrcodeMain {
+    grid-template-columns: 140px minmax(0, 1fr);
   }
 
   .qrcodeCard {

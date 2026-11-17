@@ -1,5 +1,6 @@
 <template lang="pug">
-material-modal(:show="show" teleport="#view" width="min(900px, calc(100vw - 28px))" min-width="0" max-width="min(900px, calc(100vw - 28px))" height="min(760px, calc(100vh - 150px))" max-height="calc(100vh - 150px)" @close="handleClose")
+//- 弹窗放在 #view 里：尺寸按 #view 的百分比算，不用 vw / vh，窗口变小时不会伸出去被裁掉
+material-modal(:show="show" teleport="#view" width="min(900px, calc(100% - 24px))" min-width="0" max-width="calc(100% - 24px)" height="min(760px, calc(100% - 24px))" max-height="calc(100% - 24px)" @close="handleClose")
   main(:class="$style.main")
     div(:class="$style.titleBar")
       div
