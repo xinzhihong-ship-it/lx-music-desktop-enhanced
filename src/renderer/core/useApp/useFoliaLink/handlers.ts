@@ -15,9 +15,13 @@ import { addTempPlayList, getList } from '@renderer/store/player/action'
 import { pause, play, playList, playListById, playNext, playPrev, setMusicUrl, setShouldPlayAfterLoad, togglePlay } from '@renderer/core/player'
 import { setStop } from '@renderer/plugins/player'
 import { getLyricInfo, getPicPath } from '@renderer/core/music'
+import { getAccountPlaylists, getAccounts } from '@renderer/utils/ipc'
+import { readAccountDailyMusics, readAccountPlaylistMusics, sortPlatformAccounts } from '@renderer/utils/platformPlaylistMusic'
 
 /** 单个平台一页的条数，与本软件搜索页一致 */
 const SEARCH_LIMIT = 30
+/** 搜歌单时单个平台一页的条数（本软件搜索页「全部」的条数） */
+const SONGLIST_SEARCH_LIMIT = 15
 
 class FoliaLinkError extends Error {
   code: string
@@ -38,6 +42,23 @@ export const toMusicInfo = (info: AnyMusicInfo | null | undefined): LX.Music.Mus
 const searchSources = (): LX.OnlineSource[] => musicSdk.sources
   .filter((source: { id: string }) => (musicSdk as any)[source.id]?.musicSearch)
   .map((source: { id: string }) => source.id as LX.OnlineSource)
+
+/** 能按关键词搜歌单的平台 */
+const songListSearchSources = (): LX.OnlineSource[] => musicSdk.sources
+  .filter((source: { id: string }) => (musicSdk as any)[source.id]?.songList?.search)
+  .map((source: { id: string }) => source.id as LX.OnlineSource)
+
+/** 搜到的一张歌单（只交 Folia 用得到的字段）；id 和 source 交回 songlistDetail 就能打开它 */
+const toSongListItem = (item: any, source: string) => ({
+  id: String(item.id),
+  source: typeof item.source == 'string' && item.source ? item.source : source,
+  name: String(item.name ?? ''),
+  img: typeof item.img == 'string' ? item.img : '',
+  author: typeof item.author == 'string' ? item.author : '',
+  desc: typeof item.desc == 'string' ? item.desc : '',
+  total: item.total ?? null,
+  play_count: item.play_count ?? null,
+})
 
 /** 按与关键词的相似度排序（本软件「全部」搜索的做法） */
 const sortByKeyword = (list: LX.Music.MusicInfo[], keyword: string) => {
@@ -84,6 +105,42 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
     if (!sdk?.musicSearch) throw new FoliaLinkError('invalid-params', `Cannot search ${source}`)
     const result = await sdk.musicSearch.search(text, page, SEARCH_LIMIT)
     return { list: deduplicationList(result.list.map((item: any) => toNewMusicInfo(item))), page, maxPage: result.allPage ?? 0, total: result.total ?? 0 }
+  },
+
+  /** 按关键词搜歌单（本软件搜索页的「歌单」）：一个平台，或 all 时各平台合并、按名字与关键词的相似度排 */
+  async songlistSearch({ text, source, page }: { text: string, source: string, page: number }) {
+    const available = songListSearchSources()
+    if (source != 'all' && !available.includes(source as LX.OnlineSource)) throw new FoliaLinkError('invalid-params', `Cannot search song lists on ${source}`)
+    const ids = source == 'all' ? available : [source as LX.OnlineSource]
+    const results = await Promise.all(ids.map(async id => {
+      const search = (musicSdk as any)[id].songList.search(text, page, SONGLIST_SEARCH_LIMIT) as Promise<any>
+      // 「全部」里一个平台搜不到不算失败；只搜一个平台时把错交回去
+      if (source != 'all') return { id, result: await search }
+      const result = await search.catch((err: unknown) => {
+        console.log('[FoliaLink] song list search failed', id, err)
+        return null
+      })
+      return { id, result }
+    }))
+    let maxPage = 0
+    let total = 0
+    const list: Array<ReturnType<typeof toSongListItem>> = []
+    for (const { id, result } of results) {
+      if (!result) continue
+      const sourceTotal = Number(result.total) || 0
+      const pages = Math.ceil(sourceTotal / (Number(result.limit) || SONGLIST_SEARCH_LIMIT))
+      maxPage = Math.max(maxPage, pages)
+      total = Math.max(total, sourceTotal)
+      // 「全部」翻到某个平台的最后一页之后不再要它的（照本软件搜索页；有的平台超出页数时会再回最后一页）
+      if (source == 'all' && sourceTotal > 0 && page > pages) continue
+      for (const item of Array.isArray(result.list) ? result.list : []) {
+        if (item?.id != null && item.id !== '') list.push(toSongListItem(item, id))
+      }
+    }
+    if (source != 'all') return { list, page, maxPage, total }
+    const sorted: Array<{ num: number, data: typeof list[number] }> = []
+    for (const item of list) sortInsert(sorted, { num: similar(text, item.name), data: item })
+    return { list: sorted.map(item => item.data).reverse(), page, maxPage, total }
   },
 
   async songlistDetail({ text, source, page }: { text: string, source: LX.OnlineSource, page: number }) {
@@ -178,6 +235,47 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
       case 'quality': await switchQuality(value as LX.Quality); break
     }
     return null
+  },
+
+  /** 已登录的平台账号和各自的歌单（本软件「平台音乐」左边那一列）；一个账号读不出来只影响它自己 */
+  async accountLists() {
+    const accounts = sortPlatformAccounts((await getAccounts()).filter(account => account.isLogin))
+    return Promise.all(accounts.map(async account => {
+      const base = {
+        id: account.id,
+        source: account.source,
+        sourceName: window.i18n.t(`account__source_${account.source}` as any),
+        nickname: account.nickname,
+        // 每日推荐的名字；B 站没有每日推荐（null）
+        daily: account.source != 'bili' ? window.i18n.t('account__playlist_tab_daily') : null,
+      }
+      try {
+        const playlists = await getAccountPlaylists(account.id)
+        return {
+          ...base,
+          playlists: playlists.map(playlist => ({
+            id: playlist.id,
+            name: playlist.name,
+            img: playlist.img,
+            desc: playlist.desc,
+            author: playlist.author,
+            total: playlist.total ?? null,
+            dirId: playlist.dirId ?? null,
+          })),
+        }
+      } catch (err: any) {
+        console.log('[FoliaLink] could not read the playlists of an account', account.source, err)
+        return { ...base, playlists: [], error: err?.message ?? String(err) }
+      }
+    }))
+  },
+
+  /** 平台账号一张歌单（或每日推荐）里的歌，和「平台音乐」页面从平台读到的一样（页面上刚增删、平台还没反映出来的那几首不在内） */
+  async accountListMusics({ accountId, playlistId, dirId, daily }: { accountId: string, playlistId?: string, dirId?: string, daily?: boolean }) {
+    const account = (await getAccounts()).find(item => item.id == accountId && item.isLogin)
+    if (!account) throw new FoliaLinkError('not-found', 'That platform account is not signed in')
+    const list = daily ? await readAccountDailyMusics(account) : await readAccountPlaylistMusics(account, playlistId!, dirId)
+    return { list }
   },
 
   /** 正在播放的列表（Folia 的播放队列跟它一致）和稍后播放 */

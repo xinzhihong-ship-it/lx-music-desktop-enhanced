@@ -10,7 +10,10 @@ export class LinkError extends Error {
 }
 
 /** 在渲染进程里执行的接口（搜索、歌单、取歌词封面、播放控制都在那边） */
-export const RENDERER_OPS = ['info', 'search', 'songlistDetail', 'songlistAll', 'songlistCollect', 'lyric', 'pic', 'play', 'control', 'queue'] as const
+export const RENDERER_OPS = [
+  'info', 'search', 'songlistSearch', 'songlistDetail', 'songlistAll', 'songlistCollect', 'lyric', 'pic', 'play', 'control', 'queue',
+  'accountLists', 'accountListMusics',
+] as const
 /** 主进程直接回答的接口（我的列表在主进程的数据库里） */
 export const MAIN_OPS = ['state', 'lists', 'listMusics', 'listAdd', 'listRemove', 'likedIds'] as const
 
@@ -75,9 +78,19 @@ export const checkParams = (op: LinkOp, raw: unknown): Record<string, any> => {
     case 'state':
     case 'lists':
     case 'likedIds':
+    case 'accountLists':
       return {}
     case 'search':
       return { text: text(p.text, 'text', 200), source: text(p.source, 'source', 20), page: integer(p.page ?? 1, 'page', 1, 1000) }
+    // 按关键词搜歌单：source 是一个平台或 all
+    case 'songlistSearch':
+      return { text: text(p.text, 'text', 200), source: text(p.source, 'source', 20), page: integer(p.page ?? 1, 'page', 1, 1000) }
+    // 平台账号的一张歌单（playlistId，有的平台还要 dirId），或它的每日推荐（daily）
+    case 'accountListMusics': {
+      const accountId = text(p.accountId, 'accountId', 200)
+      if (p.daily === true) return { accountId, daily: true }
+      return { accountId, playlistId: text(p.playlistId, 'playlistId', 500), dirId: optionalText(p.dirId, 'dirId', 500) }
+    }
     case 'songlistDetail':
       return { text: text(p.text, 'text'), source: optionalText(p.source, 'source', 20), page: integer(p.page ?? 1, 'page', 1, 10000) }
     case 'songlistAll':

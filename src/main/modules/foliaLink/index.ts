@@ -33,6 +33,10 @@ const PRESENCE_POLL_MS = 2000
 /** 各接口问渲染进程的时限 */
 const RPC_TIMEOUTS: Partial<Record<string, number>> = {
   search: 30_000,
+  songlistSearch: 30_000,
+  accountLists: 60_000,
+  // QQ 音乐的歌单要逐首取详情，几百首要一会儿
+  accountListMusics: 180_000,
   songlistDetail: 30_000,
   songlistAll: 180_000,
   songlistCollect: 180_000,

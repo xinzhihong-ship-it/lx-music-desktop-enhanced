@@ -25,9 +25,13 @@ const hooks = registerHooks({
 test.after(() => hooks.deregister())
 const { getMusicInfos, getPlaylistMusicInfos, getMusicInfoRaw } = await import('../src/renderer/utils/musicSdk/kg/musicInfo.js')
 
-// Execute the actual Vue loader, without mounting the UI or replacing its mapping logic.
-const vueSource = await readFile(new URL('../src/renderer/views/PlatformMusic/index.vue', import.meta.url), 'utf8')
-const loaderSource = vueSource.slice(vueSource.indexOf('const loadPlaylistDetails = async('), vueSource.indexOf('\nconst selectDaily'))
+// Execute the actual loader the platform music page uses (shared with the Folia link), without mounting the UI or replacing its mapping logic.
+const moduleSource = await readFile(new URL('../src/renderer/utils/platformPlaylistMusic.ts', import.meta.url), 'utf8')
+const loaderStart = moduleSource.indexOf('export const loadPlaylistDetails = async(')
+const loaderEnd = moduleSource.indexOf('\nexport const toAccountMusicInfos')
+if (loaderStart < 0 || loaderEnd < loaderStart) throw new Error('loadPlaylistDetails was not found in platformPlaylistMusic.ts')
+const loaderSource = moduleSource.slice(loaderStart, loaderEnd)
+  .replace('export const loadPlaylistDetails', 'const loadPlaylistDetails')
   .replace('source: LX.Account.Source', 'source')
   .replace('tracks: LX.Account.PlaylistTrackInfo[]', 'tracks')
   .replace('new Array<any>', 'new Array')
