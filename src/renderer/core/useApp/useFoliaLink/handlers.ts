@@ -15,6 +15,7 @@ import { addTempPlayList, getList } from '@renderer/store/player/action'
 import { pause, play, playList, playListById, playNext, playPrev, setMusicUrl, setShouldPlayAfterLoad, togglePlay } from '@renderer/core/player'
 import { setStop } from '@renderer/plugins/player'
 import { getLyricInfo, getPicPath } from '@renderer/core/music'
+import { TRY_QUALITYS_LIST } from '@renderer/core/music/utils'
 import { getAccountPlaylists, getAccounts } from '@renderer/utils/ipc'
 import { readAccountDailyMusics, readAccountPlaylistMusics, sortPlatformAccounts } from '@renderer/utils/platformPlaylistMusic'
 
@@ -73,6 +74,10 @@ const FOLIA_QUEUE_LIST_KEY = 'folia__queue'
 
 const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
   info() {
+    // 播放音质能选的档，顺序与「设置 → 播放设置」里一样（低到高）；现在的设置是不在其中的旧值（如 flac24bit）时也列上，名字照样用本软件的
+    const qualityIds: string[] = [...TRY_QUALITYS_LIST, '128k'].reverse()
+    const quality = appSetting['player.playQuality']
+    if (quality && !qualityIds.includes(quality)) qualityIds.push(quality)
     return {
       sources: musicSdk.sources.map((source: { id: string, name: string }) => ({
         id: source.id,
@@ -81,7 +86,9 @@ const handlers: Record<string, (params: any) => Promise<unknown> | unknown> = {
         songList: !!(musicSdk as any)[source.id]?.songList,
         playable: qualityList.value[source.id as LX.OnlineSource] != null,
       })),
-      quality: appSetting['player.playQuality'],
+      quality,
+      // Folia 的音质选择列这些档
+      qualities: qualityIds.map(id => ({ id, name: window.i18n.t(`setting__play_quality_${id}` as any) })),
     }
   },
 
