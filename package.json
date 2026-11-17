@@ -1,6 +1,6 @@
 {
   "name": "lx-music-desktop-enhanced",
-  "version": "3.3.2",
+  "version": "3.4.0",
   "description": "LX Music 桌面版增强版本，支持多平台音乐、哔哩哔哩地址播放、听歌识曲与高音质稳定播放",
   "main": "./dist/main.js",
   "scripts": {
@@ -82,6 +82,8 @@
     "test:issue22": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/issue22.test.mjs tests/kugouPlaylist.test.mjs tests/issue21.test.mjs tests/neteasePlaylistDetails.test.mjs tests/platformPlaylistChanges.test.mjs tests/biliPlaylistPagination.test.mjs",
     "test:webdav": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/webdavSync.test.mjs",
     "test:lyrics": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/lyricsModel.test.mjs tests/lyricsMatch.test.mjs tests/lyricsResolve.test.mjs tests/lyricsSearch.test.mjs tests/lyricsStage.test.mjs",
+    "test:folia-stage": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/foliaStage.test.mjs",
+    "test:folia-link": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/foliaLink.test.mjs",
     "test:audio-conversion": "node --test tests/audioConversion.test.mjs",
     "test:song-key": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/songKey.test.mjs tests/songKeyAnalysis.test.mjs tests/songKeyStore.test.mjs",
     "test:song-key-ipc": "electron tests/songKeyIpc.test.cjs",

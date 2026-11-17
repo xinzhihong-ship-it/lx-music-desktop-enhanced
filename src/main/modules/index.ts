@@ -8,6 +8,8 @@ import registerWinIsland from './winIsland'
 import registerCommonRenderers from './commonRenderers'
 import registerAccount from './account'
 import registerMusicRecognition from './musicRecognition'
+import registerFoliaStage from './foliaStage'
+import registerFoliaLink from './foliaLink'
 
 let isRegistered = false
 export default () => {
@@ -23,4 +25,6 @@ export default () => {
   registerWinIsland()
   registerAccount()
   registerMusicRecognition()
+  registerFoliaStage()
+  registerFoliaLink()
 }

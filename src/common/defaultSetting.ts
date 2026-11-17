@@ -189,6 +189,9 @@ const defaultSetting: LX.AppSetting = {
   'openAPI.port': '23330',
   'openAPI.bindLan': false,
 
+  'foliaStage.enable': false,
+  'foliaLink.enable': true,
+
   // 'theme.id': 'blue_plus',
   'theme.id': 'easy_light',
   'theme.lightId': 'easy_light',
