@@ -2,7 +2,7 @@ Third-party notices for the music recognition feature
 
 AudioTee.js / AudioTee binary (audiotee 0.0.7)
 Copyright (C) 2025 Nick Payne
-https://github.com/makeusabrew/audiotee-js
+https://github.com/makeusabrew/audiotee
 
 ST Shazam fingerprint implementation (st-shazam 1.1.1)
 Copyright (c) Sheikh Tamim

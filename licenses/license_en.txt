@@ -6,7 +6,7 @@ DEFINITIONS:
 
 1. Data Source
 
-1.1 The principle of the online data sources of the various official music streaming services of this project is to draw data from its open servers (the same as the data obtained in the unlogged-in state in the official music streaming service app). After simply screening and merging the data, this project is responsible for the legitimacy and accuracy of the data.
+1.1 The principle of the online data sources of the various official music streaming services of this project is to draw data from its open servers (the same as the data obtained in the unlogged-in state in the official music streaming service app). The data is simply filtered and merged before it is shown, so this project is not responsible for the legitimacy or accuracy of the data.
 
 1.2 The ability of this project itself does not obtain certain audio data. The online audio data source used in this project comes from the online link provided by the "API" selected in the software settings. For example, when playing a song, this project only transmits information such as the song title, artist, and other information to the "API". If the "API" returns a link, this project will think that this is the audio data of the song for use, but as for whether this is the correct audio data, this project cannot verify its accuracy. So, in the process of using this project, there may be a problem that the audio you want to play does not correspond to the audio you actually play, or you cannot play it.
 

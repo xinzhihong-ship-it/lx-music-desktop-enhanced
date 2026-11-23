@@ -1,246 +1,189 @@
-<p align="center"><img width="160" src="./doc/images/icon.png" alt="LX Music Enhanced logo"></p>
-
-<h1 align="center">LX Music 桌面版 · 增强版</h1>
+<h1 align="center">LX Music 增强版</h1>
 
 <p align="center">
   <a href="https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/releases"><img src="https://img.shields.io/github/release/xinzhihong-ship-it/lx-music-desktop-enhanced" alt="Release version"></a>
   <a href="https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/blob/main/LICENSE"><img src="https://img.shields.io/github/license/xinzhihong-ship-it/lx-music-desktop-enhanced" alt="License"></a>
 </p>
 
-<p align="center">基于 <a href="https://github.com/lyswhut/lx-music-desktop">LX Music（洛雪音乐助手）桌面版</a> 的二次开发/增强版本，专注于多平台音乐、哔哩哔哩地址播放、听歌识曲与稳定播放体验。</p>
+<p align="center">简体中文 | <a href="./README.en.md">English</a></p>
 
-## 说明
+<p align="center">开源项目 <a href="https://github.com/lyswhut/lx-music-desktop">LX Music 桌面版</a> 的非官方增强分支：播放更稳、输出更讲究、歌词全部重做，另有听歌识曲和 Folia 歌词动画对接。</p>
 
-本项目是 [LX Music 桌面版](https://github.com/lyswhut/lx-music-desktop) 的**个人魔改/增强 fork**，在保留原项目核心功能的基础上，针对日常使用中的痛点做了少量修改与增强。
+> [!IMPORTANT]
+> - 这是**非官方**的个人分支，与 LX Music 原作者及其项目没有关系，也没有得到原作者认可。本版本的问题请到 [本仓库的 Issues](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/issues) 反馈，不要去打扰原作者。
+> - 本软件自身**不提供任何音频、歌词或封面**。播放链接来自你自己导入的「自定义源」、你在软件里登录的你自己的账号，或你粘贴的链接；能播什么、是什么音质，取决于这些来源给你的权限。请只使用你有权访问的内容。
+> - 本分支新增和修改的代码（功能设计、实现、调试、文案）全部由 AI 编程助手完成，没有人工手写代码。仅供个人学习和技术交流。
 
-当前增强版重点提供多平台听歌识曲、网易云/QQ 音乐/酷狗/哔哩哔哩账号内容、哔哩哔哩地址直接播放、高音质播放、MPV Bit Perfect 与播放失败自动恢复能力。
+## 这个版本加了什么
 
-> **本项目为纯 AI 改造**：除上游原项目代码外，本 fork 的全部新增/修改代码（功能设计、实现、调试、文案）均由 AI 编程助手完成，无人工手写代码。仅供个人学习使用，与上游官方无关。
+### 播放更稳
 
-### 主要改动
+- 播放失败时自动恢复：刷新链接、换自定义源、换平台、降音质、放下一首。顺序可以拖动调整，重试次数和换源数量可以设置。
+- 同一首歌查到的音质信息存进本地列表，重启后还在。
+- 播放栏显示实际在放的音质和所用的播放引擎。
 
-- **听歌识曲**
-  - 新增「听歌识曲」页面，支持采集**系统音频**（识别电脑上任意播放器、浏览器正在播放的声音）或**麦克风**进行识别。
-  - **Shazam + ACRCloud 双引擎**并行识别，结果合并去重；ACRCloud 可识别 Shazam 未收录的现场版/翻唱录音（需在「识别引擎」面板填入自己的 ACRCloud 项目密钥，申请步骤见下文「附：ACRCloud 密钥申请」）。
-  - 识别结果给出主结果 + 多个候选；识别历史支持单条删除与一键清空。
-  - macOS 通过 audiotee 采集系统音频（14.2+，需授权「系统音频录制」）；Windows 通过系统混音回采（loopback）采集，无需任何授权。单次采集 12 秒。
-  - 入口全平台开放：macOS / Windows 支持「系统音频 + 麦克风」两种模式，Linux 支持麦克风模式。
+### 音质与输出
 
-- **平台音乐账号**
-  - 设置页新增「账号」入口，支持酷狗、QQ 音乐、网易云等平台账号登录管理。
-  - 新增「平台音乐」页面，浏览已登录账号的每日推荐与自建/收藏歌单。
-  - 网易云接口加解密（weapi/eapi）抽取为公共模块，修复 renderer 侧 Node crypto 依赖问题。
+- 三种播放引擎：内置引擎、MPV（安装包自带）、Audirvana（仅 macOS，实验性）。详见下文「播放引擎说明」。
+- MPV 的 **Bit Perfect 模式**：关掉重采样和音频滤镜，按原始采样率直通输出；开关时不打断正在放的歌。
+- 内置引擎和 MPV 都能指定输出设备。
+- **VST3 音效插件**（实验性，仅内置引擎）：插件链、插件参数界面、延迟补偿。插件在独立进程里运行，插件崩溃不影响播放器。
+- 按歌曲查询平台提供的高音质档位（如高解析度、多声道、母带级）。能不能播、实际是哪一档，取决于平台、地区、版权和你所用的来源。
 
-- **哔哩哔哩播放**
-  - 支持在搜索框粘贴哔哩哔哩视频地址或短链接，解析后直接加入播放队列。
-  - 支持多 P 视频选择、登录态访问与可用音质选择，播放失败时自动尝试刷新地址或恢复播放。
+### 歌词
 
-- **高音质与稳定播放**
-  - 网易云、QQ 音乐、酷狗支持按歌曲查询 `Hires`、`Atmos`、`Atmos Plus`、`Master` 等高音质档位，实际可用音质取决于平台、地区、版权及所用音源权限。
-  - 播放失败时支持刷新链接、切换自定义音源、切换平台、降低音质、播放下一曲；可设置重试次数并拖动调整恢复顺序，也可保留仅换平台、仅降质或直接下一曲。
-  - 自动恢复按自定义优先级尝试平台、音源和音质组合：排在前面的选项先尝试，耗尽后再改变后面的选项。降音质排在最后时，会先保持目标音质尝试可用平台及设定数量内的音源；确认音源返回了更低音质时，也会继续恢复。
-  - 同一平台查询到的完整音质信息会保存到本地歌单，重启后保留已发现的 Master 等档位；保存音质时保留各歌单的歌曲名称、封面、平台标识与顺序。
-  - 音质选择改为整齐的响应式网格，播放栏同步显示实际播放音质与播放引擎。
-  - 过滤网易云歌单中的空标题占位曲目，避免空关键词换源时错误跳转到热门歌曲。
+- 播放详情页：「滚动歌词」和「舞台」两种显示方式，舞台有流动、阶梯、倾诉三种风格；有逐字时间的歌词逐字点亮；可以用封面主色作背景。
+- 桌面歌词：六种显示方式，在工具栏里直接调颜色、字号、透明度和歌词偏移。
+- 顶部歌词岛：在屏幕顶部显示当前歌词，鼠标停留时展开成迷你播放器。macOS 另有菜单栏歌词。
+- 歌词搜索与匹配：在多个平台同时搜歌词，选用的那份会记住；歌曲自带的歌词没有时间轴时，自动到其他平台找歌名、歌手、时长都对得上的。
 
-- **MPV 播放器增强**
-  - 打包时自动下载并集成对应平台/架构的 mpv 二进制，减少终端用户手动配置成本。
-  - 修复 MPV 播放状态同步问题，优化 `playing` / `pause` / `seeked` 等事件上报。
-  - 改进启动恢复逻辑，支持启动后自动恢复上次播放。
-  - 优化进度条拖动后的播放恢复行为。
-  - 新增 **Bit Perfect 模式**，开启后 mpv 会关闭 replaygain 与音频滤镜，让音频以原始采样率直通输出；切换时自动无感重建 mpv 实例，不中断当前播放。
+### 听歌识曲
 
-- **Audirvana 播放支持（实验性）**
-  - 新增 Audirvana 播放引擎（macOS），可将歌曲交给 Audirvana 解码输出。
-  - 支持 Audirvana 的独占 / Bit Perfect 播放能力，适合外接 DAC 的 Hi-Fi 场景。
-  - 注意：切换为 Audirvana 引擎后，部分设置（音效、变速、输出设备、音量）由 Audirvana 自身管理。
+- 识别电脑正在播放的声音（系统音频），或麦克风收到的声音，每次采集 12 秒。
+- 两个识别引擎同时跑，结果合并去重：主引擎基于开源的音频指纹算法；第二引擎 ACRCloud 可选，需要自己申请密钥（见下文附录），能认出更多现场版和翻唱。识别时音频指纹会发给对应的识别服务。
+- 系统音频在 macOS 14.2 起可用（需授权「系统音频录制」），Windows 免授权；Linux 只能用麦克风。
 
-- **自定义源（UserApi）修复**
-  - 修复自定义源导入/列表返回数据在 Electron IPC 下无法被结构化克隆序列化的问题。
-  - 增加关键路径日志，方便定位导入失败原因。
+### 账号与链接
 
-- **播放体验优化**
-  - 新增播放音质标签，直观显示当前播放音质与使用的播放引擎。
-  - 优化网络请求错误处理，对非 `Error` 类型的异常进行兜底转换。
-  - 修复内置播放器在 seek 期间状态被误置为暂停的问题。
+- 在「设置」里的「平台账号管理」登录**你自己的**平台账号，在「平台音乐」页看每日推荐，以及你自建、收藏的歌单。
+- 在搜索框粘贴受支持的视频网站链接（短链接也可以），把其中的音频加进播放队列。多 P 视频可以选 P，登录后可以选音质。
 
-- **构建流程优化**
-  - 新增 `npm run download:mpv` 脚本，支持按需下载指定平台 mpv。
-  - 打包脚本会根据目标平台自动下载并集成 mpv 资源。
+### 配合 Folia 显示歌词动画
 
-> 提示：由于本 fork 以个人使用为主，不保证与上游功能完全同步，也不会提供官方支持渠道。遇到问题请先查阅原项目文档。
+[Folia](https://github.com/chthollyphile/folia-major) 是另一个开源播放器，以全屏歌词动画见长。本软件可以和它配合，**歌始终由本软件播放**：
 
-## 反馈、Bug 与建议
+- 配合 [Folia 落雪对接版](https://github.com/xinzhihong-ship-it/folia-major/releases)（同样是非官方分支）：在 Folia 里搜歌、看本软件的列表、控制播放，两边的播放状态、音量、播放模式和音质随时同步。在「设置 → 开放 API → Folia 对接」开启（默认开启）。
+- 用官方 Folia：可以把正在放的歌和歌词推送给它的舞台模式，在「设置 → 开放 API → Folia 歌词舞台」开启。
+- 对接接口只在本机（127.0.0.1）开放，带每次启动随机生成的令牌，浏览器里的网页调用不了。
 
-感谢每一位提交 Bug、改进建议和使用反馈的朋友！你们提供的复现信息与使用场景，帮助本项目持续发现问题、完善功能。
+### 其他
 
-无论是播放失败、状态显示异常、登录或音源问题，还是新功能建议，都欢迎通过 [GitHub Issues](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/issues) 提出。提交 Bug 时请尽量附上软件版本、操作系统、播放引擎、复现步骤，以及必要的日志或截图；请先隐藏账号、Cookie、密钥等隐私信息。
+- WebDAV 同步歌单、设置和自定义源，覆盖本地数据前自动备份。
+- 下载后可以转换音频格式（FLAC、ALAC、WAV、WavPack、MP3、AAC）。
+- 界面改为 EasyUI 风格，新增「Easy · 晨光」「Easy · 夜色」主题。
 
-### 附：ACRCloud 密钥申请（可选）
+## 下载与安装
 
-ACRCloud 是听歌识曲的**可选第二引擎**，用于识别 Shazam 未收录的现场版/翻唱录音。不配置不影响 Shazam 主引擎的任何功能。
+到 [Releases](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/releases) 下载对应系统的安装包：
 
-1. 打开 [ACRCloud 控制台](https://console.acrcloud.cn/)，注册并登录（国际站为 [console.acrcloud.com](https://console.acrcloud.com/)）。
-2. 在控制台首页选择「**音频指纹识别**」，进入 AVR 控制台。
-3. 依次点击「**项目 → 音视频识别 → 创建项目**」，按表单填写：
-   - 「音频类型」按主要使用场景选择：主要用**系统音频**模式识别选「原始文件或流媒体（未包含噪音）」；主要用**麦克风**模式识别选「通过麦克风采集的音频（包含噪音）」。
-4. 创建完成后进入项目详情页，即可看到三项信息：**Host**（如 `identify-cn-north-1.acrcloud.cn`）、**Access Key**、**Access Secret**。
-5. 回到本软件「听歌识曲 → 识别引擎」面板，勾选「启用 ACRCloud 双引擎识别」，填入以上三项并保存即可生效。
+- **Windows**：`.exe` 安装程序，或 `.7z` 绿色版
+- **macOS**：`.dmg`
+- **Linux**：`.deb` / `.rpm` / `.AppImage` / `.pacman`
 
-> ACRCloud 是商业服务，新项目有免费额度，用超后需付费，具体以其官网价格页为准。密钥仅保存在本机，识别请求由本机直接发往 ACRCloud。
+覆盖安装会保留原有设置和列表。标着 Pre-release 的是测试版。
 
-### 支持平台
+### 支持的系统
 
-- Linux
+- Windows 10 及以上（Windows 7 兼容包只是实验性的测试产物）
 - macOS
-- Windows 10 及以上（Win7 兼容包仅作为实验性测试产物）
+- Linux
 
-技术栈与原项目保持一致：Electron 40、Vue 3。
-
-#### 平台功能对照
+技术栈与原项目一致：Electron 40、Vue 3。
 
 | 功能 | macOS | Windows | Linux |
 |------|-------|---------|-------|
-| 基础播放/搜索/歌单/下载等上游功能 | ✅ | ✅ | ✅ |
-| 平台音乐账号（网易云/QQ/酷狗登录、每日推荐、歌单管理） | ✅ | ✅ | ✅ |
-| 听歌识曲 · 系统音频 | ✅（14.2+，audiotee） | ✅（loopback，免授权） | ❌ |
+| 原项目的搜索、列表、播放、下载等功能 | ✅ | ✅ | ✅ |
+| 平台账号（登录、每日推荐、歌单） | ✅ | ✅ | ✅ |
+| 听歌识曲 · 系统音频 | ✅（14.2+） | ✅（免授权） | ❌ |
 | 听歌识曲 · 麦克风 | ✅ | ✅ | ✅ |
-| MPV 引擎（安装包内置二进制） | ✅ | ✅（x64/arm64） | ⚠️ 需自行安装 mpv |
+| MPV 引擎（安装包自带） | ✅ | ✅（x64 / arm64） | ⚠️ 需自行安装 mpv |
+| VST3 音效插件 | ✅ | ✅ | ✅（x64 / arm64 / armv7l） |
 | Audirvana 引擎 | ✅ | ❌（设置中不显示） | ❌ |
 
-> Windows x64 安装包已实测；Windows ARM64、Linux ARM 包和 Win7 专用包由 CI 构建但未单独实测。当前 VST3 host 随匹配的 Windows x64/arm64、macOS x64/arm64、Linux x64/arm64/armv7l 包提供；Windows 7 兼容包不携带 VST3 host。
+> Windows x64 安装包实测过；Windows ARM64、Linux ARM 和 Windows 7 兼容包由 CI 构建，没有单独实测。Windows 7 兼容包不带 VST3 插件宿主。
 
 ## 播放引擎说明
 
-本版本提供三种播放引擎，可在「设置 → 播放 → 播放引擎」中切换：
+在「设置 → 播放设置 → 播放引擎」切换：
 
 | 引擎 | 特点 | 适用场景 |
 |------|------|----------|
-| **内置引擎** | 基于 Chromium 音频播放，支持 EQ、混响、变调、3D 环绕等音效 | 日常使用、需要音效调节 |
-| **MPV 引擎** | 调用 mpv 播放，支持 Bit Perfect 模式，可指定音频输出设备 | 追求高保真但不想额外安装软件 |
-| **Audirvana**（仅 macOS） | 交给 Audirvana 输出，支持 macOS 独占 / Bit Perfect | 有 Audirvana 且外接 DAC 的 Hi-Fi 场景 |
+| **内置引擎** | 基于 Chromium 的音频播放，支持均衡器、混响、变调、3D 环绕等音效和 VST3 插件 | 日常使用、需要调音效 |
+| **MPV 引擎** | 调用 mpv 播放，支持 Bit Perfect 模式和指定输出设备 | 想要高保真又不想另装软件 |
+| **Audirvana**（仅 macOS） | 交给 Audirvana 输出，支持独占和 Bit Perfect | 已经装了 Audirvana、外接 DAC |
 
-### 音质对比（理论）
+理论上的音质：**Audirvana ＞ MPV（开 Bit Perfect）＞ 内置引擎**。
 
-**Audirvana ＞ MPV（Bit Perfect 开启）＞ 内置引擎**
+- **Audirvana**：可以独占音频设备、绕过系统混音器，但只有 macOS，而且要另装 Audirvana。切到它以后，音效、变速、输出设备、音量由 Audirvana 自己管。
+- **MPV + Bit Perfect**：关掉重采样和音频滤镜，按原始码率直通，性价比高。
+- **内置引擎**：功能最多，但声音会经过 Chromium 的音频管线，可能被系统重采样。
 
-- **Audirvana**：可独占音频设备、绕过系统混音器，理论上音质最好，但仅限 macOS 且需安装 Audirvana。
-- **MPV + Bit Perfect**：关闭系统重采样与音频滤镜，源码率直通，性价比较高。
-- **内置引擎**：功能最丰富（EQ、音效），但会经过 Chromium 音频管线，可能被系统重采样。
+> 实际听感还取决于音频本身的质量和 DAC、耳机、音箱。用普通设备听 128k / 320k 的音频，三者差别可能很小。
 
-> 提示：实际听感还取决于音源质量、DAC/耳机/音箱水平。如果使用普通设备听 128k/320k 在线音源，三者差异可能很小。
+## 从源码构建
 
-## 引用与致谢
-
-本项目基于以下开源项目与服务构建，感谢其作者：
-
-| 项目 | 作者 | 许可 | 用途 |
-|------|------|------|------|
-| [LX Music（洛雪音乐助手）桌面版](https://github.com/lyswhut/lx-music-desktop) | lyswhut | Apache-2.0 | 上游原项目，本 fork 的全部基础功能来源 |
-| [mpv](https://mpv.io/) | mpv 团队 | GPL-2.0 / LGPL-2.1 | MPV 播放引擎二进制 |
-| [AudioTee.js](https://github.com/makeusabrew/audiotee-js) | Nick Payne | MIT | macOS 系统音频采集（听歌识曲） |
-| [ST-Shazam](https://github.com/sheikhtamimlover/ST-Shazam) | Sheikh Tamim | MIT | Shazam 音频指纹算法（听歌识曲） |
-| [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) | Binaryify | MIT | 网易云接口加解密实现参考 |
-| [ACRCloud](https://www.acrcloud.cn/) | ACRCloud | 商业服务（有免费额度） | 音乐/翻唱识别云服务（需自行申请密钥） |
-
-第三方许可原文见 [licenses/](licenses/) 目录。Audirvana 为其各自所有者的商标与产品，本项目仅通过其公开脚本接口调用，不捆绑其二进制。
-
-## 安装说明
-
-### 方式一：直接下载 Release（推荐）
-
-1. 打开本项目的 [Releases](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/releases) 页面。
-2. 根据你的系统选择对应安装包：
-   - **Windows**：`.exe` 安装程序 或 `.7z` 绿色版
-   - **macOS**：`.dmg` 镜像
-   - **Linux**：`.deb` / `.rpm` / `.AppImage` / `.pacman`
-3. 下载后按常规方式安装/运行即可。
-
-### 方式二：源码构建
-
-如果你希望自己构建，或想基于本仓库继续二次开发，请参考以下步骤。
-
-#### 环境要求
-
-- [Node.js](https://nodejs.org/) >= 22
-- [npm](https://www.npmjs.com/) >= 8.5.2
-- Git
-- 7-Zip（Windows 下构建时需要，用于解压 mpv 压缩包）
-
-#### 1. 克隆仓库
+需要 [Node.js](https://nodejs.org/) 22 起、npm 8.5.2 起、Git；Windows 上构建还需要 7-Zip（解压 mpv）。
 
 ```bash
 git clone https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced.git
 cd lx-music-desktop-enhanced
+npm install        # 会顺带为 better-sqlite3 等原生依赖编译对应 Electron 版本的二进制
+npm run dev        # 开发调试，带热更新
+npm run build      # 构建当前平台的目录版（不出安装包）
 ```
 
-#### 2. 安装依赖
+打安装包：
 
 ```bash
-npm install
+npm run pack:win:setup:x64     # Windows x64 安装包
+npm run pack:mac:dmg           # macOS x64 dmg
+npm run pack:linux:deb:amd64   # Linux x64 deb
 ```
 
-> 安装过程中 `electron-builder install-app-deps` 会自动执行，为本地原生依赖（如 `better-sqlite3`）编译对应 Electron 版本的二进制。
+其他平台和架构见 `package.json` 的 `scripts`。
 
-#### 3. 开发调试
+### 关于 mpv
 
-```bash
-npm run dev
-```
-
-启动开发服务器后，会自动打开 Electron 主窗口，并启用热更新。
-
-#### 4. 构建生产版本
-
-构建当前平台的目录版（不生成安装包）：
+打包时会自动下载对应平台的 mpv 并放进安装包。开发时也可以手动下载：
 
 ```bash
-npm run build
-```
-
-构建当前平台的安装包：
-
-```bash
-# Windows x64 安装包
-npm run pack:win:setup:x64
-
-# macOS x64 dmg
-npm run pack:mac:dmg
-
-# Linux x64 deb
-npm run pack:linux:deb:amd64
-```
-
-更多平台/架构请参阅 `package.json` 中的 `scripts` 字段。
-
-#### 5. 关于 mpv 二进制
-
-本项目默认会在打包时尝试自动下载对应平台的 mpv 二进制并集成到安装包中：
-
-```bash
-# 手动下载当前平台 mpv（开发调试用）
 npm run download:mpv -- --platform=darwin --arch=arm64
 ```
 
-- Windows / macOS 默认会自动下载。
-- Linux 没有配置默认静态构建源，构建 Linux 包时请手动放置 mpv 到 `resources/mpv/linux-x64/`（或自行配置 `build-config/download-mpv.js` 中的 `SOURCES.linux`）。
-- `resources/mpv/` 目录已被 `.gitignore` 忽略，不会提交到仓库。
+- Windows、macOS 默认自动下载。
+- Linux 没有默认的静态构建来源：构建 Linux 包前，把 mpv 放到 `resources/mpv/linux-x64/`，或者在 `build-config/download-mpv.js` 的 `SOURCES.linux` 里配一个来源。
+- `resources/mpv/` 已被 `.gitignore` 忽略。
+- 分发带 mpv 的安装包时，请遵守 mpv 和 FFmpeg 的 GPL / LGPL 许可证义务。
 
-> 注意：分发包含 mpv 的安装包时，请确保你遵守 mpv / FFmpeg 相关的 GPL/LGPL 许可证义务。
+## 反馈、Bug 与建议
 
-## 与上游项目的关系
+感谢每一位提交 Bug、建议和使用反馈的朋友，你们给的复现步骤和使用场景帮这个项目发现了很多问题。
 
-- 上游项目：[lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop)
-- 本仓库基于上游代码进行修改，所有原始代码的版权归原项目作者所有。
-- 本 fork 的改动部分由当前仓库维护者负责，不代表上游项目立场。
+播放失败、显示异常、登录或音源问题、新功能建议，都欢迎在 [GitHub Issues](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/issues) 提出。报 Bug 时请尽量附上软件版本、操作系统、播放引擎、复现步骤，以及必要的日志或截图；**先遮掉账号、Cookie、密钥等隐私信息**。
+
+本分支以个人使用为主，不保证和原项目同步，也没有官方支持渠道。原项目的通用问题可以先看 [原项目文档](https://lyswhut.github.io/lx-music-doc/)。
+
+## 附：申请 ACRCloud 密钥（可选）
+
+ACRCloud 是听歌识曲的**可选第二引擎**，用来认主引擎认不出的现场版、翻唱录音。不配置也不影响主引擎。
+
+1. 打开 [ACRCloud 控制台](https://console.acrcloud.cn/)，注册并登录（国际站是 [console.acrcloud.com](https://console.acrcloud.com/)）。
+2. 在控制台首页选「**音频指纹识别**」，进入 AVR 控制台。
+3. 依次点「**项目 → 音视频识别 → 创建项目**」。「音频类型」按主要用法选：主要识别**系统音频**选「原始文件或流媒体（未包含噪音）」；主要用**麦克风**选「通过麦克风采集的音频（包含噪音）」。
+4. 创建后进入项目详情页，能看到 **Host**（如 `identify-cn-north-1.acrcloud.cn`）、**Access Key**、**Access Secret** 三项。
+5. 回到本软件「听歌识曲 → 识别引擎」，勾选「启用 ACRCloud 双引擎识别」，填入这三项并保存。
+
+> ACRCloud 是商业服务，新项目有免费额度，超出要付费，以其官网价格为准。密钥只存在本机，识别请求由本机直接发给 ACRCloud。
+
+## 与原项目的关系
+
+- 原项目：[lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop)。本仓库在它的代码上修改，原始代码的版权归原项目作者所有。
+- 本分支的改动由本仓库维护者负责，不代表原项目的立场。
+- 「LX Music」「洛雪音乐」的名称和图标属于原项目作者。本分支沿用它们只是为了说明代码的来源；如果原作者认为不妥，请在 Issues 联系，我们会更改。
+
+## 商标与版权声明
+
+- 文中和软件里提到的音乐平台、视频网站、识别服务和软件（如 Folia、Audirvana、ACRCloud、mpv）的名称与商标，归各自所有者所有，只用来说明兼容性。本项目与它们没有任何合作、从属或认可关系。VST 是 Steinberg Media Technologies GmbH 的注册商标。
+- 歌曲、歌词、专辑封面等内容的版权归各自权利人。本项目不提供这些内容，也不鼓励任何侵犯版权的用法。请尊重版权，支持正版。
+- 如果你是权利人，认为本仓库的内容侵犯了你的权益，请在 [Issues](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/issues) 联系，我们核实后会尽快处理。
 
 ## 项目协议
 
-本项目基于 [Apache License 2.0](./LICENSE) 许可证发行，以下协议是对于 Apache License 2.0 的补充，如有冲突，以以下协议为准。
+本项目基于 [Apache License 2.0](./LICENSE) 发行。以下协议来自原项目，是对 Apache License 2.0 的补充；两者冲突时，以以下协议为准。安装时显示的版本见 [licenses/](licenses/)。
 
 ---
 
-*词语约定：本协议中的“本项目”指 LX Music（洛雪音乐助手）桌面版及其衍生项目；“使用者”指签署本协议的使用者；“官方音乐平台”指对本项目内置的包括酷我、酷狗、咪咕等音乐源的官方平台统称；“版权数据”指包括但不限于图像、音频、名字等在内的他人拥有所属版权的数据。*
+*词语约定：本协议中的“本项目”指 LX Music（洛雪音乐助手）桌面版及其衍生项目；“使用者”指签署本协议的使用者；“官方音乐平台”指本项目内置的各音乐源所对应的官方平台的统称；“版权数据”指包括但不限于图像、音频、名字等在内的他人拥有所属版权的数据。*
 
 ### 一、数据来源
 
@@ -286,7 +229,21 @@ npm run download:mpv -- --platform=darwin --arch=arm64
 
 ---
 
-## 致谢
+## 引用与致谢
 
-- 感谢 [lyswhut](https://github.com/lyswhut) 开发并开源 [LX Music](https://github.com/lyswhut/lx-music-desktop) 项目。
-- 感谢 mpv、Electron、Vue 等开源项目提供的优秀基础设施。
+本项目基于以下开源项目和服务构建，感谢它们的作者：
+
+| 项目 | 作者 | 许可 | 用途 |
+|------|------|------|------|
+| [LX Music 桌面版](https://github.com/lyswhut/lx-music-desktop) | lyswhut | Apache-2.0 | 原项目，本分支全部基础功能的来源 |
+| [mpv](https://mpv.io/) | mpv 团队 | GPL-2.0 / LGPL-2.1 | MPV 播放引擎 |
+| [AudioTee](https://github.com/makeusabrew/audiotee) | Nick Payne | MIT | macOS 系统音频采集（听歌识曲） |
+| [ST-Shazam](https://github.com/sheikhtamimlover/ST-Shazam) | Sheikh Tamim | MIT | 音频指纹算法（听歌识曲主引擎） |
+| [rust-vst3-host](https://github.com/HelgeSverre/rust-vst3-host) | Helge Sverre | MIT | VST3 插件宿主 |
+| [vst3-rs](https://github.com/coupler-rs/vst3-rs) | coupler-rs | MIT / Apache-2.0 | VST3 接口绑定 |
+| [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) | Binaryify | MIT | 接口请求加密的实现参考 |
+| [ACRCloud](https://www.acrcloud.cn/) | ACRCloud | 商业服务（有免费额度） | 听歌识曲第二引擎（需自行申请密钥） |
+
+第三方许可原文见 [licenses/](licenses/)。Audirvana 是其所有者的产品，本项目只通过它公开的脚本接口调用，不捆绑它的程序。
+
+另外感谢 [lyswhut](https://github.com/lyswhut) 开发并开源 LX Music，感谢 mpv、Electron、Vue 等开源项目。
