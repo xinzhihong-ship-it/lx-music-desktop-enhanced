@@ -1,7 +1,7 @@
 {
   "name": "lx-music-desktop-enhanced",
   "version": "3.4.0",
-  "description": "LX Music 桌面版增强版本，支持多平台音乐、哔哩哔哩地址播放、听歌识曲与高音质稳定播放",
+  "description": "LX Music 桌面版的非官方增强分支：播放失败自动恢复、MPV Bit Perfect、重做的歌词、听歌识曲与 Folia 歌词动画对接",
   "main": "./dist/main.js",
   "scripts": {
     "pack": "node build-config/pack.js && npm run pack:win:setup:x64",

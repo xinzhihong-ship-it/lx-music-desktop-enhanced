@@ -11,8 +11,8 @@
 - **搜歌、搜歌单**：用本软件的搜索，可以搜全部平台，也可以只搜一个。歌单按关键词各平台一起搜，名字下面写着是哪个平台的。在 Folia 里点播放，和在本软件搜索页双击一样：歌加进「试听列表」，从那里播放。
 - **看我的列表和平台音乐的歌单**：
   - 试听列表、我的收藏和自建列表都在 Folia 的「歌单」里。Folia 里点红心就是加进「我的收藏」，「加入歌单」加进我的列表。
-  - 「平台音乐」里登录的平台账号，它的每日推荐和歌单接在后面，名字前写着平台（如「酷狗音乐 · 我喜欢」）。在 Folia 里只能看和播放，加歌、删歌请在本软件里做。
-- **打开分享的歌单**：网易云、QQ、酷狗、酷我、咪咕的歌单链接或 ID。在 Folia 的命令面板选「打开分享的歌单」，或者直接把链接贴进搜索框。打开后可以播放全部，也可以收藏成我的列表。
+  - 「平台音乐」里登录的平台账号，它的每日推荐和歌单接在后面，名字前写着平台（如「某平台 · 我喜欢」）。在 Folia 里只能看和播放，加歌、删歌请在本软件里做。
+- **打开分享的歌单**：本软件支持的各平台的歌单链接或 ID。在 Folia 的命令面板选「打开分享的歌单」，或者直接把链接贴进搜索框。打开后可以播放全部，也可以收藏成我的列表。
 - **两边同步控制播放**：
   - 播放暂停、拖动、上一首下一首、音量与静音、播放模式都两边同步。
   - Folia 的「随机队列」按钮开关本软件的「列表随机播放」。
@@ -49,3 +49,17 @@
 - 「平台账号管理」「音源音质测试」弹窗在窗口小时伸出内容区被裁掉，关闭按钮、最右的平台看不见。现在按内容区的大小排，窗口很矮时扫码区域可以滚动。
 
 覆盖安装沿用原有配置。
+
+> 本软件是 LX Music 桌面版的非官方增强分支，与原作者无关；Folia 落雪对接版同样是非官方分支。本软件自身不提供任何音频、歌词或封面，请只使用你有权访问的内容。
+
+## English summary
+
+LX Music Enhanced 3.4.0 adds pairing with the [Folia LX edition](https://github.com/xinzhihong-ship-it/folia-major/releases), for people who like Folia's lyric animations. **This app still does all the playing**; Folia shows the lyrics and works as a remote.
+
+- Search tracks and playlists, browse your lists and platform-account playlists, and open shared playlist links from Folia.
+- Play/pause, seeking, previous/next, volume, play mode, shuffle and quality stay in sync both ways; Folia's queue is this app's play list plus Play Later.
+- The link listens only on 127.0.0.1 and needs a token generated at every launch. Turn it on under Settings → Open API → Folia link (on by default).
+- You can still push the current track and lyrics to the official Folia's stage mode (Settings → Open API → Folia Lyrics Stage).
+- Fixes: saving a shared playlist no longer creates duplicates; the Platform Accounts and source quality test dialogs fit small windows.
+
+This is an unofficial fork of LX Music Desktop, not affiliated with its author. The app provides no audio, lyrics or cover art of its own; only use content you have the right to access.
